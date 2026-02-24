@@ -11,6 +11,7 @@ import LoginPage from "@/pages/login";
 import SignupPage from "@/pages/signup";
 import DashboardPage from "@/pages/dashboard";
 import AILearningStudioPage from "@/pages/ai-learning-studio";
+import AITutorPage from "@/pages/ai-tutor";
 import AssignmentsPage from "@/pages/assignments";
 import AnalyticsPage from "@/pages/analytics";
 import LiveClassesPage from "@/pages/live-classes";
@@ -79,7 +80,7 @@ function Router() {
       
       <Route path="/ai-tutor">
         <ProtectedRoute>
-          <Redirect to="/ai-learning-studio" />
+          <AITutorPage />
         </ProtectedRoute>
       </Route>
       

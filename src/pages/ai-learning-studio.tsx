@@ -231,10 +231,8 @@ function SubjectDetailView({ subjectId }: { subjectId: number }) {
     
     // Navigate based on selected method
     if (selectedMethod === "ai-tutor") {
-      // Open AI Tutor in a new component/modal or navigate to dedicated page
-      // For now, we'll show the AI Tutor interface inline
-      // You can implement a modal or separate view here
-      alert("Starting AI Tutor session with selected topics!");
+      // Navigate to AI Tutor page
+      setLocation("/ai-tutor");
     } else if (selectedMethod === "ai-voice") {
       // Navigate to AI voice page (to be implemented)
       alert("AI Voice feature coming soon!");
