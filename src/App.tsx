@@ -20,6 +20,7 @@ import StudentsPage from "@/pages/students";
 import TutorsPage from "@/pages/tutors";
 import UsersPage from "@/pages/users";
 import SyllabusPage from "@/pages/syllabus";
+import AIVoicePage from "@/pages/ai-voice";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
@@ -81,6 +82,12 @@ function Router() {
       <Route path="/ai-tutor">
         <ProtectedRoute>
           <AITutorPage />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/ai-voice">
+        <ProtectedRoute>
+          <AIVoicePage />
         </ProtectedRoute>
       </Route>
       

@@ -234,8 +234,8 @@ function SubjectDetailView({ subjectId }: { subjectId: number }) {
       // Navigate to AI Tutor page
       setLocation("/ai-tutor");
     } else if (selectedMethod === "ai-voice") {
-      // Navigate to AI voice page (to be implemented)
-      alert("AI Voice feature coming soon!");
+      // Navigate to AI voice page
+      setLocation("/ai-voice");
     } else if (selectedMethod === "pre-recorded") {
       // Navigate to pre-recorded videos page (to be implemented)
       alert("Pre-recorded videos feature coming soon!");
