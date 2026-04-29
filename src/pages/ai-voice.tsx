@@ -58,13 +58,14 @@ function pcmToFloat32(raw: Uint8Array): Float32Array {
 }
 
 export default function AIVoicePage() {
+  const API_URL = import.meta.env.VITE_API_URL || "";
   const VOICE_URL = import.meta.env.VITE_VOICE_URL || "";
 
   const normalizedVoiceUrl = useMemo(() => {
-    const url = VOICE_URL.trim();
+    const url = (VOICE_URL || API_URL).trim();
     if (!url) return "";
     return url.endsWith("/") ? url.slice(0, -1) : url;
-  }, [VOICE_URL]);
+  }, [VOICE_URL, API_URL]);
 
   const [phase, setPhase] = useState<Phase>("idle");
   const [micEnabled, setMicEnabled] = useState(true);
@@ -122,7 +123,7 @@ export default function AIVoicePage() {
 
   useEffect(() => {
     if (!normalizedVoiceUrl) {
-      setConnectionStatus("Missing VITE_VOICE_URL");
+      setConnectionStatus("Missing VITE_API_URL (or VITE_VOICE_URL)");
       setPhase("error");
       return;
     }
@@ -587,7 +588,7 @@ export default function AIVoicePage() {
 
   const handlePdfUpload = async (file: File) => {
     if (!normalizedVoiceUrl) {
-      setErrorText("VITE_VOICE_URL is not configured.");
+      setErrorText("VITE_API_URL (or VITE_VOICE_URL) is not configured.");
       return;
     }
     if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {

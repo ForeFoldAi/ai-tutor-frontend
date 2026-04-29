@@ -56,7 +56,7 @@ const suggestedTopics = [
 const API_URL = import.meta.env.VITE_API_URL || "";
 
 // Voice API URL from environment
-const VOICE_URL = import.meta.env.VITE_VOICE_URL || "";
+const VOICE_URL = import.meta.env.VITE_VOICE_URL || API_URL;
 
 // Upload PDF file
 const uploadPDF = async (file: File): Promise<void> => {
@@ -310,7 +310,7 @@ export default function AITutorPage() {
   const fetchVoiceForMessage = async (message: Message, opts?: { play?: boolean }) => {
     if (!message.content.trim()) return;
     if (!VOICE_URL) {
-      setVoiceError("VOICE_URL is not configured. Please set VITE_VOICE_URL in your .env file and restart the dev server.");
+      setVoiceError("VOICE_URL (or VITE_API_URL) is not configured. Please update your .env and restart the dev server.");
       return;
     }
 
