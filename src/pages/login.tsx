@@ -11,7 +11,8 @@ import { useAuthStore } from "@/lib/auth-store";
 import { useToast } from "@/hooks/use-toast";
 import { GraduationCap, Eye, EyeOff, Loader2 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { apiRequest } from "@/lib/queryClient";
+import { API_BASE } from "@/api";
+import { UserRole } from "@/types/schema";
 
 const loginSchema = z.object({
   username: z.string().min(1, "Username is required"),
@@ -19,6 +20,14 @@ const loginSchema = z.object({
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
+
+const roleMap: Record<string, string> = {
+  STUDENT: UserRole.STUDENT,
+  TUTOR: UserRole.TUTOR,
+  SCHOOL_ADMIN: UserRole.SCHOOL_ADMIN,
+  ORG_ADMIN: UserRole.ORG_ADMIN,
+  MASTER_ADMIN: UserRole.MASTER_ADMIN,
+};
 
 export default function LoginPage() {
   const [, navigate] = useLocation();
@@ -38,20 +47,51 @@ export default function LoginPage() {
   const onSubmit = async (data: LoginFormValues) => {
     setIsLoading(true);
     try {
-      // Simulate API delay for better UX
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      const response = await apiRequest("POST", "/api/auth/login", data);
-      const result = await response.json();
-      
-      if (result.user && result.token) {
-        login(result.user, result.token);
-        toast({
-          title: "Welcome back!",
-          description: `Logged in as ${result.user.fullName}`,
-        });
-        navigate("/dashboard");
-      }
+      const loginResponse = await fetch(`${API_BASE}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: data.username, password: data.password }),
+      });
+      const loginText = await loginResponse.text();
+      if (!loginResponse.ok) throw new Error(loginText || "Invalid credentials");
+      const loginPayload = JSON.parse(loginText) as { access_token?: string; refresh_token?: string };
+      if (!loginPayload.access_token || !loginPayload.refresh_token) throw new Error("Missing auth tokens");
+
+      const meResponse = await fetch(`${API_BASE}/auth/me`, {
+        headers: { Authorization: `Bearer ${loginPayload.access_token}` },
+      });
+      const meText = await meResponse.text();
+      if (!meResponse.ok) throw new Error(meText || "Failed to load profile");
+      const me = JSON.parse(meText) as {
+        id: string;
+        full_name: string;
+        email: string;
+        role: string;
+        organization_id: string | null;
+        school_id: string | null;
+        teaching_board?: string | null;
+        teaching_classes?: { grade: string; sections: string[] }[] | null;
+      };
+
+      const mappedUser = {
+        id: me.id,
+        username: me.email.split("@", 1)[0],
+        email: me.email,
+        fullName: me.full_name,
+        role: roleMap[me.role] || UserRole.STUDENT,
+        avatar: null,
+        organizationId: me.organization_id,
+        schoolId: me.school_id,
+        teachingBoard: me.teaching_board ?? null,
+        teachingClasses: me.teaching_classes ?? null,
+      };
+
+      login(mappedUser, loginPayload.access_token, loginPayload.refresh_token);
+      toast({
+        title: "Welcome back!",
+        description: `Logged in as ${mappedUser.fullName}`,
+      });
+      navigate("/dashboard");
     } catch (error: any) {
       toast({
         title: "Login failed",
@@ -184,6 +224,10 @@ export default function LoginPage() {
                 <div className="p-2 bg-background rounded">
                   <p className="font-medium">Master Admin</p>
                   <p className="text-muted-foreground">master / password</p>
+                </div>
+                <div className="p-2 bg-background rounded col-span-2">
+                  <p className="font-medium">Org Admin</p>
+                  <p className="text-muted-foreground">organization / password</p>
                 </div>
               </div>
             </div>

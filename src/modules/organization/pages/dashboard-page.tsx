@@ -1,0 +1,27 @@
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useOrganizationData } from "@/modules/organization/hooks/use-organization-data";
+import { DataState } from "@/modules/shared/components/data-state";
+
+export default function OrganizationDashboardPage() {
+  const { reportsQuery } = useOrganizationData();
+  const report = reportsQuery.data;
+
+  return (
+    <div className="p-6 space-y-6">
+      <h1 className="text-2xl font-semibold">Organization Dashboard</h1>
+      <DataState
+        loading={reportsQuery.isLoading}
+        error={reportsQuery.error ? String(reportsQuery.error) : null}
+        empty={!report}
+        emptyText="No organization metrics available."
+        onRetry={() => void reportsQuery.refetch()}
+      >
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card><CardHeader><CardTitle>Tutors</CardTitle></CardHeader><CardContent>{report?.tutorCount ?? 0}</CardContent></Card>
+          <Card><CardHeader><CardTitle>Students</CardTitle></CardHeader><CardContent>{report?.studentCount ?? 0}</CardContent></Card>
+          <Card><CardHeader><CardTitle>Active Users</CardTitle></CardHeader><CardContent>{report?.activeUsers ?? 0}</CardContent></Card>
+        </div>
+      </DataState>
+    </div>
+  );
+}

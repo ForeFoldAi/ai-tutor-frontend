@@ -1,8 +1,10 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   Bot,
@@ -21,15 +23,27 @@ import {
   ChevronLeft,
   ChevronRight,
   Volume2,
+  Square,
+  BookOpen,
+  ArrowLeft,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/auth-store";
+import { apiFetch, authFetch } from "@/api";
+import {
+  AssistantMessageContent,
+  type RelatedTextbookImage,
+} from "@/components/assistant-message-content";
 import { cn } from "@/lib/utils";
+import { Mp3StreamPlayer } from "@/lib/mp3-stream-player";
+
+export type { RelatedTextbookImage };
 
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
+  relatedImages?: RelatedTextbookImage[];
 }
 
 interface Conversation {
@@ -78,7 +92,32 @@ const uploadPDF = async (file: File): Promise<void> => {
   }
 };
 
-// Send chat message
+interface ChapterContext {
+  board: string;
+  classLevel: string;
+  subject: string;
+  chapterIds: string[];
+  chapterNames: string[];
+}
+
+function useChapterContext(): ChapterContext | null {
+  return useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    const board = params.get("board");
+    const classLevel = params.get("class");
+    const subject = params.get("subject");
+    const chaptersRaw = params.get("chapters");
+    if (!board || !classLevel || !subject || !chaptersRaw) return null;
+    return {
+      board,
+      classLevel,
+      subject,
+      chapterIds: chaptersRaw.split(",").filter(Boolean),
+      chapterNames: (params.get("chapterNames") || "").split("||").filter(Boolean),
+    };
+  }, []);
+}
+
 const sendChatMessage = async (query: string): Promise<string> => {
   if (!API_URL) {
     throw new Error("API_URL is not configured");
@@ -86,9 +125,7 @@ const sendChatMessage = async (query: string): Promise<string> => {
 
   const response = await fetch(`${API_URL}/chat`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ query }),
   });
 
@@ -101,8 +138,114 @@ const sendChatMessage = async (query: string): Promise<string> => {
   return data.answer || "";
 };
 
+const sendChapterChatMessage = async (
+  query: string,
+  ctx: ChapterContext,
+): Promise<{ answer: string; relatedImages: RelatedTextbookImage[] }> => {
+  const data = await apiFetch<{ answer: string; related_images?: RelatedTextbookImage[] }>("/auth/chat", {
+    method: "POST",
+    body: JSON.stringify({
+      query,
+      board: ctx.board,
+      class_level: ctx.classLevel,
+      subject_name: ctx.subject,
+      chapter_ids: ctx.chapterIds,
+      chapter: ctx.chapterNames[0] || "",
+      chapter_names: ctx.chapterNames,
+    }),
+  });
+  return {
+    answer: data.answer || "",
+    relatedImages: data.related_images ?? [],
+  };
+};
+
+function buildConversationHistory(
+  messages: Message[],
+  maxTurns = 8,
+): Array<{ role: string; content: string }> {
+  return messages
+    .filter((m) => m.content.trim().length > 0)
+    .slice(-maxTurns)
+    .map((m) => ({ role: m.role, content: m.content }));
+}
+
+async function streamChapterChatMessage(
+  query: string,
+  ctx: ChapterContext,
+  handlers: {
+    onToken: (chunk: string) => void;
+    onImages: (images: RelatedTextbookImage[]) => void;
+  },
+  conversationHistory?: Array<{ role: string; content: string }>,
+): Promise<string> {
+  const res = await authFetch("/auth/chat/stream", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      query,
+      board: ctx.board,
+      class_level: ctx.classLevel,
+      subject_name: ctx.subject,
+      chapter_ids: ctx.chapterIds,
+      chapter: ctx.chapterNames[0] || "",
+      chapter_names: ctx.chapterNames,
+      conversation_history: conversationHistory ?? [],
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `Stream failed (${res.status})`);
+  }
+  if (!res.body) {
+    throw new Error("Stream response has no body");
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let full = "";
+
+  const parseLine = (trimmed: string) => {
+    if (!trimmed) return;
+    let evt: { type?: string; content?: string; images?: RelatedTextbookImage[] };
+    try {
+      evt = JSON.parse(trimmed);
+    } catch {
+      return;
+    }
+    if (evt.type === "token" && evt.content) {
+      full += evt.content;
+      handlers.onToken(evt.content);
+    } else if (evt.type === "related_images" && Array.isArray(evt.images)) {
+      handlers.onImages(evt.images);
+    }
+  };
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      parseLine(line.trim());
+    }
+  }
+  if (buffer.trim()) {
+    parseLine(buffer.trim());
+  }
+
+  return full;
+}
+
 export default function AITutorPage() {
-  const { user } = useAuthStore();
+  const { user, token } = useAuthStore();
+  const [, setLocation] = useLocation();
+  const chapterCtx = useChapterContext();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [input, setInput] = useState("");
@@ -114,11 +257,14 @@ export default function AITutorPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isVoiceLoading, setIsVoiceLoading] = useState(false);
+  const [isVoicePlaying, setIsVoicePlaying] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const chatVoicePlayerRef = useRef<Mp3StreamPlayer | null>(null);
+  const chatVoiceAbortRef = useRef<AbortController | null>(null);
   const lastVoicedMessageId = useRef<string | null>(null);
   const lastVoiceUrl = useRef<string | null>(null);
 
@@ -235,32 +381,66 @@ export default function AITutorPage() {
     setActiveConversation(conversationWithAssistant);
 
     try {
-      let response: string;
-      
-      // Use real API if API_URL is configured, otherwise use mock response
-      if (API_URL) {
-        response = await sendChatMessage(content);
-      } else {
-        // Fallback to mock response if API_URL is not configured
-        response = `That's a great question! Let me explain this concept step by step.\n\nBased on your question about "${content.slice(0, 50)}...", here's a detailed explanation:\n\nThis topic involves several key concepts that work together. First, let's understand the fundamental principles. Then we can explore how these principles apply in different scenarios.\n\nKey points to remember:\n• Understanding the basics is crucial\n• Practice helps reinforce learning\n• Real-world applications make concepts clearer\n\nWould you like me to elaborate on any specific aspect of this topic?`;
-      }
-      
-      // Simulate streaming effect
       let fullContent = "";
-      const words = response.split(" ");
-      
-      for (let i = 0; i < words.length; i++) {
-        await new Promise(resolve => setTimeout(resolve, 20)); // Small delay for visual effect
-        fullContent += words[i] + (i < words.length - 1 ? " " : "");
+      let relatedImages: RelatedTextbookImage[] = [];
+
+      const patchAssistant = (content: string, images?: RelatedTextbookImage[]) => {
         setActiveConversation((prev) => {
           if (!prev) return prev;
           const messages = [...prev.messages];
+          const last = messages[messages.length - 1];
           messages[messages.length - 1] = {
-            ...messages[messages.length - 1],
-            content: fullContent,
+            ...last,
+            content,
+            relatedImages: images ?? last.relatedImages,
           };
           return { ...prev, messages };
         });
+      };
+
+      if (chapterCtx) {
+        const history = buildConversationHistory(
+          updatedConversation.messages.filter((m) => m.id !== assistantMessage.id),
+        );
+        fullContent = await streamChapterChatMessage(
+          content,
+          chapterCtx,
+          {
+            onToken: (chunk) => {
+              fullContent += chunk;
+              patchAssistant(fullContent);
+            },
+            onImages: (images) => {
+              relatedImages = images;
+              patchAssistant(fullContent, images);
+            },
+          },
+          history,
+        );
+        if (relatedImages.length === 0 && fullContent.trim()) {
+          try {
+            const fallback = await sendChapterChatMessage(content, chapterCtx);
+            if (fallback.relatedImages.length > 0) {
+              relatedImages = fallback.relatedImages;
+              fullContent = fallback.answer || fullContent;
+              patchAssistant(fullContent, relatedImages);
+            }
+          } catch {
+            /* stream answer is still shown */
+          }
+        }
+      } else if (API_URL) {
+        fullContent = await sendChatMessage(content);
+        patchAssistant(fullContent);
+      } else {
+        fullContent = `That's a great question! Let me explain this concept step by step.\n\nBased on your question about "${content.slice(0, 50)}...", here's a detailed explanation:\n\nThis topic involves several key concepts that work together. First, let's understand the fundamental principles. Then we can explore how these principles apply in different scenarios.\n\nKey points to remember:\n• Understanding the basics is crucial\n• Practice helps reinforce learning\n• Real-world applications make concepts clearer\n\nWould you like me to elaborate on any specific aspect of this topic?`;
+        const words = fullContent.split(" ");
+        for (let i = 0; i < words.length; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          const partial = words.slice(0, i + 1).join(" ");
+          patchAssistant(partial);
+        }
+        fullContent = words.join(" ");
       }
 
       setConversations((prev) =>
@@ -270,6 +450,7 @@ export default function AITutorPage() {
             messages[messages.length - 1] = {
               ...messages[messages.length - 1],
               content: fullContent,
+              relatedImages,
             };
             return { ...c, messages };
           }
@@ -306,7 +487,35 @@ export default function AITutorPage() {
     }
   };
 
-  // Fetch audio for a message and cache URL (optionally play)
+  const stopChatVoicePlayback = () => {
+    chatVoiceAbortRef.current?.abort();
+    chatVoiceAbortRef.current = null;
+    chatVoicePlayerRef.current?.stop();
+    chatVoicePlayerRef.current = null;
+    if (audioRef.current) {
+      try {
+        audioRef.current.pause();
+      } catch {
+        /* ignore */
+      }
+      audioRef.current = null;
+    }
+    setIsVoicePlaying(false);
+    setIsVoiceLoading(false);
+  };
+
+  const bindVoiceElement = (el: HTMLAudioElement) => {
+    el.onplay = () => {
+      setIsVoiceLoading(false);
+      setIsVoicePlaying(true);
+    };
+    el.onended = () => {
+      setIsVoicePlaying(false);
+      audioRef.current = null;
+    };
+  };
+
+  // Stream MP3 from /chat-voice; optionally play while buffering for cache replay.
   const fetchVoiceForMessage = async (message: Message, opts?: { play?: boolean }) => {
     if (!message.content.trim()) return;
     if (!VOICE_URL) {
@@ -314,57 +523,95 @@ export default function AITutorPage() {
       return;
     }
 
+    stopChatVoicePlayback();
+    const controller = new AbortController();
+    chatVoiceAbortRef.current = controller;
+    const t0 = performance.now();
+
     try {
       setIsVoiceLoading(true);
       setVoiceError(null);
 
       const response = await fetch(`${VOICE_URL}/chat-voice`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: message.content }),
+        signal: controller.signal,
       });
 
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(errorText || "Voice request failed");
       }
+      if (!response.body) {
+        throw new Error("Voice response has no stream body");
+      }
 
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
+      const shouldPlay = Boolean(opts?.play);
+      let player: Mp3StreamPlayer | null = null;
+      if (shouldPlay) {
+        player = new Mp3StreamPlayer();
+        player.resetTurnClock();
+        chatVoicePlayerRef.current = player;
+        await player.ready();
+        audioRef.current = player.element;
+        bindVoiceElement(player.element);
+      }
 
-      // Revoke previous URL if any
+      const chunks: Uint8Array[] = [];
+      const reader = response.body.getReader();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (controller.signal.aborted) break;
+        chunks.push(value);
+        if (shouldPlay && player) {
+          const ab = value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
+          player.enqueue(ab);
+        }
+      }
+
+      if (controller.signal.aborted) return;
+
+      console.debug(
+        "[chat-voice] stream complete",
+        `${(performance.now() - t0).toFixed(0)}ms`,
+        `chunks=${chunks.length}`,
+      );
+
+      const blob = new Blob(chunks, { type: "audio/mpeg" });
       if (lastVoiceUrl.current) {
         URL.revokeObjectURL(lastVoiceUrl.current);
       }
-      lastVoiceUrl.current = url;
+      lastVoiceUrl.current = URL.createObjectURL(blob);
       lastVoicedMessageId.current = message.id;
 
-      if (opts?.play) {
-        // Stop any currently playing audio
-        if (audioRef.current) {
-          audioRef.current.pause();
-          audioRef.current = null;
-        }
-        const audio = new Audio(url);
-        audioRef.current = audio;
-        audio.onended = () => {
-          setIsVoiceLoading(false);
-        };
-        await audio.play();
-      } else {
+      if (!shouldPlay) {
         setIsVoiceLoading(false);
       }
     } catch (error) {
+      if ((error as Error)?.name === "AbortError") return;
       console.error("Voice error:", error);
       setVoiceError(
         error instanceof Error
           ? `Unable to fetch audio: ${error.message}`
-          : "Unable to fetch audio. Please try again."
+          : "Unable to fetch audio. Please try again.",
       );
       setIsVoiceLoading(false);
+    } finally {
+      if (chatVoiceAbortRef.current === controller) {
+        chatVoiceAbortRef.current = null;
+      }
     }
+  };
+
+  const handleVoiceButtonClick = () => {
+    if (isVoicePlaying) {
+      stopChatVoicePlayback();
+      return;
+    }
+    void handlePlayLastAssistantMessage();
   };
 
   const handlePlayLastAssistantMessage = async () => {
@@ -385,16 +632,11 @@ export default function AITutorPage() {
         setIsVoiceLoading(true);
         setVoiceError(null);
 
-        if (audioRef.current) {
-          audioRef.current.pause();
-          audioRef.current = null;
-        }
+        stopChatVoicePlayback();
 
         const audio = new Audio(lastVoiceUrl.current);
         audioRef.current = audio;
-        audio.onended = () => {
-          setIsVoiceLoading(false);
-        };
+        bindVoiceElement(audio);
         await audio.play();
         return;
       } catch (error) {
@@ -572,6 +814,36 @@ export default function AITutorPage() {
           </span>
         </div>
 
+        {/* Chapter context banner */}
+        {chapterCtx && (
+          <div className="border-b bg-primary/5 px-4 py-2.5 flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 shrink-0"
+              onClick={() => setLocation("/ai-learning-studio")}
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <BookOpen className="h-4 w-4 text-primary shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">
+                {chapterCtx.subject}
+                <span className="text-muted-foreground font-normal ml-2">
+                  {chapterCtx.board} &middot; {chapterCtx.classLevel.replace("CLASS_", "Class ")}
+                </span>
+              </p>
+              <div className="flex flex-wrap gap-1 mt-0.5">
+                {chapterCtx.chapterNames.map((name, i) => (
+                  <Badge key={i} variant="secondary" className="text-xs py-0">
+                    {name}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         {!activeConversation || activeConversation.messages.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6">
             <div className="max-w-xl w-full text-center space-y-4 sm:space-y-6">
@@ -579,10 +851,13 @@ export default function AITutorPage() {
                 <Bot className="h-8 w-8 sm:h-10 sm:w-10 text-white" />
               </div>
               <div>
-                <h2 className="text-xl sm:text-2xl font-semibold mb-2">AI Virtual Tutor</h2>
+                <h2 className="text-xl sm:text-2xl font-semibold mb-2">
+                  {chapterCtx ? `${chapterCtx.subject} Tutor` : "AI Virtual Tutor"}
+                </h2>
                 <p className="text-sm sm:text-base text-muted-foreground">
-                  Hello{user?.fullName ? `, ${user.fullName.split(" ")[0]}` : ""}! I'm your AI
-                  tutor. Ask me anything about your studies.
+                  {chapterCtx
+                    ? `Ask me anything about ${chapterCtx.chapterNames.join(", ")}. I'll help you understand the concepts clearly.`
+                    : `Hello${user?.fullName ? `, ${user.fullName.split(" ")[0]}` : ""}! I'm your AI tutor. Ask me anything about your studies.`}
                 </p>
               </div>
               <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
@@ -590,7 +865,10 @@ export default function AITutorPage() {
                 <span>Powered by advanced AI</span>
               </div>
               <div className="grid gap-2 sm:gap-3 grid-cols-1 sm:grid-cols-2">
-                {suggestedTopics.map((topic, i) => (
+                {(chapterCtx
+                  ? chapterCtx.chapterNames.slice(0, 4).map((name) => `Explain the key concepts in ${name}`)
+                  : suggestedTopics
+                ).map((topic, i) => (
                   <Button
                     key={i}
                     variant="outline"
@@ -631,16 +909,20 @@ export default function AITutorPage() {
                     )}
                     data-testid={`message-${message.id}`}
                   >
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                      {message.content}
-                      {isStreaming &&
-                        message.role === "assistant" &&
-                        message.id ===
-                          activeConversation.messages[activeConversation.messages.length - 1]
-                            .id && (
-                          <span className="inline-block w-2 h-4 ml-1 bg-current animate-pulse" />
-                        )}
-                    </p>
+                    {message.role === "assistant" ? (
+                      <AssistantMessageContent
+                        content={message.content}
+                        relatedImages={message.relatedImages}
+                        token={token}
+                        isStreaming={
+                          isStreaming &&
+                          message.id ===
+                            activeConversation.messages[activeConversation.messages.length - 1].id
+                        }
+                      />
+                    ) : (
+                      <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
+                    )}
                   </div>
                   {message.role === "user" && (
                     <Avatar className="h-7 w-7 sm:h-8 sm:w-8 flex-shrink-0">
@@ -661,12 +943,20 @@ export default function AITutorPage() {
                         variant="outline"
                         size="sm"
                         className="h-7 sm:h-8 text-xs"
-                        onClick={handlePlayLastAssistantMessage}
-                        disabled={isVoiceLoading}
-                        title="Play last answer as audio"
+                        onClick={handleVoiceButtonClick}
+                        disabled={isVoiceLoading && !isVoicePlaying}
+                        title={
+                          isVoicePlaying
+                            ? "Stop audio"
+                            : isVoiceLoading
+                              ? "Loading audio…"
+                              : "Play last answer as audio"
+                        }
                         data-testid="button-play-voice"
                       >
-                        {isVoiceLoading ? (
+                        {isVoicePlaying ? (
+                          <Square className="h-3 w-3 fill-current" />
+                        ) : isVoiceLoading ? (
                           <Loader2 className="h-3 w-3 animate-spin" />
                         ) : (
                           <Volume2 className="h-3 w-3" />

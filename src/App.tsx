@@ -16,11 +16,39 @@ import AssignmentsPage from "@/pages/assignments";
 import AnalyticsPage from "@/pages/analytics";
 import LiveClassesPage from "@/pages/live-classes";
 import SettingsPage from "@/pages/settings";
-import StudentsPage from "@/pages/students";
-import TutorsPage from "@/pages/tutors";
 import UsersPage from "@/pages/users";
 import SyllabusPage from "@/pages/syllabus";
 import AIVoicePage from "@/pages/ai-voice";
+import { UserRole, type UserRoleType } from "@/types/schema";
+import MasterAdminDashboardModulePage from "@/modules/master-admin/pages/dashboard-page";
+import ManageOrganizationsPage from "@/modules/master-admin/pages/manage-organizations-page";
+import MasterAdminSchoolsPage from "@/modules/master-admin/pages/schools-page";
+import MasterAdminUsersPage from "@/modules/master-admin/pages/users-page";
+import MasterAdminBoardsSyllabusPage from "@/modules/master-admin/pages/boards-syllabus-page";
+import MasterAdminTextbookUploadsPage from "@/modules/master-admin/pages/textbook-uploads-page";
+import MasterAdminAIEmbeddingsPage from "@/modules/master-admin/pages/ai-embeddings-page";
+import MasterAdminSubscriptionsPage from "@/modules/master-admin/pages/subscriptions-page";
+
+import ManageTutorsPage from "@/modules/master-admin/pages/manage-tutors-page";
+import ManageStudentsPage from "@/modules/master-admin/pages/manage-students-page";
+import MasterAdminReportsPage from "@/modules/master-admin/pages/reports-page";
+import MasterAdminSettingsPage from "@/modules/master-admin/pages/settings-page";
+import OrganizationDashboardPage from "@/modules/organization/pages/dashboard-page";
+import OrganizationManageSchoolsPage from "@/modules/organization/pages/manage-schools-page";
+import OrganizationManageTutorsPage from "@/modules/organization/pages/manage-tutors-page";
+import OrganizationManageStudentsPage from "@/modules/organization/pages/manage-students-page";
+import OrganizationReportsPage from "@/modules/organization/pages/reports-page";
+import OrganizationSettingsPage from "@/modules/organization/pages/settings-page";
+import TutorDashboardModulePage from "@/modules/tutor/pages/dashboard-page";
+import TutorAssignedStudentsPage from "@/modules/tutor/pages/assigned-students-page";
+import TutorSessionManagementPage from "@/modules/tutor/pages/session-management-page";
+import TutorAIInteractionPage from "@/modules/tutor/pages/ai-interaction-page";
+import TutorProgressTrackingPage from "@/modules/tutor/pages/progress-tracking-page";
+import TutorProfileSettingsPage from "@/modules/tutor/pages/profile-settings-page";
+
+function normalizeRole(value: string | undefined | null): string {
+  return String(value || "").toLowerCase();
+}
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
@@ -40,6 +68,21 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
   }
   
   return <>{children}</>;
+}
+
+function RoleRoute({
+  roles,
+  children,
+}: {
+  roles: UserRoleType[];
+  children: React.ReactNode;
+}) {
+  const { isAuthenticated, user } = useAuthStore();
+  if (!isAuthenticated) return <Redirect to="/login" />;
+  const userRole = normalizeRole(user?.role);
+  const allowed = roles.map((r) => normalizeRole(r));
+  if (!user || !allowed.includes(userRole)) return <Redirect to="/dashboard" />;
+  return <AppLayout>{children}</AppLayout>;
 }
 
 function Router() {
@@ -128,15 +171,15 @@ function Router() {
       </Route>
       
       <Route path="/students">
-        <ProtectedRoute>
-          <StudentsPage />
-        </ProtectedRoute>
+        <RoleRoute roles={[UserRole.SCHOOL_ADMIN]}>
+          <OrganizationManageStudentsPage />
+        </RoleRoute>
       </Route>
       
       <Route path="/tutors">
-        <ProtectedRoute>
-          <TutorsPage />
-        </ProtectedRoute>
+        <RoleRoute roles={[UserRole.SCHOOL_ADMIN]}>
+          <OrganizationManageTutorsPage />
+        </RoleRoute>
       </Route>
       
       <Route path="/users">
@@ -161,6 +204,140 @@ function Router() {
         <ProtectedRoute>
           <SettingsPage />
         </ProtectedRoute>
+      </Route>
+
+      <Route path="/master-admin/dashboard">
+        <RoleRoute roles={[UserRole.MASTER_ADMIN]}>
+          <MasterAdminDashboardModulePage />
+        </RoleRoute>
+      </Route>
+      <Route path="/master-admin">
+        <RoleRoute roles={[UserRole.MASTER_ADMIN]}>
+          <Redirect to="/master-admin/dashboard" />
+        </RoleRoute>
+      </Route>
+      <Route path="/master-admin/">
+        <RoleRoute roles={[UserRole.MASTER_ADMIN]}>
+          <Redirect to="/master-admin/dashboard" />
+        </RoleRoute>
+      </Route>
+      <Route path="/master-admin/organizations">
+        <RoleRoute roles={[UserRole.MASTER_ADMIN]}>
+          <ManageOrganizationsPage />
+        </RoleRoute>
+      </Route>
+      <Route path="/master-admin/schools">
+        <RoleRoute roles={[UserRole.MASTER_ADMIN]}>
+          <MasterAdminSchoolsPage />
+        </RoleRoute>
+      </Route>
+      <Route path="/master-admin/users">
+        <RoleRoute roles={[UserRole.MASTER_ADMIN]}>
+          <MasterAdminUsersPage />
+        </RoleRoute>
+      </Route>
+      <Route path="/master-admin/boards-syllabus">
+        <RoleRoute roles={[UserRole.MASTER_ADMIN]}>
+          <MasterAdminBoardsSyllabusPage />
+        </RoleRoute>
+      </Route>
+      <Route path="/master-admin/textbook-uploads">
+        <RoleRoute roles={[UserRole.MASTER_ADMIN]}>
+          <MasterAdminTextbookUploadsPage />
+        </RoleRoute>
+      </Route>
+      <Route path="/master-admin/ai-embeddings">
+        <RoleRoute roles={[UserRole.MASTER_ADMIN]}>
+          <MasterAdminAIEmbeddingsPage />
+        </RoleRoute>
+      </Route>
+      <Route path="/master-admin/subscriptions">
+        <RoleRoute roles={[UserRole.MASTER_ADMIN]}>
+          <MasterAdminSubscriptionsPage />
+        </RoleRoute>
+      </Route>
+      
+      <Route path="/master-admin/tutors">
+        <RoleRoute roles={[UserRole.MASTER_ADMIN]}>
+          <ManageTutorsPage />
+        </RoleRoute>
+      </Route>
+      <Route path="/master-admin/students">
+        <RoleRoute roles={[UserRole.MASTER_ADMIN]}>
+          <ManageStudentsPage />
+        </RoleRoute>
+      </Route>
+      <Route path="/master-admin/reports">
+        <RoleRoute roles={[UserRole.MASTER_ADMIN]}>
+          <MasterAdminReportsPage />
+        </RoleRoute>
+      </Route>
+      <Route path="/master-admin/settings">
+        <RoleRoute roles={[UserRole.MASTER_ADMIN]}>
+          <MasterAdminSettingsPage />
+        </RoleRoute>
+      </Route>
+
+      <Route path="/organization/dashboard">
+        <RoleRoute roles={[UserRole.ORG_ADMIN]}>
+          <OrganizationDashboardPage />
+        </RoleRoute>
+      </Route>
+      <Route path="/organization/tutors">
+        <RoleRoute roles={[UserRole.ORG_ADMIN]}>
+          <OrganizationManageTutorsPage />
+        </RoleRoute>
+      </Route>
+      <Route path="/organization/schools">
+        <RoleRoute roles={[UserRole.ORG_ADMIN]}>
+          <OrganizationManageSchoolsPage />
+        </RoleRoute>
+      </Route>
+      <Route path="/organization/students">
+        <RoleRoute roles={[UserRole.ORG_ADMIN]}>
+          <OrganizationManageStudentsPage />
+        </RoleRoute>
+      </Route>
+      <Route path="/organization/reports">
+        <RoleRoute roles={[UserRole.ORG_ADMIN]}>
+          <OrganizationReportsPage />
+        </RoleRoute>
+      </Route>
+      <Route path="/organization/settings">
+        <RoleRoute roles={[UserRole.ORG_ADMIN]}>
+          <OrganizationSettingsPage />
+        </RoleRoute>
+      </Route>
+
+      <Route path="/tutor/dashboard">
+        <RoleRoute roles={[UserRole.TUTOR]}>
+          <TutorDashboardModulePage />
+        </RoleRoute>
+      </Route>
+      <Route path="/tutor/students">
+        <RoleRoute roles={[UserRole.TUTOR]}>
+          <TutorAssignedStudentsPage />
+        </RoleRoute>
+      </Route>
+      <Route path="/tutor/sessions">
+        <RoleRoute roles={[UserRole.TUTOR]}>
+          <TutorSessionManagementPage />
+        </RoleRoute>
+      </Route>
+      <Route path="/tutor/ai-interaction">
+        <RoleRoute roles={[UserRole.TUTOR]}>
+          <TutorAIInteractionPage />
+        </RoleRoute>
+      </Route>
+      <Route path="/tutor/progress">
+        <RoleRoute roles={[UserRole.TUTOR]}>
+          <TutorProgressTrackingPage />
+        </RoleRoute>
+      </Route>
+      <Route path="/tutor/settings">
+        <RoleRoute roles={[UserRole.TUTOR]}>
+          <TutorProfileSettingsPage />
+        </RoleRoute>
       </Route>
       
       <Route component={NotFound} />

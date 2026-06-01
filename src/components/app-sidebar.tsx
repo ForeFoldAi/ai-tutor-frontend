@@ -24,8 +24,11 @@ import {
   Calendar,
   ClipboardList,
   Building2,
-  Shield,
   LogOut,
+  UploadCloud,
+  CreditCard,
+  Database,
+  User,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/auth-store";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -42,12 +45,12 @@ const studentMenuItems = [
 ];
 
 const tutorMenuItems = [
-  { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
-  { title: "My Classes", url: "/my-classes", icon: Calendar },
-  { title: "Students", url: "/students", icon: Users },
-  { title: "Assignments", url: "/assignments", icon: ClipboardList },
-  { title: "AI Learning Studio", url: "/ai-learning-studio", icon: Bot },
-  { title: "Settings", url: "/settings", icon: Settings },
+  { title: "Dashboard", url: "/tutor/dashboard", icon: LayoutDashboard },
+  { title: "Assigned Students", url: "/tutor/students", icon: Users },
+  { title: "Sessions", url: "/tutor/sessions", icon: Calendar },
+  { title: "AI Interaction", url: "/tutor/ai-interaction", icon: Bot },
+  { title: "Progress", url: "/tutor/progress", icon: ClipboardList },
+  { title: "Settings", url: "/tutor/settings", icon: Settings },
 ];
 
 const schoolAdminMenuItems = [
@@ -59,18 +62,32 @@ const schoolAdminMenuItems = [
 ];
 
 const masterAdminMenuItems = [
-  { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
-  { title: "Users", url: "/users", icon: Users },
-  { title: "Schools", url: "/schools", icon: Building2 },
-  { title: "Syllabus", url: "/syllabus", icon: BookOpen },
-  { title: "Platform", url: "/platform", icon: Shield },
-  { title: "Settings", url: "/settings", icon: Settings },
+  { title: "Dashboard", url: "/master-admin/dashboard", icon: LayoutDashboard },
+  { title: "Organizations", url: "/master-admin/organizations", icon: Building2 },
+  { title: "Schools", url: "/master-admin/schools", icon: GraduationCap },
+  { title: "Users", url: "/master-admin/users", icon: Users },
+  { title: "Boards & Syllabus", url: "/master-admin/boards-syllabus", icon: BookOpen },
+  { title: "Textbook Uploads", url: "/master-admin/textbook-uploads", icon: UploadCloud },
+  { title: "AI Embeddings", url: "/master-admin/ai-embeddings", icon: Database },
+  { title: "Subscriptions", url: "/master-admin/subscriptions", icon: CreditCard },
+  { title: "Reports", url: "/master-admin/reports", icon: BookOpen },
+  { title: "Settings", url: "/master-admin/settings", icon: Settings },
+];
+
+const organizationMenuItems = [
+  { title: "Dashboard", url: "/organization/dashboard", icon: LayoutDashboard },
+  { title: "Schools", url: "/organization/schools", icon: Building2 },
+  { title: "Tutors", url: "/organization/tutors", icon: Users },
+  { title: "Students", url: "/organization/students", icon: GraduationCap },
+  { title: "Reports", url: "/organization/reports", icon: BarChart3 },
+  { title: "Settings", url: "/organization/settings", icon: Settings },
 ];
 
 const roleLabels: Record<string, string> = {
   student: "Student",
   tutor: "Tutor",
   school_admin: "School Admin",
+  org_admin: "Organization",
   master_admin: "Master Admin",
 };
 
@@ -78,6 +95,7 @@ const roleColors: Record<string, string> = {
   student: "bg-primary",
   tutor: "bg-accent",
   school_admin: "bg-muted-foreground",
+  org_admin: "bg-blue-600",
   master_admin: "bg-destructive",
 };
 
@@ -95,6 +113,8 @@ export function AppSidebar() {
         return schoolAdminMenuItems;
       case UserRole.MASTER_ADMIN:
         return masterAdminMenuItems;
+      case UserRole.ORG_ADMIN:
+        return organizationMenuItems;
       default:
         return studentMenuItems;
     }

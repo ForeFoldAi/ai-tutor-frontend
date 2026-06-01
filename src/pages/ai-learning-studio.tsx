@@ -1,156 +1,65 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation, useRoute } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   Bot,
-  Calculator,
-  FlaskConical,
-  Globe,
-  Palette,
-  Code,
   BookOpen,
   ChevronRight,
   Search,
-  Clock,
-  CheckCircle,
   ArrowLeft,
   Mic,
   PlayCircle,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getMySubjects } from "@/api/student";
+import type { StudentSubjectApi } from "@/api/types";
 
-
-interface Subject {
-  id: number;
-  name: string;
-  description: string;
-  icon: any;
-  color: string;
-  bgColor: string;
-  progress: number;
-  chapters: number;
-  completedChapters: number;
-  lastAccessed: string;
-}
-
-interface Chapter {
-  id: number;
-  name: string;
-  topics: Topic[];
-}
-
-interface Topic {
-  id: number;
-  name: string;
-}
-
-const subjects: Subject[] = [
-  {
-    id: 1,
-    name: "Mathematics",
-    description: "Algebra, Geometry, Calculus and more",
-    icon: Calculator,
-    color: "text-blue-600",
-    bgColor: "bg-blue-500",
-    progress: 72,
-    chapters: 12,
-    completedChapters: 8,
-    lastAccessed: "2 hours ago",
-  },
-  {
-    id: 2,
-    name: "Science",
-    description: "Physics, Chemistry, Biology",
-    icon: FlaskConical,
-    color: "text-green-600",
-    bgColor: "bg-green-500",
-    progress: 58,
-    chapters: 15,
-    completedChapters: 9,
-    lastAccessed: "Yesterday",
-  },
-  {
-    id: 3,
-    name: "English",
-    description: "Grammar, Literature, Writing",
-    icon: Globe,
-    color: "text-purple-600",
-    bgColor: "bg-purple-500",
-    progress: 85,
-    chapters: 10,
-    completedChapters: 8,
-    lastAccessed: "Today",
-  },
-  {
-    id: 4,
-    name: "Art & Design",
-    description: "Drawing, Painting, Digital Art",
-    icon: Palette,
-    color: "text-pink-600",
-    bgColor: "bg-pink-500",
-    progress: 45,
-    chapters: 8,
-    completedChapters: 4,
-    lastAccessed: "3 days ago",
-  },
-  {
-    id: 5,
-    name: "Computer Science",
-    description: "Programming, Algorithms, Data Structures",
-    icon: Code,
-    color: "text-orange-600",
-    bgColor: "bg-orange-500",
-    progress: 91,
-    chapters: 14,
-    completedChapters: 13,
-    lastAccessed: "1 hour ago",
-  },
-  {
-    id: 6,
-    name: "History",
-    description: "World History, Civilizations, Modern Era",
-    icon: BookOpen,
-    color: "text-amber-600",
-    bgColor: "bg-amber-500",
-    progress: 35,
-    chapters: 16,
-    completedChapters: 5,
-    lastAccessed: "1 week ago",
-  },
-];
-
-
-// Mock data for chapters and topics
-const getChaptersForSubject = (subjectId: number): Chapter[] => {
-  const subject = subjects.find((s) => s.id === subjectId);
-  if (!subject) return [];
-  
-  return Array.from({ length: subject.chapters }).map((_, i) => ({
-    id: i + 1,
-    name: `Chapter ${i + 1}: ${["Introduction", "Basics", "Core Concepts", "Advanced", "Practice"][i % 5]} ${Math.floor(i / 5) + 1}`,
-    topics: Array.from({ length: 5 }).map((_, j) => ({
-      id: j + 1,
-      name: `Topic ${j + 1}: ${["Fundamentals", "Applications", "Examples", "Exercises", "Review"][j]}`,
-    })),
-  }));
+const SUBJECT_STYLES: Record<string, { color: string; bgColor: string }> = {
+  Mathematics: { color: "text-blue-600", bgColor: "bg-blue-500" },
+  Science: { color: "text-green-600", bgColor: "bg-green-500" },
+  Physics: { color: "text-cyan-600", bgColor: "bg-cyan-500" },
+  Chemistry: { color: "text-emerald-600", bgColor: "bg-emerald-500" },
+  Biology: { color: "text-lime-600", bgColor: "bg-lime-500" },
+  English: { color: "text-purple-600", bgColor: "bg-purple-500" },
+  Hindi: { color: "text-orange-600", bgColor: "bg-orange-500" },
+  History: { color: "text-amber-600", bgColor: "bg-amber-500" },
+  Geography: { color: "text-teal-600", bgColor: "bg-teal-500" },
+  "Computer Science": { color: "text-indigo-600", bgColor: "bg-indigo-500" },
+  "Social Science": { color: "text-rose-600", bgColor: "bg-rose-500" },
+  Economics: { color: "text-yellow-600", bgColor: "bg-yellow-500" },
 };
+
+const FALLBACK_STYLE = { color: "text-slate-600", bgColor: "bg-slate-500" };
+
+function getSubjectStyle(name: string) {
+  return SUBJECT_STYLES[name] ?? FALLBACK_STYLE;
+}
+
+function formatClassLevel(cl: string) {
+  return cl.replace("CLASS_", "Class ");
+}
 
 type LearningMethod = "ai-tutor" | "ai-voice" | "pre-recorded";
 
-function SubjectDetailView({ subjectId }: { subjectId: number }) {
+interface Chapter {
+  id: string;
+  chapter: string;
+  file_name: string;
+}
+
+function SubjectDetailView({ subjectId, subjects }: { subjectId: string; subjects: StudentSubjectApi[] }) {
   const [, setLocation] = useLocation();
   const subject = subjects.find((s) => s.id === subjectId);
-  const chapters = getChaptersForSubject(subjectId);
-  
-  const [selectedChapters, setSelectedChapters] = useState<Set<number>>(new Set());
-  const [selectedTopics, setSelectedTopics] = useState<Set<string>>(new Set());
+
+  const [selectedChapters, setSelectedChapters] = useState<Set<string>>(new Set());
   const [selectedMethod, setSelectedMethod] = useState<LearningMethod | null>(null);
-  const [expandedChapters, setExpandedChapters] = useState<Set<number>>(new Set());
+  const [expandedChapters, setExpandedChapters] = useState<Set<string>>(new Set());
 
   if (!subject) {
     return (
@@ -160,84 +69,46 @@ function SubjectDetailView({ subjectId }: { subjectId: number }) {
     );
   }
 
-  const toggleChapter = (chapterId: number) => {
-    const newSelected = new Set(selectedChapters);
-    if (newSelected.has(chapterId)) {
-      newSelected.delete(chapterId);
-      // Remove all topics from this chapter
-      const chapter = chapters.find((c) => c.id === chapterId);
-      if (chapter) {
-        const newTopics = new Set(selectedTopics);
-        chapter.topics.forEach((topic) => {
-          newTopics.delete(`${chapterId}-${topic.id}`);
-        });
-        setSelectedTopics(newTopics);
-      }
-    } else {
-      newSelected.add(chapterId);
-      // Select all topics in this chapter
-      const chapter = chapters.find((c) => c.id === chapterId);
-      if (chapter) {
-        const newTopics = new Set(selectedTopics);
-        chapter.topics.forEach((topic) => {
-          newTopics.add(`${chapterId}-${topic.id}`);
-        });
-        setSelectedTopics(newTopics);
-      }
-    }
-    setSelectedChapters(newSelected);
+  const style = getSubjectStyle(subject.subject_name);
+  const chapters: Chapter[] = subject.chapters.map((ch, idx) => ({
+    id: ch.id,
+    chapter: ch.chapter || `Chapter ${idx + 1}`,
+    file_name: ch.file_name,
+  }));
+
+  const toggleChapter = (chapterId: string) => {
+    const next = new Set(selectedChapters);
+    if (next.has(chapterId)) next.delete(chapterId);
+    else next.add(chapterId);
+    setSelectedChapters(next);
   };
 
-  const toggleTopic = (chapterId: number, topicId: number) => {
-    const key = `${chapterId}-${topicId}`;
-    const newSelected = new Set(selectedTopics);
-    if (newSelected.has(key)) {
-      newSelected.delete(key);
-    } else {
-      newSelected.add(key);
-    }
-    setSelectedTopics(newSelected);
-    
-    // Update chapter selection based on topics
-    const chapter = chapters.find((c) => c.id === chapterId);
-    if (chapter) {
-      const allSelected = chapter.topics.every((topic) =>
-        newSelected.has(`${chapterId}-${topic.id}`)
-      );
-      const newChapters = new Set(selectedChapters);
-      if (allSelected) {
-        newChapters.add(chapterId);
-      } else {
-        newChapters.delete(chapterId);
-      }
-      setSelectedChapters(newChapters);
-    }
-  };
-
-  const toggleChapterExpansion = (chapterId: number) => {
-    const newExpanded = new Set(expandedChapters);
-    if (newExpanded.has(chapterId)) {
-      newExpanded.delete(chapterId);
-    } else {
-      newExpanded.add(chapterId);
-    }
-    setExpandedChapters(newExpanded);
+  const toggleChapterExpansion = (chapterId: string) => {
+    const next = new Set(expandedChapters);
+    if (next.has(chapterId)) next.delete(chapterId);
+    else next.add(chapterId);
+    setExpandedChapters(next);
   };
 
   const handleStartLearning = () => {
-    if (selectedTopics.size === 0 || !selectedMethod) {
-      return;
-    }
-    
-    // Navigate based on selected method
+    if (selectedChapters.size === 0 || !selectedMethod) return;
+
+    const params = new URLSearchParams({
+      board: subject.board,
+      class: subject.class_level,
+      subject: subject.subject_name,
+      chapters: Array.from(selectedChapters).join(","),
+      chapterNames: chapters
+        .filter((ch) => selectedChapters.has(ch.id))
+        .map((ch) => ch.chapter)
+        .join("||"),
+    });
+
     if (selectedMethod === "ai-tutor") {
-      // Navigate to AI Tutor page
-      setLocation("/ai-tutor");
+      setLocation(`/ai-tutor?${params.toString()}`);
     } else if (selectedMethod === "ai-voice") {
-      // Navigate to AI voice page
-      setLocation("/ai-voice");
+      setLocation(`/ai-voice?${params.toString()}`);
     } else if (selectedMethod === "pre-recorded") {
-      // Navigate to pre-recorded videos page (to be implemented)
       alert("Pre-recorded videos feature coming soon!");
     }
   };
@@ -253,75 +124,62 @@ function SubjectDetailView({ subjectId }: { subjectId: number }) {
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex items-center gap-3">
-          <div className={cn("p-2 rounded-lg", subject.bgColor)}>
-            <subject.icon className="h-6 w-6 text-white" />
+          <div className={cn("p-2 rounded-lg", style.bgColor)}>
+            <BookOpen className="h-6 w-6 text-white" />
           </div>
           <div>
-            <h1 className="text-xl sm:text-2xl font-semibold">{subject.name}</h1>
-            <p className="text-sm text-muted-foreground">{subject.description}</p>
+            <h1 className="text-xl sm:text-2xl font-semibold">{subject.subject_name}</h1>
+            <p className="text-sm text-muted-foreground">
+              {subject.board} &middot; {formatClassLevel(subject.class_level)}
+            </p>
           </div>
         </div>
       </div>
 
       <div className="space-y-6">
-        {/* Step 1: Select Chapters & Topics */}
+        {/* Step 1: Select Chapters */}
         <Card>
           <CardHeader>
-            <CardTitle>Step 1: Select Chapters & Topics</CardTitle>
+            <CardTitle>Step 1: Select Chapters</CardTitle>
             <CardDescription>
-              Choose the chapters and topics you want to learn
+              {chapters.length > 0
+                ? "Choose the chapters you want to learn"
+                : "No textbook chapters have been uploaded for this subject yet."}
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {chapters.map((chapter) => (
-                <div key={chapter.id} className="border rounded-lg p-4">
-                  <div className="flex items-center gap-3 mb-3">
-                    <Checkbox
-                      checked={selectedChapters.has(chapter.id)}
-                      onCheckedChange={() => toggleChapter(chapter.id)}
-                    />
-                    <div
-                      className="flex-1 flex items-center justify-between cursor-pointer"
-                      onClick={() => toggleChapterExpansion(chapter.id)}
-                    >
-                      <div>
-                        <h3 className="font-medium">{chapter.name}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          {chapter.topics.length} topics
-                        </p>
-                      </div>
-                      <ChevronRight
-                        className={cn(
-                          "h-4 w-4 transition-transform",
-                          expandedChapters.has(chapter.id) && "rotate-90"
-                        )}
+          {chapters.length > 0 && (
+            <CardContent>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {chapters.map((chapter) => (
+                  <div key={chapter.id} className="border rounded-lg p-4">
+                    <div className="flex items-center gap-3">
+                      <Checkbox
+                        checked={selectedChapters.has(chapter.id)}
+                        onCheckedChange={() => toggleChapter(chapter.id)}
                       />
+                      <div
+                        className="flex-1 flex items-center justify-between cursor-pointer"
+                        onClick={() => toggleChapterExpansion(chapter.id)}
+                      >
+                        <div>
+                          <h3 className="font-medium">{chapter.chapter}</h3>
+                          <p className="text-xs text-muted-foreground truncate max-w-[180px]">
+                            {chapter.file_name}
+                          </p>
+                        </div>
+                        <ChevronRight
+                          className={cn(
+                            "h-4 w-4 transition-transform",
+                            expandedChapters.has(chapter.id) && "rotate-90"
+                          )}
+                        />
+                      </div>
                     </div>
                   </div>
-                  
-                  {expandedChapters.has(chapter.id) && (
-                    <div className="ml-7 space-y-2 mt-3">
-                      {chapter.topics.map((topic) => (
-                        <div
-                          key={topic.id}
-                          className="flex items-center gap-2 p-2 rounded hover:bg-muted/50"
-                        >
-                          <Checkbox
-                            checked={selectedTopics.has(`${chapter.id}-${topic.id}`)}
-                            onCheckedChange={() => toggleTopic(chapter.id, topic.id)}
-                          />
-                          <label className="text-sm cursor-pointer flex-1">
-                            {topic.name}
-                          </label>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </CardContent>
+                ))}
+              </div>
+            </CardContent>
+          )}
         </Card>
 
         {/* Step 2: Select Learning Method */}
@@ -401,7 +259,7 @@ function SubjectDetailView({ subjectId }: { subjectId: number }) {
         <div className="flex justify-end">
           <Button
             onClick={handleStartLearning}
-            disabled={selectedTopics.size === 0 || !selectedMethod}
+            disabled={selectedChapters.size === 0 || !selectedMethod}
             size="lg"
           >
             Start Learning
@@ -413,17 +271,36 @@ function SubjectDetailView({ subjectId }: { subjectId: number }) {
   );
 }
 
-function SubjectsTab() {
+function SubjectsTab({ subjects, loading, error }: { subjects: StudentSubjectApi[]; loading: boolean; error: string | null }) {
   const [, setLocation] = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
 
-  const filteredSubjects = subjects.filter((subject) =>
-    subject.name.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredSubjects = subjects.filter((s) =>
+    s.subject_name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleSubjectClick = (subjectId: number) => {
+  const handleSubjectClick = (subjectId: string) => {
     setLocation(`/ai-learning-studio/subject/${subjectId}`);
   };
+
+  if (loading) {
+    return (
+      <div className="p-4 sm:p-6 flex flex-col items-center justify-center gap-3 min-h-[300px]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-muted-foreground">Loading your subjects...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-4 sm:p-6 flex flex-col items-center justify-center gap-3 min-h-[300px]">
+        <AlertCircle className="h-8 w-8 text-destructive" />
+        <p className="text-destructive font-medium">Failed to load subjects</p>
+        <p className="text-sm text-muted-foreground">{error}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
@@ -446,74 +323,97 @@ function SubjectsTab() {
         </div>
       </div>
 
-      <div className="grid gap-4 sm:gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {filteredSubjects.map((subject) => (
-          <Card
-            key={subject.id}
-            className="overflow-hidden hover-elevate cursor-pointer transition-all"
-            onClick={() => handleSubjectClick(subject.id)}
-            data-testid={`subject-card-${subject.id}`}
-          >
-            <div className={cn("h-2", subject.bgColor)} />
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between gap-4">
-                <div className={cn("p-3 rounded-lg", subject.bgColor)}>
-                  <subject.icon className="h-6 w-6 text-white" />
-                </div>
-                <Badge variant="outline" className="text-xs">
-                  <Clock className="mr-1 h-3 w-3" />
-                  {subject.lastAccessed}
-                </Badge>
-              </div>
-              <CardTitle className="mt-3">{subject.name}</CardTitle>
-              <CardDescription>{subject.description}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-muted-foreground">Progress</span>
-                  <span className="font-medium">{subject.progress}%</span>
-                </div>
-                <Progress value={subject.progress} className="h-2" />
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-1 text-muted-foreground">
-                  <CheckCircle className="h-4 w-4" />
-                  <span>
-                    {subject.completedChapters}/{subject.chapters} Chapters
-                  </span>
-                </div>
-                <Button variant="ghost" size="sm">
-                  Continue
-                  <ChevronRight className="ml-1 h-4 w-4" />
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      {filteredSubjects.length === 0 && !searchQuery ? (
+        <Card className="p-8 text-center">
+          <BookOpen className="mx-auto h-12 w-12 text-muted-foreground/50 mb-4" />
+          <h3 className="text-lg font-medium mb-2">No subjects available yet</h3>
+          <p className="text-sm text-muted-foreground">
+            Your subjects will appear here once your school admin or tutor assigns them to your board and class.
+          </p>
+        </Card>
+      ) : (
+        <div className="grid gap-4 sm:gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {filteredSubjects.map((subject) => {
+            const style = getSubjectStyle(subject.subject_name);
+            return (
+              <Card
+                key={subject.id}
+                className="overflow-hidden hover-elevate cursor-pointer transition-all"
+                onClick={() => handleSubjectClick(subject.id)}
+                data-testid={`subject-card-${subject.id}`}
+              >
+                <div className={cn("h-2", style.bgColor)} />
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className={cn("p-3 rounded-lg", style.bgColor)}>
+                      <BookOpen className="h-6 w-6 text-white" />
+                    </div>
+                    <Badge variant="outline" className="text-xs">
+                      {subject.board}
+                    </Badge>
+                  </div>
+                  <CardTitle className="mt-3">{subject.subject_name}</CardTitle>
+                  <CardDescription>
+                    {formatClassLevel(subject.class_level)}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-1 text-muted-foreground">
+                      <BookOpen className="h-4 w-4" />
+                      <span>
+                        {subject.chapters.length}{" "}
+                        {subject.chapters.length === 1 ? "Chapter" : "Chapters"}
+                      </span>
+                    </div>
+                    <Button variant="ghost" size="sm">
+                      Explore
+                      <ChevronRight className="ml-1 h-4 w-4" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
-// AITutorTab component removed - not currently used
-// Can be re-added if needed when implementing AI Tutor as a learning method
-
 export default function AILearningStudioPage() {
   const [match, params] = useRoute<{ subjectId: string }>("/ai-learning-studio/subject/:subjectId");
-  
-  // Check if we're on a subject detail page
+
+  const [subjects, setSubjects] = useState<StudentSubjectApi[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    getMySubjects()
+      .then((data) => {
+        if (!cancelled) {
+          setSubjects(data);
+          setError(null);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message || "Failed to fetch subjects");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
   if (match && params?.subjectId) {
-    const subjectId = parseInt(params.subjectId, 10);
-    if (!isNaN(subjectId)) {
-      return <SubjectDetailView subjectId={subjectId} />;
-    }
+    return <SubjectDetailView subjectId={params.subjectId} subjects={subjects} />;
   }
 
-  // Show subjects view directly (no tabs)
   return (
     <div className="h-[calc(100vh-3.5rem)] overflow-auto">
-      <SubjectsTab />
+      <SubjectsTab subjects={subjects} loading={loading} error={error} />
     </div>
   );
 }

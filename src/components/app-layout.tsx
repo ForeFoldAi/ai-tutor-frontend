@@ -8,6 +8,7 @@ const roleLabels: Record<string, string> = {
   student: "Student",
   tutor: "Tutor",
   school_admin: "School Admin",
+  org_admin: "Organization",
   master_admin: "Master Admin",
 };
 

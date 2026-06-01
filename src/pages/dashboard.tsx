@@ -3,7 +3,8 @@ import { UserRole } from "@/types/schema";
 import StudentDashboard from "@/components/dashboards/student-dashboard";
 import TutorDashboard from "@/components/dashboards/tutor-dashboard";
 import SchoolAdminDashboard from "@/components/dashboards/school-admin-dashboard";
-import MasterAdminDashboard from "@/components/dashboards/master-admin-dashboard";
+import MasterAdminDashboardPage from "@/modules/master-admin/pages/dashboard-page";
+import OrganizationDashboardPage from "@/modules/organization/pages/dashboard-page";
 
 export default function DashboardPage() {
   const { user } = useAuthStore();
@@ -16,7 +17,9 @@ export default function DashboardPage() {
     case UserRole.SCHOOL_ADMIN:
       return <SchoolAdminDashboard user={user} />;
     case UserRole.MASTER_ADMIN:
-      return <MasterAdminDashboard user={user} />;
+      return <MasterAdminDashboardPage />;
+    case UserRole.ORG_ADMIN:
+      return <OrganizationDashboardPage />;
     default:
       return <StudentDashboard user={user} />;
   }
