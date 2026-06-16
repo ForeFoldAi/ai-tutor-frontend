@@ -19,12 +19,32 @@ export class Mp3StreamPlayer {
   private firstChunkLogged = false;
   private playbackStartedLogged = false;
   private turnT0 = performance.now();
+  private streamEnded = false;
+  private playbackEndWaiters: Array<() => void> = [];
+  private unlocked = false;
+  private allowAutoResume = true;
 
   constructor() {
     this.audio = new Audio();
     this.audio.preload = "auto";
+    // Attached elements play more reliably across browsers.
+    this.audio.style.display = "none";
+    if (typeof document !== "undefined") {
+      document.body.appendChild(this.audio);
+    }
     this.useMse =
       typeof MediaSource !== "undefined" && MediaSource.isTypeSupported(MIME);
+    this.audio.addEventListener("ended", () => this.notifyIfPlaybackComplete());
+    this.audio.addEventListener("pause", () => {
+      if (!this.allowAutoResume || this.destroyed || !this.firstChunkLogged || this.streamEnded) {
+        return;
+      }
+      if (this.audio.ended) return;
+      window.setTimeout(() => {
+        if (this.destroyed || this.audio.ended || !this.audio.paused) return;
+        void this.audio.play().catch(() => {});
+      }, 40);
+    });
   }
 
   /** Resolve when MediaSource + SourceBuffer are ready for appendBuffer. */
@@ -72,6 +92,11 @@ export class Mp3StreamPlayer {
       this.pending = false;
       this.logPlaybackStarted();
       void this.drainQueue();
+      this.tryEndStream();
+      if (this.audio.paused && !this.audio.ended) {
+        void this.audio.play().catch(() => {});
+      }
+      this.notifyIfPlaybackComplete();
     });
 
     console.debug(LOG, "MSE ready", `${(performance.now() - this.turnT0).toFixed(0)}ms`);
@@ -108,6 +133,7 @@ export class Mp3StreamPlayer {
 
     this.blobChunks.push(data);
     this.refreshBlobSrc();
+    if (this.streamEnded) this.notifyIfPlaybackComplete();
   }
 
   private refreshBlobSrc(): void {
@@ -151,6 +177,7 @@ export class Mp3StreamPlayer {
   }
 
   stop(): void {
+    this.allowAutoResume = false;
     this.destroyed = true;
     this.queue = [];
     this.blobChunks = [];
@@ -161,6 +188,12 @@ export class Mp3StreamPlayer {
       this.audio.pause();
       this.audio.removeAttribute("src");
       this.audio.load();
+    } catch {
+      /* ignore */
+    }
+
+    try {
+      this.audio.remove();
     } catch {
       /* ignore */
     }
@@ -180,12 +213,96 @@ export class Mp3StreamPlayer {
 
     this.mediaSource = null;
     this.sourceBuffer = null;
+    const waiters = this.playbackEndWaiters.splice(0);
+    for (const resolve of waiters) resolve();
   }
 
   resetTurnClock(): void {
     this.turnT0 = performance.now();
     this.firstChunkLogged = false;
     this.playbackStartedLogged = false;
+    this.streamEnded = false;
+  }
+
+  /** Tell the player no more MP3 chunks will arrive for this utterance. */
+  signalNoMoreChunks(): void {
+    if (this.destroyed) return;
+    this.streamEnded = true;
+    this.tryEndStream();
+    this.notifyIfPlaybackComplete();
+  }
+
+  private tryEndStream(): void {
+    if (!this.streamEnded || this.destroyed) return;
+    if (this.queue.length > 0 || this.pending || this.sourceBuffer?.updating) return;
+    if (this.mediaSource?.readyState === "open") {
+      try {
+        this.mediaSource.endOfStream();
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  private isPlaybackComplete(): boolean {
+    if (this.destroyed) return true;
+    if (!this.streamEnded) return false;
+    if (this.queue.length > 0 || this.pending || this.sourceBuffer?.updating) return false;
+    if (!this.firstChunkLogged) return true;
+    if (this.audio.ended) return true;
+    const d = this.audio.duration;
+    if (
+      Number.isFinite(d) &&
+      d > 0 &&
+      this.audio.currentTime >= d - 0.15 &&
+      this.audio.paused
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  private notifyIfPlaybackComplete(): void {
+    if (!this.isPlaybackComplete()) return;
+    const waiters = this.playbackEndWaiters.splice(0);
+    for (const resolve of waiters) resolve();
+  }
+
+  /** Wait until all buffered audio has finished playing. */
+  waitForPlaybackEnd(timeoutMs = 120_000): Promise<void> {
+    if (this.isPlaybackComplete()) return Promise.resolve();
+    return new Promise((resolve) => {
+      const finish = () => {
+        window.clearTimeout(timer);
+        resolve();
+      };
+      this.playbackEndWaiters.push(finish);
+      const timer = window.setTimeout(finish, timeoutMs);
+    });
+  }
+
+  /** Call after a user gesture to satisfy autoplay policies. */
+  async unlock(): Promise<void> {
+    if (this.destroyed) return;
+    // Never pause/reset audio that is already playing or has buffered speech.
+    if (this.unlocked && (this.isPlaying() || this.firstChunkLogged)) return;
+    await this.ready();
+    if (this.isPlaying() || this.firstChunkLogged) {
+      this.unlocked = true;
+      return;
+    }
+    try {
+      await this.audio.play();
+      this.audio.pause();
+      this.audio.currentTime = 0;
+      this.unlocked = true;
+    } catch {
+      /* ignore — first real chunk will retry play */
+    }
+  }
+
+  setAllowAutoResume(enabled: boolean): void {
+    this.allowAutoResume = enabled;
   }
 
   remainingMs(): number {

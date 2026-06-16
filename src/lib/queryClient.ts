@@ -13,7 +13,7 @@ const demoAccounts: DemoAccount[] = [
     username: import.meta.env.VITE_TEST_STUDENT_USERNAME || "student",
     password: import.meta.env.VITE_TEST_STUDENT_PASSWORD || "password",
     role: "student",
-    fullName: "Student User",
+    fullName: "Rajesh Kumar",
     email: "student@example.com",
   },
   {

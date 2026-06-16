@@ -97,11 +97,13 @@ function SubjectDetailView({ subjectId, subjects }: { subjectId: string; subject
       board: subject.board,
       class: subject.class_level,
       subject: subject.subject_name,
+      subjectId: subject.id,
       chapters: Array.from(selectedChapters).join(","),
       chapterNames: chapters
         .filter((ch) => selectedChapters.has(ch.id))
         .map((ch) => ch.chapter)
         .join("||"),
+      greet: "1",
     });
 
     if (selectedMethod === "ai-tutor") {

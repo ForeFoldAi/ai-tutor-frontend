@@ -12,7 +12,6 @@ import {
   Sparkles,
   Lightbulb,
   FileText,
-  Languages,
   Loader2,
   Plus,
   MessageSquare,
@@ -35,6 +34,12 @@ import {
 } from "@/components/assistant-message-content";
 import { cn } from "@/lib/utils";
 import { Mp3StreamPlayer } from "@/lib/mp3-stream-player";
+import {
+  buildStartLearningGreeting,
+  hasGreetSearchParam,
+  stripGreetSearchParam,
+} from "@/lib/tutor-greeting";
+import { chapterSelectionPath } from "@/lib/tutor-chapter-nav";
 
 export type { RelatedTextbookImage };
 
@@ -56,7 +61,6 @@ const quickActions = [
   { label: "Explain simpler", icon: Lightbulb, prompt: "Can you explain that in simpler terms?" },
   { label: "Give example", icon: FileText, prompt: "Can you give me an example?" },
   { label: "Summarize", icon: MessageSquare, prompt: "Can you summarize the key points?" },
-  { label: "Translate", icon: Languages, prompt: "Can you translate this to a different language?" },
 ];
 
 const suggestedTopics = [
@@ -96,6 +100,7 @@ interface ChapterContext {
   board: string;
   classLevel: string;
   subject: string;
+  subjectId: string | null;
   chapterIds: string[];
   chapterNames: string[];
 }
@@ -112,6 +117,7 @@ function useChapterContext(): ChapterContext | null {
       board,
       classLevel,
       subject,
+      subjectId: params.get("subjectId"),
       chapterIds: chaptersRaw.split(",").filter(Boolean),
       chapterNames: (params.get("chapterNames") || "").split("||").filter(Boolean),
     };
@@ -141,6 +147,7 @@ const sendChatMessage = async (query: string): Promise<string> => {
 const sendChapterChatMessage = async (
   query: string,
   ctx: ChapterContext,
+  conversationHistory?: Array<{ role: string; content: string }>,
 ): Promise<{ answer: string; relatedImages: RelatedTextbookImage[] }> => {
   const data = await apiFetch<{ answer: string; related_images?: RelatedTextbookImage[] }>("/auth/chat", {
     method: "POST",
@@ -152,6 +159,7 @@ const sendChapterChatMessage = async (
       chapter_ids: ctx.chapterIds,
       chapter: ctx.chapterNames[0] || "",
       chapter_names: ctx.chapterNames,
+      conversation_history: conversationHistory ?? [],
     }),
   });
   return {
@@ -267,12 +275,40 @@ export default function AITutorPage() {
   const chatVoiceAbortRef = useRef<AbortController | null>(null);
   const lastVoicedMessageId = useRef<string | null>(null);
   const lastVoiceUrl = useRef<string | null>(null);
+  const startGreetingHandledRef = useRef(false);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [activeConversation?.messages]);
+
+  // Welcome message when arriving from Learning Studio → Start Learning
+  useEffect(() => {
+    if (!chapterCtx || startGreetingHandledRef.current || !hasGreetSearchParam()) return;
+    startGreetingHandledRef.current = true;
+    stripGreetSearchParam();
+
+    const greeting = buildStartLearningGreeting({
+      fullName: user?.fullName,
+      subject: chapterCtx.subject,
+      chapterNames: chapterCtx.chapterNames,
+    });
+    const conv: Conversation = {
+      id: `welcome-${Date.now()}`,
+      title: chapterCtx.subject,
+      messages: [
+        {
+          id: `welcome-msg-${Date.now()}`,
+          role: "assistant",
+          content: greeting,
+          timestamp: new Date(),
+        },
+      ],
+    };
+    setConversations((prev) => [conv, ...prev]);
+    setActiveConversation(conv);
+  }, [chapterCtx, user?.fullName]);
 
   const createNewConversation = () => {
     const newConversation: Conversation = {
@@ -419,7 +455,7 @@ export default function AITutorPage() {
         );
         if (relatedImages.length === 0 && fullContent.trim()) {
           try {
-            const fallback = await sendChapterChatMessage(content, chapterCtx);
+            const fallback = await sendChapterChatMessage(content, chapterCtx, history);
             if (fallback.relatedImages.length > 0) {
               relatedImages = fallback.relatedImages;
               fullContent = fallback.answer || fullContent;
@@ -821,7 +857,7 @@ export default function AITutorPage() {
               variant="ghost"
               size="icon"
               className="h-7 w-7 shrink-0"
-              onClick={() => setLocation("/ai-learning-studio")}
+              onClick={() => setLocation(chapterSelectionPath(chapterCtx.subjectId))}
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
@@ -856,7 +892,11 @@ export default function AITutorPage() {
                 </h2>
                 <p className="text-sm sm:text-base text-muted-foreground">
                   {chapterCtx
-                    ? `Ask me anything about ${chapterCtx.chapterNames.join(", ")}. I'll help you understand the concepts clearly.`
+                    ? buildStartLearningGreeting({
+                        fullName: user?.fullName,
+                        subject: chapterCtx.subject,
+                        chapterNames: chapterCtx.chapterNames,
+                      })
                     : `Hello${user?.fullName ? `, ${user.fullName.split(" ")[0]}` : ""}! I'm your AI tutor. Ask me anything about your studies.`}
                 </p>
               </div>
@@ -902,10 +942,15 @@ export default function AITutorPage() {
                   )}
                   <div
                     className={cn(
-                      "max-w-[85%] sm:max-w-[80%] rounded-2xl px-3 py-2 sm:px-4 sm:py-3",
+                      "rounded-2xl px-3 py-2 sm:px-4 sm:py-3 min-w-0",
                       message.role === "user"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-[hsl(var(--ai-purple-light))] text-foreground"
+                        ? "max-w-[85%] sm:max-w-[80%] bg-primary text-primary-foreground"
+                        : cn(
+                            "border border-primary/25 bg-[hsl(var(--ai-purple-light))] text-foreground shadow-sm",
+                            (message.relatedImages?.length ?? 0) > 0
+                              ? "max-w-[92%] sm:max-w-[min(92%,40rem)] w-full"
+                              : "max-w-[85%] sm:max-w-[80%]",
+                          ),
                     )}
                     data-testid={`message-${message.id}`}
                   >
@@ -918,6 +963,21 @@ export default function AITutorPage() {
                           isStreaming &&
                           message.id ===
                             activeConversation.messages[activeConversation.messages.length - 1].id
+                        }
+                        imagesRetrieving={
+                          Boolean(
+                            chapterCtx &&
+                              isStreaming &&
+                              message.id ===
+                                activeConversation.messages[activeConversation.messages.length - 1]
+                                  .id &&
+                              (message.relatedImages?.length ?? 0) === 0,
+                          )
+                        }
+                        imagesRetrievingHint={
+                          chapterCtx?.chapterNames?.[0]
+                            ? `Looking up figures from ${chapterCtx.chapterNames[0]}…`
+                            : undefined
                         }
                       />
                     ) : (

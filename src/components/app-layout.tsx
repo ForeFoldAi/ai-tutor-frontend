@@ -28,8 +28,8 @@ export function AppLayout({ children }: AppLayoutProps) {
     <SidebarProvider style={style as React.CSSProperties}>
       <div className="flex h-screen w-full">
         <AppSidebar />
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <header className="flex h-14 items-center justify-between gap-4 border-b px-4 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="flex flex-1 flex-col overflow-hidden min-h-0">
+          <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b px-4 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
             <div className="flex items-center gap-4">
               <SidebarTrigger data-testid="button-sidebar-toggle" />
             </div>
@@ -42,7 +42,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               <ThemeToggle />
             </div>
           </header>
-          <main className="flex-1 overflow-auto bg-background">
+          <main className="flex-1 min-h-0 overflow-auto bg-background">
             {children}
           </main>
         </div>

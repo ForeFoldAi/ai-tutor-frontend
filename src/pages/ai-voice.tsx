@@ -2,36 +2,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
-import { API_BASE } from "@/api";
+import { stripGreetSearchParam } from "@/lib/tutor-greeting";
+import { chapterSelectionPath } from "@/lib/tutor-chapter-nav";
 import { useAuthStore } from "@/lib/auth-store";
 import { Mp3StreamPlayer } from "@/lib/mp3-stream-player";
-import { ArrowLeft, BookOpen, Loader2, Mic, MicOff, PhoneOff, Upload, Volume2, VolumeX } from "lucide-react";
+import { VoiceLiveCall } from "@/components/voice/voice-live-call";
+import type { TranscriptEntry, VoiceRelatedImage, VoicePhase } from "@/components/voice/voice-types";
+import { ArrowLeft, BookOpen } from "lucide-react";
 
-type Phase = "idle" | "listening" | "thinking" | "speaking" | "error";
-
+type Phase = VoicePhase;
 const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
 
-// ── Legacy POST fallback: binary frame parser ─────────────────────────────────
-// Frame layout: [type: 1 byte][length: 4 bytes LE][data: N bytes]
-const FRAME_TEXT  = 1;
+const FRAME_TEXT = 1;
 const FRAME_AUDIO = 2;
-const FRAME_DONE  = 3;
+const FRAME_DONE = 3;
 const FRAME_IMAGES = 4;
-
-type VoiceRelatedImage = { url: string; caption?: string | null; page?: number | null };
-
-function textbookImageSrc(relativeUrl: string, accessToken?: string | null): string {
-  if (!relativeUrl) return "";
-  let u =
-    relativeUrl.startsWith("http://") || relativeUrl.startsWith("https://")
-      ? relativeUrl
-      : `${API_BASE}${relativeUrl.startsWith("/") ? "" : "/"}${relativeUrl}`;
-  if (accessToken) {
-    u += `${u.includes("?") ? "&" : "?"}access_token=${encodeURIComponent(accessToken)}`;
-  }
-  return u;
-}
 
 class FrameParser {
   private buf = new Uint8Array(0);
@@ -52,7 +37,6 @@ class FrameParser {
   }
 }
 
-// ── Auth token ────────────────────────────────────────────────────────────────
 function getAccessToken(): string {
   return (
     localStorage.getItem("access_token") ||
@@ -63,25 +47,26 @@ function getAccessToken(): string {
   );
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
 export default function AIVoicePage() {
   const [, setLocation] = useLocation();
-  const { token: accessToken } = useAuthStore();
-  const API_URL   = import.meta.env.VITE_API_URL   || "";
+  const { token: accessToken, user } = useAuthStore();
+  const API_URL = import.meta.env.VITE_API_URL || "";
   const VOICE_URL = import.meta.env.VITE_VOICE_URL || "";
+  const bargeInEnabled = import.meta.env.VITE_VOICE_BARGE_IN === "true";
 
   const chapterCtx = useMemo(() => {
-    const params      = new URLSearchParams(window.location.search);
-    const board       = params.get("board");
-    const classLevel  = params.get("class");
-    const subject     = params.get("subject");
+    const params = new URLSearchParams(window.location.search);
+    const board = params.get("board");
+    const classLevel = params.get("class");
+    const subject = params.get("subject");
     const chaptersRaw = params.get("chapters");
     if (!board || !classLevel || !subject || !chaptersRaw) return null;
     return {
       board,
       classLevel,
       subject,
-      chapterIds:   chaptersRaw.split(",").filter(Boolean),
+      subjectId: params.get("subjectId"),
+      chapterIds: chaptersRaw.split(",").filter(Boolean),
       chapterNames: (params.get("chapterNames") || "").split("||").filter(Boolean),
     };
   }, []);
@@ -91,87 +76,185 @@ export default function AIVoicePage() {
     return url.endsWith("/") ? url.slice(0, -1) : url;
   }, [VOICE_URL, API_URL]);
 
-  const normalizedUploadUrl = useMemo(() => {
-    const url = (API_URL || VOICE_URL).trim();
-    return url.endsWith("/") ? url.slice(0, -1) : url;
-  }, [API_URL, VOICE_URL]);
+  const subjectLabel = chapterCtx?.subject || "General";
 
-  // ── UI state ────────────────────────────────────────────────────────────────
-  const [phase,            setPhase]            = useState<Phase>("idle");
-  const [micEnabled,       setMicEnabled]       = useState(true);
-  const [speakerEnabled,   setSpeakerEnabled]   = useState(true);
+  const [phase, setPhase] = useState<Phase>(() =>
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("greet") === "1"
+      ? "connecting"
+      : "idle",
+  );
+  const [micEnabled, setMicEnabled] = useState(true);
+  const [speakerEnabled, setSpeakerEnabled] = useState(true);
   const [connectionStatus, setConnectionStatus] = useState("Connecting...");
   const [interimTranscript, setInterimTranscript] = useState("");
-  const [assistantText,    setAssistantText]    = useState("");
-  const [errorText,        setErrorText]        = useState<string | null>(null);
-  const [isUploadingPdf,    setIsUploadingPdf]    = useState(false);
-  const [uploadStatusText,  setUploadStatusText]  = useState<string | null>(null);
-  const [lastHeardQuery,    setLastHeardQuery]    = useState<string | null>(null);
-  const [currentSentence,   setCurrentSentence]   = useState<string>("");
+  const [assistantText, setAssistantText] = useState("");
+  const [errorText, setErrorText] = useState<string | null>(null);
   const [voiceRelatedImages, setVoiceRelatedImages] = useState<VoiceRelatedImage[]>([]);
+  const [transcriptEntries, setTranscriptEntries] = useState<TranscriptEntry[]>([]);
+  const [callSeconds, setCallSeconds] = useState(0);
+  const [isCallLive, setIsCallLive] = useState(false);
+  const [tutorState, setTutorState] = useState("LISTENING");
 
-  // ── Refs ────────────────────────────────────────────────────────────────────
-  const volumeRef            = useRef(0);
+  const volumeRef = useRef(0);
   const [volumeUi, setVolumeUi] = useState(0);
-  const canvasRef            = useRef<HTMLCanvasElement | null>(null);
-
-  // WebSocket (primary path)
-  const wsRef                = useRef<WebSocket | null>(null);
-  const wsReadyRef           = useRef(false);
-  const reconnectTimerRef    = useRef<number | null>(null);
-  // Prevents stale onclose from firing reconnect in React StrictMode
-  // (StrictMode mounts twice; the first WS close must not loop-reconnect)
-  const wsActiveRef          = useRef(0); // generation counter
-
-  const mp3PlayerRef         = useRef<Mp3StreamPlayer | null>(null);
-
-  // POST fallback refs
-  const abortRef             = useRef<AbortController | null>(null);
-  const streamReaderRef      = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
-  const fallbackMp3Ref       = useRef<Mp3StreamPlayer | null>(null);
-  const typingTimerRef       = useRef<number | null>(null);
-
-  const pdfInputRef          = useRef<HTMLInputElement | null>(null);
-  const recognitionRef       = useRef<any>(null);
-
-  const turnIdRef            = useRef(0);
-  const analyserCleanupRef   = useRef<(() => void) | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const wsReadyRef = useRef(false);
+  const reconnectTimerRef = useRef<number | null>(null);
+  const wsActiveRef = useRef(0);
+  const mp3PlayerRef = useRef<Mp3StreamPlayer | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const streamReaderRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
+  const fallbackMp3Ref = useRef<Mp3StreamPlayer | null>(null);
+  const recognitionRef = useRef<any>(null);
+  const startRecognitionRef = useRef<() => void>(() => {});
+  const stopRecognitionRef = useRef<() => void>(() => {});
+  const startRecognition = () => startRecognitionRef.current();
+  const stopRecognition = () => stopRecognitionRef.current();
+  const turnIdRef = useRef(0);
+  const analyserCleanupRef = useRef<(() => void) | null>(null);
   const [micReady, setMicReady] = useState(false);
+  const phaseRef = useRef<Phase>(phase);
+  const micEnabledRef = useRef(micEnabled);
+  const speakerEnabledRef = useRef(speakerEnabled);
+  const speakingStartedAtRef = useRef(0);
+  const callStartRef = useRef<number | null>(null);
+  const assistantTextRef = useRef("");
+  const voiceImagesRef = useRef<VoiceRelatedImage[]>([]);
+  const shouldGreetOnConnectRef = useRef(
+    typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("greet") === "1",
+  );
+  const micListenAllowedRef = useRef(!shouldGreetOnConnectRef.current);
+  const interruptingRef = useRef(false);
+  const shuttingDownRef = useRef(false);
+  const audioPolicyUnlockedRef = useRef(false);
+  const handleUserTurnRef = useRef<
+    (userText: string, turnId: number, opts?: { requireMic?: boolean; skipPhaseCheck?: boolean }) => Promise<void>
+  >(() => Promise.resolve());
+  const handleInterruptRef = useRef<() => void>(() => {});
 
-  const phaseRef           = useRef<Phase>(phase);
-  const micEnabledRef      = useRef<boolean>(micEnabled);
-  const speakerEnabledRef  = useRef<boolean>(speakerEnabled);
-  const speakingStartedAtRef = useRef<number>(0);
-
-  useEffect(() => { phaseRef.current = phase; },          [phase]);
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
   useEffect(() => { micEnabledRef.current = micEnabled; }, [micEnabled]);
   useEffect(() => { speakerEnabledRef.current = speakerEnabled; }, [speakerEnabled]);
+  useEffect(() => { assistantTextRef.current = assistantText; }, [assistantText]);
+  useEffect(() => { voiceImagesRef.current = voiceRelatedImages; }, [voiceRelatedImages]);
+
+  const getCallSeconds = useCallback(() => {
+    if (!callStartRef.current) return 0;
+    return Math.floor((Date.now() - callStartRef.current) / 1000);
+  }, []);
+
+  const finalizeAssistantTurn = useCallback(() => {
+    const text = assistantTextRef.current.trim();
+    const imgs = voiceImagesRef.current;
+    if (!text && imgs.length === 0) return;
+    setTranscriptEntries((prev) => [
+      ...prev,
+      {
+        id: `ai-${Date.now()}`,
+        role: "assistant",
+        text,
+        timeSec: getCallSeconds(),
+        images: imgs.length > 0 ? [...imgs] : undefined,
+      },
+    ]);
+    setAssistantText("");
+    setVoiceRelatedImages([]);
+  }, [getCallSeconds]);
+
+  const appendUserTranscript = useCallback(
+    (text: string, extra?: Partial<TranscriptEntry>) => {
+      const trimmed = text.trim();
+      if (!trimmed && !extra?.userImageUrl) return;
+      setTranscriptEntries((prev) => [
+        ...prev,
+        {
+          id: `user-${Date.now()}`,
+          role: "user",
+          text: trimmed,
+          timeSec: getCallSeconds(),
+          ...extra,
+        },
+      ]);
+    },
+    [getCallSeconds],
+  );
+
+  const resumeListeningAfterPlayback = useCallback(async () => {
+    if (shuttingDownRef.current) return;
+    const player = mp3PlayerRef.current;
+    if (player) {
+      player.signalNoMoreChunks();
+      await player.waitForPlaybackEnd();
+      // Brief pause so speaker tail is not picked up by the mic.
+      await new Promise<void>((r) => window.setTimeout(r, 400));
+    }
+    if (
+      phaseRef.current === "speaking" ||
+      phaseRef.current === "thinking" ||
+      phaseRef.current === "connecting"
+    ) {
+      micListenAllowedRef.current = true;
+      setPhase("listening");
+      setInterimTranscript("");
+      if (micEnabledRef.current) startRecognition();
+    }
+  }, []);
 
   const resetMp3Player = useCallback(() => {
     mp3PlayerRef.current?.stop();
     const player = new Mp3StreamPlayer();
     player.resetTurnClock();
     mp3PlayerRef.current = player;
-    void player.ready().catch(() => {});
+    void player.ready().then(() => player.unlock()).catch(() => {});
+  }, []);
+
+  const unlockAudioPlayback = useCallback(async () => {
+    if (!mp3PlayerRef.current) {
+      mp3PlayerRef.current = new Mp3StreamPlayer();
+      mp3PlayerRef.current.resetTurnClock();
+    }
+    if (audioPolicyUnlockedRef.current && mp3PlayerRef.current.isPlaying()) return;
+    try {
+      await mp3PlayerRef.current.unlock();
+      audioPolicyUnlockedRef.current = true;
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   const enqueueMp3Chunk = useCallback((raw: ArrayBuffer) => {
+    if (shuttingDownRef.current) return;
     if (!speakerEnabledRef.current || raw.byteLength === 0) return;
     if (!mp3PlayerRef.current) {
       const player = new Mp3StreamPlayer();
       player.resetTurnClock();
       mp3PlayerRef.current = player;
-      void player.ready().catch(() => {});
     }
     const player = mp3PlayerRef.current;
-    void player.ready().then(() => player.enqueue(raw));
+    void player.ready().then(() => {
+      player.enqueue(raw);
+      if (player.element.paused) {
+        void player.element.play().catch(() => {});
+      }
+    });
     if (phaseRef.current !== "speaking") {
       setPhase("speaking");
       speakingStartedAtRef.current = Date.now();
     }
   }, []);
 
-  // ── Health check ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isCallLive) return;
+    const id = window.setInterval(() => {
+      if (callStartRef.current) {
+        setCallSeconds(Math.floor((Date.now() - callStartRef.current) / 1000));
+      }
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [isCallLive]);
+
   useEffect(() => {
     if (!normalizedVoiceUrl) {
       setConnectionStatus("Missing VITE_API_URL");
@@ -191,28 +274,69 @@ export default function AIVoicePage() {
     return () => { cancelled = true; };
   }, [normalizedVoiceUrl]);
 
-  // ── WebSocket connection ────────────────────────────────────────────────────
-  const connectWS = useCallback(() => {
-    if (!normalizedVoiceUrl) return;
+  const stopVoiceSessionResources = useCallback(() => {
+    shuttingDownRef.current = true;
+    turnIdRef.current += 1;
+
     if (reconnectTimerRef.current) {
       window.clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
     }
 
-    // Guard: skip if a connection is already open / connecting
+    const ws = wsRef.current;
+    if (ws?.readyState === WebSocket.OPEN) {
+      try {
+        ws.send(JSON.stringify({ type: "stop" }));
+      } catch {
+        /* ignore */
+      }
+    }
+    if (ws && ws.readyState <= WebSocket.OPEN) {
+      try {
+        ws.close();
+      } catch {
+        /* ignore */
+      }
+    }
+    wsRef.current = null;
+    wsReadyRef.current = false;
+    wsActiveRef.current += 1;
+
+    abortRef.current?.abort();
+    abortRef.current = null;
+
+    mp3PlayerRef.current?.setAllowAutoResume(false);
+    streamReaderRef.current?.cancel().catch(() => {});
+    streamReaderRef.current = null;
+    mp3PlayerRef.current?.stop();
+    mp3PlayerRef.current = null;
+    fallbackMp3Ref.current?.stop();
+    fallbackMp3Ref.current = null;
+
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch {
+        /* ignore */
+      }
+    }
+    micListenAllowedRef.current = false;
+  }, []);
+
+  const connectWS = useCallback(() => {
+    if (!normalizedVoiceUrl || shuttingDownRef.current) return;
+    if (reconnectTimerRef.current) {
+      window.clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
     if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) return;
 
-    // Bump generation so stale onclose handlers from React StrictMode
-    // double-mount can self-identify and skip the reconnect logic.
     const myGen = ++wsActiveRef.current;
-
-    const httpBase = normalizedVoiceUrl;
-    const wsBase   = httpBase.startsWith("https://")
-      ? httpBase.replace("https://", "wss://")
-      : httpBase.replace("http://", "ws://");
-    const wsUrl  = `${wsBase}/ws/voice`;
-    const token  = getAccessToken();
-    const fullUrl = token ? `${wsUrl}?token=${encodeURIComponent(token)}` : wsUrl;
+    const wsBase = normalizedVoiceUrl.startsWith("https://")
+      ? normalizedVoiceUrl.replace("https://", "wss://")
+      : normalizedVoiceUrl.replace("http://", "ws://");
+    const token = getAccessToken();
+    const fullUrl = token ? `${wsBase}/ws/voice?token=${encodeURIComponent(token)}` : `${wsBase}/ws/voice`;
 
     const ws = new WebSocket(fullUrl);
     ws.binaryType = "arraybuffer";
@@ -221,89 +345,117 @@ export default function AIVoicePage() {
     ws.onopen = () => {
       wsReadyRef.current = true;
       setConnectionStatus("Connected");
-      ws.send(JSON.stringify({
-        type:         "session_start",
-        board:        chapterCtx?.board        || "",
-        class_level:  chapterCtx?.classLevel   || "",
-        subject_name: chapterCtx?.subject      || "",
-        chapter_ids:  chapterCtx?.chapterIds   || null,
-        chapter:      chapterCtx?.chapterNames?.[0] || "",
-        chapter_names: chapterCtx?.chapterNames || [],
-      }));
+      setIsCallLive(true);
+      if (!callStartRef.current) callStartRef.current = Date.now();
+      const sendGreet = shouldGreetOnConnectRef.current && Boolean(chapterCtx);
+      if (sendGreet) {
+        shouldGreetOnConnectRef.current = false;
+        stripGreetSearchParam();
+        micListenAllowedRef.current = false;
+        setPhase("connecting");
+      }
+      void unlockAudioPlayback();
+      ws.send(
+        JSON.stringify({
+          type: "session_start",
+          board: chapterCtx?.board || "",
+          class_level: chapterCtx?.classLevel || "",
+          subject_name: chapterCtx?.subject || "",
+          chapter_ids: chapterCtx?.chapterIds || null,
+          chapter: chapterCtx?.chapterNames?.[0] || "",
+          chapter_names: chapterCtx?.chapterNames || [],
+          student_name: user?.fullName || "",
+          greet: sendGreet,
+        }),
+      );
     };
 
     ws.onmessage = async (event) => {
+      if (shuttingDownRef.current) return;
       if (event.data instanceof ArrayBuffer) {
         enqueueMp3Chunk(event.data);
         return;
       }
-
-      // Text frame → JSON control message
-      let msg: Record<string, any>;
-      try { msg = JSON.parse(event.data as string); }
-      catch { return; }
+      if (event.data instanceof Blob) {
+        try {
+          const buf = await event.data.arrayBuffer();
+          enqueueMp3Chunk(buf);
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
+      let msg: Record<string, unknown>;
+      try {
+        msg = JSON.parse(event.data as string);
+      } catch {
+        return;
+      }
 
       switch (msg.type) {
-        case "thinking":
-          setPhase("thinking");
-          setAssistantText("");
-          setCurrentSentence("");
+        case "greeting_start":
+          micListenAllowedRef.current = false;
+          stopRecognition();
+          setPhase("speaking");
+          setAssistantText(String(msg.text ?? ""));
           setVoiceRelatedImages([]);
           resetMp3Player();
           break;
-
+        case "thinking":
+          micListenAllowedRef.current = false;
+          stopRecognition();
+          setPhase("thinking");
+          setAssistantText("");
+          setVoiceRelatedImages([]);
+          resetMp3Player();
+          break;
         case "related_images": {
           const raw = msg.images;
-          const imgs = Array.isArray(raw) ? raw.filter((x: unknown) => x && typeof x === "object") as VoiceRelatedImage[] : [];
+          const imgs = Array.isArray(raw)
+            ? (raw.filter((x) => x && typeof x === "object") as VoiceRelatedImage[])
+            : [];
           setVoiceRelatedImages(imgs);
           break;
         }
-
         case "speaking":
+          if (!bargeInEnabled) stopRecognition();
+          else if (micEnabledRef.current) startRecognition();
           setPhase("speaking");
           speakingStartedAtRef.current = Date.now();
           break;
-
         case "ai_text_token": {
-          const tok = msg.token ?? "";
-          setAssistantText(prev => prev + tok);
-          // Track current sentence for the orb caption
-          setCurrentSentence(prev => {
-            const next = prev + tok;
-            return /[.?!]\s*$/.test(next) ? "" : next;
-          });
+          const tok = String(msg.token ?? "");
+          if (!bargeInEnabled) stopRecognition();
+          setAssistantText((prev) => prev + tok);
           if (phaseRef.current === "thinking") setPhase("speaking");
           break;
         }
-
         case "interrupt_ack":
-          mp3PlayerRef.current?.stop();
-          mp3PlayerRef.current = null;
+          stopAudioPlayback();
+          micListenAllowedRef.current = true;
+          setPhase("listening");
+          setAssistantText("");
+          setVoiceRelatedImages([]);
+          if (micEnabledRef.current) startRecognition();
           break;
-
+        case "tutor_state":
+          setTutorState(String(msg.state ?? "LISTENING"));
+          break;
         case "done": {
-          setCurrentSentence("");
-          const audioMs = mp3PlayerRef.current?.remainingMs() ?? 0;
-          const delay = Math.max(audioMs, 2500);
-          setTimeout(() => {
-            if (phaseRef.current === "speaking" || phaseRef.current === "thinking") {
-              setPhase("listening");
-              setInterimTranscript("");
-              startRecognition();
-            }
-          }, delay);
+          finalizeAssistantTurn();
+          void resumeListeningAfterPlayback();
           break;
         }
-
         case "listening":
-          setPhase("listening");
+          if (!mp3PlayerRef.current?.isPlaying()) {
+            micListenAllowedRef.current = true;
+            setPhase("listening");
+          }
           break;
-
         case "error":
-          setErrorText(msg.message || "Voice assistant error.");
+          setErrorText(String(msg.message || "Voice assistant error."));
           setPhase("error");
           break;
-
         case "ping":
           ws.send(JSON.stringify({ type: "pong" }));
           break;
@@ -317,291 +469,199 @@ export default function AIVoicePage() {
 
     ws.onclose = () => {
       wsReadyRef.current = false;
-      // Only act on the close if this connection is still the active one.
-      // In React StrictMode the first effect's WS is closed by cleanup before
-      // the second effect runs — that stale close must not trigger a reconnect.
-      if (myGen !== wsActiveRef.current) return;
+      setIsCallLive(false);
+      if (shuttingDownRef.current || myGen !== wsActiveRef.current) return;
       wsRef.current = null;
       if (phaseRef.current === "error") return;
       setConnectionStatus("Reconnecting…");
       reconnectTimerRef.current = window.setTimeout(connectWS, 2500);
     };
-  }, [normalizedVoiceUrl, chapterCtx, enqueueMp3Chunk, resetMp3Player]);   // eslint-disable-line
+  }, [normalizedVoiceUrl, chapterCtx, user?.fullName, enqueueMp3Chunk, resetMp3Player, finalizeAssistantTurn, unlockAudioPlayback, resumeListeningAfterPlayback]); // eslint-disable-line
 
   useEffect(() => {
     if (!normalizedVoiceUrl) return;
+    shuttingDownRef.current = false;
     connectWS();
     return () => {
-      if (reconnectTimerRef.current) window.clearTimeout(reconnectTimerRef.current);
-      // Bump generation BEFORE close so onclose sees a stale gen and skips reconnect
-      wsActiveRef.current++;
-      wsRef.current?.close();
-      wsRef.current = null;
-      wsReadyRef.current = false;
+      stopVoiceSessionResources();
     };
-  }, [connectWS]);   // eslint-disable-line
+  }, [connectWS, stopVoiceSessionResources]); // eslint-disable-line
 
-  // ── SpeechRecognition ───────────────────────────────────────────────────────
   const recognitionAvailable = useMemo(() => {
-    const w = window as any;
+    const w = window as Window & { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown };
     return Boolean(w.SpeechRecognition || w.webkitSpeechRecognition);
   }, []);
 
-  useEffect(() => {
-    if (!recognitionAvailable) return;
-    const w   = window as any;
-    const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition;
-    const rec  = new Ctor();
-    rec.continuous      = true;
-    rec.interimResults  = true;
-    rec.lang            = "en-US";
-    rec.onerror         = (e: any) => console.debug("STT error:", e?.error || e);
-
-    let finalAccumulator = "";
-    let finalizeTimer: number | null = null;
-
-    const finalizeSoon = () => {
-      if (finalizeTimer) window.clearTimeout(finalizeTimer);
-      finalizeTimer = window.setTimeout(() => {
-        const t = finalAccumulator.trim();
-        if (!t) return;
-        finalAccumulator = "";
-        const nowTurn = ++turnIdRef.current;
-        setInterimTranscript("");
-        void handleUserTurn(t, nowTurn);
-      }, 420);
-    };
-
-    rec.onresult = (event: any) => {
-      let interim = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const r   = event.results[i];
-        const txt = r[0]?.transcript || "";
-        if (r.isFinal) {
-          finalAccumulator += (finalAccumulator ? " " : "") + txt;
-          finalizeSoon();
-        } else {
-          interim += txt;
-        }
-      }
-      setInterimTranscript(interim.trim());
-    };
-
-    recognitionRef.current = rec;
-    return () => {
-      try { rec.stop(); } catch { /* ignore */ }
-      recognitionRef.current = null;
-    };
-  }, [recognitionAvailable]);   // eslint-disable-line
-
-  // ── Mic volume analyser (orb + interrupt detection) ──────────────────────────
-  useEffect(() => {
-    let destroyed = false;
-    (async () => {
-      try {
-        const stream  = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const Ctor    = window.AudioContext || (window as any).webkitAudioContext;
-        const micCtx  = new Ctor();
-        const analyser = micCtx.createAnalyser();
-        analyser.fftSize = 1024;
-        analyser.smoothingTimeConstant = 0.8;
-        micCtx.createMediaStreamSource(stream).connect(analyser);
-        const data = new Uint8Array(analyser.fftSize);
-        analyserCleanupRef.current = () => {
-          stream.getTracks().forEach(t => t.stop());
-          try { micCtx.close(); } catch { /* ignore */ }
-        };
-        setMicReady(true);
-        let lastInterruptAt = 0;
-        const tick = () => {
-          if (destroyed) return;
-          analyser.getByteTimeDomainData(data);
-          let sumSq = 0;
-          for (let i = 0; i < data.length; i++) { const v = (data[i] - 128) / 128; sumSq += v * v; }
-          const level = clamp01(Math.sqrt(sumSq / data.length) * 3.2);
-          volumeRef.current = level;
-          setVolumeUi(level);
-          if (phaseRef.current === "speaking" && micEnabledRef.current && speakerEnabledRef.current) {
-            if (Date.now() - speakingStartedAtRef.current > 700 && level > 0.12) {
-              const now = Date.now();
-              if (now - lastInterruptAt > 650) { lastInterruptAt = now; void interruptAI(); }
-            }
-          }
-          requestAnimationFrame(tick);
-        };
-        requestAnimationFrame(tick);
-      } catch (e) { console.debug("Mic setup failed:", e); setMicReady(false); }
-    })();
-    return () => {
-      destroyed = true;
-      analyserCleanupRef.current?.();
-      analyserCleanupRef.current = null;
-    };
-  }, []);   // eslint-disable-line
-
-  useEffect(() => {
-    if (!micEnabled || !micReady || phase === "error") return;
-    if (phase === "idle") { setPhase("listening"); startRecognition(); }
-  }, [micEnabled, micReady, phase]);   // eslint-disable-line
-
-  const startRecognition = () => {
-    if (!recognitionRef.current) return;
+  const startRecognitionImpl = () => {
+    if (shuttingDownRef.current || !recognitionRef.current) return;
     try { recognitionRef.current.start(); } catch { /* ignore */ }
   };
-  const stopRecognition = () => {
+  const stopRecognitionImpl = () => {
     if (!recognitionRef.current) return;
     try { recognitionRef.current.stop(); } catch { /* ignore */ }
   };
+  startRecognitionRef.current = startRecognitionImpl;
+  stopRecognitionRef.current = stopRecognitionImpl;
 
   const stopAudioPlayback = () => {
-    if (streamReaderRef.current) {
-      try { streamReaderRef.current.cancel(); } catch { /* ignore */ }
-      streamReaderRef.current = null;
-    }
+    mp3PlayerRef.current?.setAllowAutoResume(false);
+    streamReaderRef.current?.cancel().catch(() => {});
+    streamReaderRef.current = null;
     mp3PlayerRef.current?.stop();
     mp3PlayerRef.current = null;
     fallbackMp3Ref.current?.stop();
     fallbackMp3Ref.current = null;
   };
 
-  // ── Interrupt (barge-in) ────────────────────────────────────────────────────
-  const interruptAI = async () => {
-    // Tell backend to cancel generation
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "interrupt" }));
-    }
+  const handleInterrupt = useCallback(() => {
+    if (interruptingRef.current) return;
+    interruptingRef.current = true;
+
     abortRef.current?.abort();
     abortRef.current = null;
     stopAudioPlayback();
-    speakingStartedAtRef.current = 0;
-    if (typingTimerRef.current) { window.clearInterval(typingTimerRef.current); typingTimerRef.current = null; }
     setAssistantText("");
     setVoiceRelatedImages([]);
-    setPhase("listening");
-    setErrorText(null);
-    startRecognition();
-  };
 
-  // ── Main turn handler ───────────────────────────────────────────────────────
-  const handleUserTurn = async (userText: string, turnId: number) => {
-    if (!normalizedVoiceUrl || !micEnabled) return;
-    if (userText.trim().length < 2) return;
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "interrupt" }));
+    }
+
+    micListenAllowedRef.current = true;
+    setPhase("listening");
+    setInterimTranscript("");
+    if (micEnabledRef.current) startRecognition();
+
+    window.setTimeout(() => {
+      interruptingRef.current = false;
+    }, 350);
+  }, []);
+
+  handleInterruptRef.current = handleInterrupt;
+
+  const handleUserTurn = async (
+    userText: string,
+    turnId: number,
+    opts?: { requireMic?: boolean; skipPhaseCheck?: boolean },
+  ) => {
+    if (shuttingDownRef.current) return;
+    if (!normalizedVoiceUrl) return;
+    if (opts?.requireMic !== false && !micEnabled) return;
+    if (
+      !opts?.skipPhaseCheck &&
+      (phaseRef.current === "speaking" ||
+        phaseRef.current === "thinking" ||
+        phaseRef.current === "connecting")
+    ) {
+      return;
+    }
+    if (!opts?.skipPhaseCheck && mp3PlayerRef.current?.isPlaying()) return;
+    const trimmed = userText.trim();
+    if (trimmed.length < 2) return;
 
     stopRecognition();
+    micListenAllowedRef.current = false;
     setPhase("thinking");
     setInterimTranscript("");
     setErrorText(null);
     setAssistantText("");
     setVoiceRelatedImages([]);
-    setLastHeardQuery(userText.trim());
+    appendUserTranscript(trimmed);
     stopAudioPlayback();
 
     if (wsRef.current?.readyState === WebSocket.OPEN && wsReadyRef.current) {
+      void unlockAudioPlayback();
       resetMp3Player();
-      console.debug("[voice] question sent", performance.now());
-      wsRef.current.send(JSON.stringify({ type: "question", text: userText.trim() }));
+      wsRef.current.send(JSON.stringify({ type: "question", text: trimmed }));
       return;
     }
 
-    // ── FALLBACK PATH: legacy POST binary stream ──────────────────────────────
     const controller = new AbortController();
     abortRef.current = controller;
-
     try {
       const voiceEndpoint = chapterCtx
         ? `${normalizedVoiceUrl}/auth/voice-stream`
         : `${normalizedVoiceUrl}/voice-stream`;
-
-      const body: Record<string, unknown> = { message: userText, conversation_id: "frontend-call" };
+      const body: Record<string, unknown> = { message: trimmed, conversation_id: "frontend-call" };
       if (chapterCtx) {
-        body.board        = chapterCtx.board;
-        body.class_level  = chapterCtx.classLevel;
-        body.subject_name = chapterCtx.subject;
-        body.chapter_ids  = chapterCtx.chapterIds;
-        body.chapter      = chapterCtx.chapterNames?.[0] || "";
-        body.chapter_names = chapterCtx.chapterNames;
+        Object.assign(body, {
+          board: chapterCtx.board,
+          class_level: chapterCtx.classLevel,
+          subject_name: chapterCtx.subject,
+          chapter_ids: chapterCtx.chapterIds,
+          chapter: chapterCtx.chapterNames?.[0] || "",
+          chapter_names: chapterCtx.chapterNames,
+        });
       }
-
       const res = await fetch(voiceEndpoint, {
-        method:  "POST",
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify(body),
-        signal:  controller.signal,
+        body: JSON.stringify(body),
+        signal: controller.signal,
       });
-      if (!res.ok)   throw new Error((await res.text()) || `HTTP ${res.status}`);
-      if (!res.body) throw new Error("No streaming body");
-      if (turnIdRef.current !== turnId) return;
+      if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
+      if (!res.body || turnIdRef.current !== turnId) return;
 
       const frameParser = new FrameParser();
-      const reader      = res.body.getReader();
+      const reader = res.body.getReader();
       streamReaderRef.current = reader;
       const fallbackPlayer = new Mp3StreamPlayer();
       fallbackPlayer.resetTurnClock();
       fallbackMp3Ref.current = fallbackPlayer;
       await fallbackPlayer.ready();
-      let firstAudio  = true;
+      await fallbackPlayer.unlock();
       let displayText = "";
+      let relatedImgs: VoiceRelatedImage[] = [];
 
-      try {
-        outer: while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          if (turnIdRef.current !== turnId) { reader.cancel(); break; }
-          for (const frame of frameParser.feed(value)) {
-            switch (frame.type) {
-              case FRAME_TEXT: {
-                const token = new TextDecoder().decode(frame.data);
-                displayText += token;
-                setAssistantText(displayText);
-                if (firstAudio) setPhase("speaking");
-                break;
-              }
-              case FRAME_IMAGES: {
-                try {
-                  const parsed = JSON.parse(new TextDecoder().decode(frame.data)) as unknown;
-                  const imgs = Array.isArray(parsed)
-                    ? (parsed.filter((x) => x && typeof x === "object") as VoiceRelatedImage[])
-                    : [];
-                  setVoiceRelatedImages(imgs);
-                } catch { /* ignore */ }
-                break;
-              }
-              case FRAME_AUDIO: {
-                if (!speakerEnabled) break;
-                const copy = new Uint8Array(frame.data).buffer;
-                fallbackPlayer.enqueue(copy);
-                if (firstAudio) {
-                  firstAudio = false;
-                  setPhase("speaking");
-                  speakingStartedAtRef.current = Date.now();
-                }
-                break;
-              }
-              case FRAME_DONE:
-                break outer;
+      outer: while (true) {
+        const { done, value } = await reader.read();
+        if (done || turnIdRef.current !== turnId) break;
+        for (const frame of frameParser.feed(value)) {
+          if (frame.type === FRAME_TEXT) {
+            displayText += new TextDecoder().decode(frame.data);
+            setAssistantText(displayText);
+            setPhase("speaking");
+          } else if (frame.type === FRAME_IMAGES) {
+            try {
+              const parsed = JSON.parse(new TextDecoder().decode(frame.data));
+              relatedImgs = Array.isArray(parsed)
+                ? (parsed.filter((x) => x && typeof x === "object") as VoiceRelatedImage[])
+                : [];
+              setVoiceRelatedImages(relatedImgs);
+            } catch { /* ignore */ }
+          } else if (frame.type === FRAME_AUDIO && speakerEnabledRef.current) {
+            fallbackPlayer.enqueue(new Uint8Array(frame.data).buffer);
+            if (fallbackPlayer.element.paused) {
+              void fallbackPlayer.element.play().catch(() => {});
             }
+            setPhase("speaking");
+          } else if (frame.type === FRAME_DONE) {
+            break outer;
           }
         }
-      } finally {
-        streamReaderRef.current = null;
       }
 
-      if (turnIdRef.current === turnId) {
-        const audioMs = fallbackMp3Ref.current?.remainingMs() ?? 0;
-        const delay   = Math.max(audioMs, 2500);
-        await new Promise<void>(resolve => {
-          const tid = window.setTimeout(resolve, delay);
-          controller.signal.addEventListener("abort", () => { window.clearTimeout(tid); resolve(); }, { once: true });
-        });
-        if (turnIdRef.current === turnId) {
-          setPhase("listening");
-          setInterimTranscript("");
-          startRecognition();
-        }
+      if (turnIdRef.current === turnId && displayText.trim()) {
+        setTranscriptEntries((prev) => [
+          ...prev,
+          {
+            id: `ai-${Date.now()}`,
+            role: "assistant",
+            text: displayText.trim(),
+            timeSec: getCallSeconds(),
+            images: relatedImgs.length > 0 ? relatedImgs : undefined,
+          },
+        ]);
+        setAssistantText("");
+        setVoiceRelatedImages([]);
+        fallbackPlayer.signalNoMoreChunks();
+        await fallbackPlayer.waitForPlaybackEnd();
+        micListenAllowedRef.current = true;
+        setPhase("listening");
+        startRecognition();
       }
-    } catch (e: any) {
-      if (e?.name === "AbortError") return;
-      console.error("handleUserTurn fallback error:", e);
+    } catch (e: unknown) {
+      if (e instanceof Error && e.name === "AbortError") return;
       setErrorText(e instanceof Error ? e.message : "Unable to reach the voice assistant.");
       setPhase("error");
     } finally {
@@ -609,339 +669,318 @@ export default function AIVoicePage() {
     }
   };
 
-  // ── Waveform orb canvas ─────────────────────────────────────────────────────
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    let raf = 0;
-    const dpr = window.devicePixelRatio || 1;
-    const resize = () => {
-      const r = canvas.getBoundingClientRect();
-      canvas.width  = Math.floor(r.width  * dpr);
-      canvas.height = Math.floor(r.height * dpr);
-    };
-    resize();
-    const draw = (t: number) => {
-      const { width, height } = canvas;
-      ctx.clearRect(0, 0, width, height);
-      const time = t / 1000, vol = volumeRef.current;
-      const cx = width / 2, cy = height / 2;
-      const radius = Math.min(width, height) * 0.28;
-      const intensity =
-        phase === "listening" ? 0.25 + vol * 0.9
-        : phase === "thinking" ? 0.35 + 0.25 * (0.5 + 0.5 * Math.sin(time * 2.8))
-        : phase === "speaking" ? 0.4 + 0.6 * vol
-        : 0.18;
-      ctx.beginPath();
-      ctx.arc(cx, cy, radius * (1.05 + intensity * 0.12), 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(99,102,241,${0.12 + intensity * 0.18})`;
-      ctx.fill();
-      ctx.strokeStyle = `rgba(167,139,250,${0.35 + intensity * 0.35})`;
-      ctx.lineWidth   = Math.max(2, Math.floor(2 * dpr));
-      ctx.beginPath();
-      const pts = 180;
-      for (let i = 0; i <= pts; i++) {
-        const a = (i / pts) * Math.PI * 2;
-        const wobble = (phase === "listening" || phase === "speaking" ? (0.65 + intensity) * vol : 0.15)
-          * Math.sin(a * 6 + time * (phase === "thinking" ? 3.2 : 9));
-        const r = radius * (1.0 + wobble * 0.55);
-        i === 0 ? ctx.moveTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r)
-                : ctx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
-      }
-      ctx.closePath();
-      ctx.stroke();
-      raf = requestAnimationFrame(draw);
-    };
-    raf = requestAnimationFrame(draw);
-    window.addEventListener("resize", resize);
-    return () => { window.removeEventListener("resize", resize); cancelAnimationFrame(raf); };
-  }, [phase]);
+  handleUserTurnRef.current = handleUserTurn;
 
-  // ── PDF upload (for standalone voice mode) ──────────────────────────────────
-  const handlePdfUpload = async (file: File) => {
-    if (!normalizedUploadUrl) { setErrorText("VITE_API_URL is not configured."); return; }
-    if (!file.name.toLowerCase().endsWith(".pdf")) { setErrorText("Please upload a PDF file."); return; }
-    const form = new FormData();
-    form.append("file", file);
-    try {
-      setIsUploadingPdf(true);
-      setUploadStatusText(`Uploading ${file.name}…`);
-      setErrorText(null);
-      const resp = await fetch(`${normalizedUploadUrl}/upload`, { method: "POST", body: form });
-      if (!resp.ok) throw new Error((await resp.text()) || `HTTP ${resp.status}`);
-      let hint = "";
-      try { const d = await resp.json(); if (typeof d.chunks === "number") hint = ` (${d.chunks} chunks)`; } catch { /* ignore */ }
-      setUploadStatusText(`PDF uploaded${hint}. Ask me anything about it.`);
-    } catch (e) {
-      setErrorText(e instanceof Error ? e.message : "PDF upload failed.");
-      setUploadStatusText(null);
-    } finally {
-      setIsUploadingPdf(false);
-      if (pdfInputRef.current) pdfInputRef.current.value = "";
+  useEffect(() => {
+    if (!recognitionAvailable) return;
+    const w = window as any;
+    const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition;
+    if (!Ctor) return;
+    const rec = new Ctor();
+    rec.continuous = true;
+    rec.interimResults = true;
+    rec.lang = "en-US";
+    let finalAccumulator = "";
+    let finalizeTimer: number | null = null;
+    rec.onresult = (event: any) => {
+      if (shuttingDownRef.current) return;
+      const aiBusy =
+        phaseRef.current === "speaking" ||
+        phaseRef.current === "thinking" ||
+        phaseRef.current === "connecting";
+
+      if (aiBusy) {
+        if (!bargeInEnabled || !micEnabledRef.current || phaseRef.current !== "speaking") return;
+        let interim = "";
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const txt = event.results[i][0]?.transcript || "";
+          if (event.results[i].isFinal) {
+            finalAccumulator += (finalAccumulator ? " " : "") + txt;
+            if (finalizeTimer) window.clearTimeout(finalizeTimer);
+            finalizeTimer = window.setTimeout(() => {
+              const t = finalAccumulator.trim();
+              finalAccumulator = "";
+              if (t.length >= 2 && volumeRef.current > 0.06) {
+                handleInterruptRef.current();
+                void handleUserTurnRef.current(t, ++turnIdRef.current, {
+                  requireMic: true,
+                  skipPhaseCheck: true,
+                });
+              }
+            }, 420);
+          } else {
+            interim += txt;
+          }
+        }
+        if (interim.trim()) setInterimTranscript(interim.trim());
+        return;
+      }
+
+      if (phaseRef.current !== "listening" || !micListenAllowedRef.current) return;
+      if (mp3PlayerRef.current?.isPlaying()) return;
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const txt = event.results[i][0]?.transcript || "";
+        if (event.results[i].isFinal) {
+          finalAccumulator += (finalAccumulator ? " " : "") + txt;
+          if (finalizeTimer) window.clearTimeout(finalizeTimer);
+          finalizeTimer = window.setTimeout(() => {
+            const t = finalAccumulator.trim();
+            finalAccumulator = "";
+            if (t) void handleUserTurn(t, ++turnIdRef.current, { requireMic: true });
+          }, 420);
+        } else {
+          interim += txt;
+        }
+      }
+      setInterimTranscript(interim.trim());
+    };
+    recognitionRef.current = rec;
+    return () => { try { rec.stop(); } catch { /* ignore */ } };
+  }, [recognitionAvailable]); // eslint-disable-line
+
+  useEffect(() => {
+    let destroyed = false;
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+        const Ctor = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        if (!Ctor) return;
+        const micCtx = new Ctor();
+        const analyser = micCtx.createAnalyser();
+        analyser.fftSize = 1024;
+        micCtx.createMediaStreamSource(stream).connect(analyser);
+        const data = new Uint8Array(analyser.fftSize);
+        analyserCleanupRef.current = () => {
+          stream.getTracks().forEach((t) => t.stop());
+          try { micCtx.close(); } catch { /* ignore */ }
+        };
+        setMicReady(true);
+        const tick = () => {
+          if (destroyed) return;
+          analyser.getByteTimeDomainData(data);
+          let sumSq = 0;
+          for (let i = 0; i < data.length; i++) {
+            const v = (data[i] - 128) / 128;
+            sumSq += v * v;
+          }
+          const level = clamp01(Math.sqrt(sumSq / data.length) * 3.2);
+          volumeRef.current = level;
+          setVolumeUi(level);
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      } catch {
+        setMicReady(false);
+      }
+    })();
+    return () => {
+      destroyed = true;
+      analyserCleanupRef.current?.();
+    };
+  }, [finalizeAssistantTurn]); // eslint-disable-line
+
+  useEffect(() => {
+    if (!micReady || phase === "error") return;
+    if (phase === "listening" && micEnabled && micListenAllowedRef.current) {
+      if (!mp3PlayerRef.current?.isPlaying()) {
+        startRecognition();
+      }
+    } else if (phase === "speaking" && bargeInEnabled && micEnabled) {
+      startRecognition();
+    } else if (
+      phase === "thinking" ||
+      (phase === "speaking" && !bargeInEnabled) ||
+      phase === "connecting"
+    ) {
+      stopRecognition();
     }
+  }, [phase, micEnabled, micReady, bargeInEnabled]); // eslint-disable-line
+
+  useEffect(() => {
+    if (!micEnabled || !micReady || phase === "error") return;
+    if (phase === "idle" && micListenAllowedRef.current) {
+      setPhase("listening");
+    }
+  }, [micEnabled, micReady, phase]); // eslint-disable-line
+
+  // Unlock audio on first user interaction (browser autoplay policy).
+  useEffect(() => {
+    const onGesture = () => {
+      if (audioPolicyUnlockedRef.current) return;
+      void unlockAudioPlayback();
+    };
+    window.addEventListener("pointerdown", onGesture, { once: true, passive: true });
+    window.addEventListener("keydown", onGesture, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", onGesture);
+      window.removeEventListener("keydown", onGesture);
+    };
+  }, [unlockAudioPlayback]);
+
+  const leaveVoiceSession = useCallback(() => {
+    finalizeAssistantTurn();
+    stopVoiceSessionResources();
+    setAssistantText("");
+    setInterimTranscript("");
+    setPhase("idle");
+    setIsCallLive(false);
+    callStartRef.current = null;
+    setCallSeconds(0);
+  }, [finalizeAssistantTurn, stopVoiceSessionResources]);
+
+  const handleEndCall = () => {
+    leaveVoiceSession();
+    if (chapterCtx) setLocation(chapterSelectionPath(chapterCtx.subjectId));
   };
 
-  // ── Derived values ──────────────────────────────────────────────────────────
-  const statusText =
-    phase === "listening" ? "Listening…"
-    : phase === "thinking" ? "Thinking…"
-    : phase === "speaking" ? "Speaking…"
-    : phase === "error"   ? "Connection error"
-    : "Idle";
+  const handleBackToChapters = () => {
+    leaveVoiceSession();
+    setLocation(chapterSelectionPath(chapterCtx?.subjectId));
+  };
 
-  const orbScale =
-    phase === "listening" ? 1 + volumeUi * 0.06
-    : phase === "thinking" ? 1.04
-    : phase === "speaking" ? 1.08
-    : 1;
+  useEffect(() => {
+    const onPageHide = () => {
+      stopVoiceSessionResources();
+    };
+    window.addEventListener("pagehide", onPageHide);
+    return () => window.removeEventListener("pagehide", onPageHide);
+  }, [stopVoiceSessionResources]);
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  const studentName = user?.fullName || "Student";
+  const studentInitial = (studentName.split(/\s+/)[0]?.[0] || "S").toUpperCase();
+  const isTyping = phase === "thinking" || (Boolean(assistantText) && phase === "speaking");
+  const aiWaveActive = phase === "speaking";
+  const aiWaveIntensity = aiWaveActive ? 0.72 : 0.2;
+  const studentWaveActive =
+    phase === "listening" &&
+    micEnabled &&
+    (volumeUi > 0.06 || Boolean(interimTranscript.trim()));
+  const studentWaveIntensity = Math.max(0.35, 0.35 + volumeUi * 0.65);
+
   return (
-    <div
-      className="min-h-screen w-full relative overflow-hidden"
-      style={{ background: "linear-gradient(135deg,rgba(17,24,39,1) 0%,rgba(10,10,20,1) 45%,rgba(25,10,45,1) 100%)" }}
-    >
-      <style>{`
-        @keyframes bgShift { 0%{filter:hue-rotate(0deg)} 50%{filter:hue-rotate(12deg)} 100%{filter:hue-rotate(0deg)} }
-        .orbBackdrop {
-          background: radial-gradient(circle at 50% 40%,rgba(99,102,241,.18),rgba(0,0,0,0) 55%),
-                      radial-gradient(circle at 60% 60%,rgba(168,85,247,.16),rgba(0,0,0,0) 50%);
-          animation: bgShift 6s ease-in-out infinite;
-        }
-        .glass { background:rgba(5,5,15,.45); backdrop-filter:blur(10px); border:1px solid rgba(255,255,255,.08); }
-        @keyframes ringPulse {
-          0%{transform:translate(-50%,-50%) scale(.75);opacity:0}
-          15%{opacity:.4}
-          100%{transform:translate(-50%,-50%) scale(1.35);opacity:0}
-        }
-      `}</style>
-
-      <div className="orbBackdrop absolute inset-0" />
-
-      <div className="relative z-10 flex flex-col min-h-screen">
-        {/* Header */}
-        <header className="px-4 pt-4 flex items-start justify-between gap-3">
-          <div className="flex items-start gap-2">
-            {chapterCtx && (
-              <Button variant="ghost" size="icon"
-                className="h-7 w-7 shrink-0 text-slate-300 hover:text-white hover:bg-white/10 mt-0.5"
-                onClick={() => setLocation("/ai-learning-studio")}
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-            )}
-            <div>
-              <div className="text-sm text-slate-300">
-                {chapterCtx ? (
-                  <span className="flex items-center gap-1.5">
-                    <BookOpen className="h-3.5 w-3.5" />
-                    {chapterCtx.subject}
-                    <span className="text-slate-500 font-normal">
-                      &middot; {chapterCtx.board} &middot; {chapterCtx.classLevel.replace("CLASS_", "Class ")}
-                    </span>
-                  </span>
-                ) : "ForeFold Assistant"}
-              </div>
-              {chapterCtx ? (
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {chapterCtx.chapterNames.map((name, i) => (
-                    <Badge key={i} variant="secondary"
-                      className="text-[10px] py-0 bg-white/10 text-slate-300 border-white/10">
-                      {name}
-                    </Badge>
-                  ))}
-                </div>
-              ) : (
-                <>
-                  <div className="text-xs text-slate-500">{connectionStatus}</div>
-                  {uploadStatusText && <div className="text-xs text-indigo-300 mt-1">{uploadStatusText}</div>}
-                </>
-              )}
-            </div>
-          </div>
-
-          <div className="flex flex-col items-end gap-2">
-            <Button variant="outline" size="sm"
-              className="border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
-              onClick={() => pdfInputRef.current?.click()} disabled={isUploadingPdf}
+    <div className="h-full min-h-0 w-full flex flex-col overflow-hidden bg-background">
+      <header className="shrink-0 px-3 py-2 sm:px-4 sm:py-2.5 flex items-center justify-between gap-3 border-b border-border bg-card/80 backdrop-blur-sm">
+        <div className="flex items-center gap-2 min-w-0">
+          {chapterCtx && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+              onClick={handleBackToChapters}
             >
-              {isUploadingPdf ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
-              {isUploadingPdf ? "Uploading…" : "Upload PDF"}
+              <ArrowLeft className="h-4 w-4" />
             </Button>
-            <input ref={pdfInputRef} type="file" accept="application/pdf,.pdf" className="hidden"
-              onChange={e => { const f = e.target.files?.[0]; if (f) void handlePdfUpload(f); }} />
-            <div className="text-xs text-slate-400 text-right">
-              {phase === "speaking" || phase === "thinking" ? "Talk naturally, I'll respond." : "Press mic and speak."}
-            </div>
+          )}
+          <div className="flex items-center gap-2 text-sm font-semibold text-foreground min-w-0">
+            <BookOpen className="h-4 w-4 text-primary shrink-0" />
+            <span className="truncate">{subjectLabel} Tutor</span>
           </div>
-        </header>
-
-        {/* Main orb */}
-        <main className="flex-1 flex items-center justify-center px-4 pb-24">
-          <div className="w-full max-w-lg flex flex-col items-center gap-4">
-            <div className="relative w-72 h-72 sm:w-80 sm:h-80">
-              {phase === "speaking" && (
-                <>
-                  <div className="absolute left-1/2 top-1/2 rounded-full border border-indigo-400/40"
-                    style={{ width:"110%",height:"110%",animation:"ringPulse 1.2s ease-out infinite" }} />
-                  <div className="absolute left-1/2 top-1/2 rounded-full border border-purple-300/35"
-                    style={{ width:"95%",height:"95%",animation:"ringPulse 1.2s ease-out infinite",animationDelay:"0.25s" }} />
-                </>
-              )}
-
-              <div className="glass rounded-full absolute inset-0" style={{
-                transform: `scale(${orbScale})`,
-                transition: "transform 180ms ease",
-                boxShadow:
-                  phase === "listening" ? `0 0 ${12 + volumeUi * 45}px rgba(99,102,241,.35)`
-                  : phase === "thinking" ? "0 0 28px rgba(167,139,250,.25)"
-                  : phase === "speaking" ? "0 0 42px rgba(167,139,250,.35)"
-                  : "0 0 18px rgba(99,102,241,.18)",
-              }} />
-              <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
-
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="glass rounded-2xl px-4 py-2 text-center max-w-[85%]">
-                  <div className="text-sm sm:text-base text-white font-medium">{statusText}</div>
-                  <div className="text-[11px] text-slate-400 mt-1 leading-snug">
-                    {phase === "listening"
-                      ? interimTranscript ? `"${interimTranscript}"` : "Say something…"
-                      : phase === "thinking"
-                      ? "Searching your chapter…"
-                      : phase === "speaking" && currentSentence
-                      ? <span className="text-indigo-200">{currentSentence}</span>
-                      : phase === "speaking"
-                      ? "You can interrupt me."
-                      : "Ready."}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {(assistantText || lastHeardQuery) && (
-              <div className="glass w-full rounded-2xl p-4 max-h-48 overflow-y-auto">
-                {lastHeardQuery && (
-                  <div className="flex items-start gap-1.5 mb-3">
-                    <span className="text-[10px] uppercase tracking-wide text-slate-500 pt-0.5 shrink-0">You</span>
-                    <span className="text-xs text-slate-400 italic">{lastHeardQuery}</span>
-                  </div>
-                )}
-                {assistantText && (
-                  <div className="flex items-start gap-1.5">
-                    <span className="text-[10px] uppercase tracking-wide text-indigo-400 pt-0.5 shrink-0">AI</span>
-                    <div className="text-sm text-slate-100 leading-relaxed">
-                      {assistantText}
-                      {(phase === "speaking" || phase === "thinking") && (
-                        <span className="inline-block w-1.5 h-3.5 bg-indigo-400 ml-0.5 align-middle animate-pulse" />
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
+          <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground min-w-0">
+            <span className="text-border">·</span>
+            {isCallLive ? (
+              <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium shrink-0">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Live
+              </span>
+            ) : (
+              <span className="text-amber-600 dark:text-amber-400 shrink-0">Connecting…</span>
             )}
-
-            {voiceRelatedImages.length > 0 && (
-              <div className="glass w-full rounded-2xl p-3 max-h-40 overflow-x-auto overflow-y-hidden">
-                <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-2">Textbook figures</div>
-                <div className="flex gap-2 pb-1">
-                  {voiceRelatedImages.map((img, idx) => (
-                    <div key={`${img.url}-${idx}`} className="shrink-0 w-28 rounded-lg border border-white/10 overflow-hidden bg-black/30">
-                      <img
-                        src={textbookImageSrc(img.url, accessToken)}
-                        alt={img.caption || `Figure ${idx + 1}`}
-                        className="w-full h-20 object-contain"
-                        loading="lazy"
-                      />
-                      {(img.caption || img.page) && (
-                        <div className="text-[9px] text-slate-400 px-1 py-0.5 line-clamp-2">
-                          {img.caption || `Page ${img.page ?? ""}`}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {errorText && (
-              <div className="glass w-full rounded-2xl p-4 border-red-400/20">
-                <div className="text-sm font-medium text-red-200">Error</div>
-                <div className="text-sm text-slate-300 mt-1">{errorText}</div>
-              </div>
+            {chapterCtx && chapterCtx.chapterNames.length > 0 && (
+              <>
+                <span className="text-border">·</span>
+                <span className="truncate">{chapterCtx.chapterNames[0]}</span>
+              </>
             )}
           </div>
-        </main>
+        </div>
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <span className="sm:hidden inline-flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+            {isCallLive && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+            {isCallLive ? "Live" : "…"}
+          </span>
+          <Badge
+            variant="outline"
+            className="font-mono text-xs tabular-nums border-border text-foreground bg-muted/50 px-2.5 py-0.5"
+          >
+            {String(Math.floor(callSeconds / 60)).padStart(2, "0")}:{String(callSeconds % 60).padStart(2, "0")}
+          </Badge>
+          <span className="text-xs text-muted-foreground hidden sm:inline">{connectionStatus}</span>
+        </div>
+      </header>
 
-        {/* Footer controls */}
-        <footer className="absolute bottom-4 left-0 right-0 px-4">
-          <div className="glass rounded-2xl mx-auto max-w-lg px-4 py-3 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon"
-                className={cn(micEnabled ? "text-indigo-300 hover:bg-indigo-500/10" : "text-slate-400 hover:bg-white/5")}
-                onClick={() => {
-                  setMicEnabled(v => !v);
-                  if (micEnabled) { stopRecognition(); setPhase("idle"); }
-                  else if (micReady) { setPhase("listening"); startRecognition(); }
-                }}
-                aria-label={micEnabled ? "Mute mic" : "Unmute mic"}
-              >
-                {micEnabled ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
-              </Button>
-              <div className="hidden sm:block">
-                <div className="text-xs text-slate-400">Mic</div>
-                <div className="text-sm text-slate-200">{micEnabled ? "On" : "Muted"}</div>
-              </div>
-            </div>
+      {chapterCtx && chapterCtx.chapterNames.length > 0 && (
+        <div className="sm:hidden shrink-0 px-3 py-1 border-b border-border text-[11px] text-muted-foreground truncate bg-muted/30">
+          {isCallLive ? (
+            <span className="text-emerald-600 dark:text-emerald-400">Live · </span>
+          ) : (
+            <span className="text-amber-600 dark:text-amber-400">Connecting · </span>
+          )}
+          {chapterCtx.chapterNames[0]}
+        </div>
+      )}
 
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon"
-                className={cn(speakerEnabled ? "text-indigo-300 hover:bg-indigo-500/10" : "text-slate-400 hover:bg-white/5")}
-                onClick={() => {
-                  setSpeakerEnabled(v => !v);
-                  if (speakerEnabled) { stopAudioPlayback(); stopRecognition(); setPhase("listening"); startRecognition(); }
-                }}
-                aria-label={speakerEnabled ? "Disable speaker" : "Enable speaker"}
-              >
-                {speakerEnabled ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
-              </Button>
-            </div>
+      <main className="flex-1 min-h-0 overflow-hidden w-full h-full">
+        <VoiceLiveCall
+          phase={phase}
+          subjectLabel={subjectLabel}
+          studentName={studentName}
+          studentInitial={studentInitial}
+          micEnabled={micEnabled}
+          speakerEnabled={speakerEnabled}
+          aiActive={aiWaveActive}
+          aiIntensity={aiWaveIntensity}
+          studentActive={studentWaveActive}
+          studentIntensity={studentWaveIntensity}
+          tutorState={tutorState}
+          entries={transcriptEntries}
+          isTyping={isTyping}
+          streamingAssistantText={assistantText || undefined}
+          streamingRelatedImages={voiceRelatedImages}
+          imagesRetrieving={isTyping && voiceRelatedImages.length === 0}
+          imagesRetrievingHint={
+            chapterCtx?.chapterNames?.[0]
+              ? `Looking up figures from ${chapterCtx.chapterNames[0]}…`
+              : undefined
+          }
+          accessToken={accessToken}
+          onToggleMic={() => {
+            setMicEnabled((v) => !v);
+            if (micEnabled) {
+              stopRecognition();
+              setPhase("idle");
+            } else if (micReady) {
+              setPhase("listening");
+              startRecognition();
+            }
+          }}
+          onToggleSpeaker={() => {
+            setSpeakerEnabled((v) => !v);
+            if (speakerEnabled) stopAudioPlayback();
+          }}
+          onInterrupt={handleInterrupt}
+          canInterrupt={phase === "speaking" || phase === "thinking"}
+          onEndCall={handleEndCall}
+        />
+      </main>
 
-            <Button variant="destructive" size="icon"
-              onClick={() => {
-                if (wsRef.current?.readyState === WebSocket.OPEN) {
-                  wsRef.current.send(JSON.stringify({ type: "stop" }));
-                }
-                wsRef.current?.close();
-                wsRef.current = null;
-                wsReadyRef.current = false;
-                if (reconnectTimerRef.current) { window.clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null; }
-                abortRef.current?.abort();
-                stopAudioPlayback();
-                stopRecognition();
-                if (typingTimerRef.current) { window.clearInterval(typingTimerRef.current); typingTimerRef.current = null; }
-                setAssistantText("");
-                setInterimTranscript("");
-                setErrorText(null);
-                setPhase("idle");
-              }}
-              aria-label="End conversation"
-            >
-              <PhoneOff className="h-5 w-5" />
-            </Button>
+      {errorText && (
+        <div className="shrink-0 px-3 pb-2 sm:px-4 sm:pb-3 max-w-7xl mx-auto w-full">
+          <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 sm:px-4 sm:py-3 text-xs sm:text-sm text-destructive">
+            {errorText}
           </div>
-        </footer>
-      </div>
+        </div>
+      )}
 
       {!recognitionAvailable && (
-        <div className="fixed inset-0 flex items-center justify-center p-6">
-          <div className="glass rounded-2xl p-6 max-w-md">
-            <div className="text-sm font-medium text-slate-100">Speech Recognition not supported</div>
-            <div className="text-sm text-slate-300 mt-2">
-              Your browser doesn't support the Web Speech API. Try Chrome on desktop/macOS.
-            </div>
-          </div>
+        <div className="fixed bottom-4 left-4 right-4 lg:left-auto lg:right-4 lg:max-w-sm rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-100 z-50">
+          Speech recognition unavailable — voice input is not supported in this browser.
         </div>
       )}
     </div>
