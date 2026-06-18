@@ -28,7 +28,6 @@ import {
   UploadCloud,
   CreditCard,
   Database,
-  User,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/auth-store";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";

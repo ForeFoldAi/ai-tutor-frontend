@@ -11,7 +11,7 @@ import { useAuthStore } from "@/lib/auth-store";
 import { useToast } from "@/hooks/use-toast";
 import { GraduationCap, Eye, EyeOff, Loader2 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { API_BASE } from "@/api";
+import { mockGetMe, mockLogin } from "@/mock-data";
 import { UserRole } from "@/types/schema";
 
 const loginSchema = z.object({
@@ -47,31 +47,8 @@ export default function LoginPage() {
   const onSubmit = async (data: LoginFormValues) => {
     setIsLoading(true);
     try {
-      const loginResponse = await fetch(`${API_BASE}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: data.username, password: data.password }),
-      });
-      const loginText = await loginResponse.text();
-      if (!loginResponse.ok) throw new Error(loginText || "Invalid credentials");
-      const loginPayload = JSON.parse(loginText) as { access_token?: string; refresh_token?: string };
-      if (!loginPayload.access_token || !loginPayload.refresh_token) throw new Error("Missing auth tokens");
-
-      const meResponse = await fetch(`${API_BASE}/auth/me`, {
-        headers: { Authorization: `Bearer ${loginPayload.access_token}` },
-      });
-      const meText = await meResponse.text();
-      if (!meResponse.ok) throw new Error(meText || "Failed to load profile");
-      const me = JSON.parse(meText) as {
-        id: string;
-        full_name: string;
-        email: string;
-        role: string;
-        organization_id: string | null;
-        school_id: string | null;
-        teaching_board?: string | null;
-        teaching_classes?: { grade: string; sections: string[] }[] | null;
-      };
+      const loginPayload = await mockLogin(data.username, data.password);
+      const me = await mockGetMe(loginPayload.access_token);
 
       const mappedUser = {
         id: me.id,

@@ -27,7 +27,13 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/auth-store";
-import { apiFetch, authFetch } from "@/api";
+import {
+  mockChatVoiceStream,
+  mockSendChapterChatMessage,
+  mockSendChatMessage,
+  mockStreamChapterChatMessage,
+  mockUploadPdf,
+} from "@/mock-data";
 import {
   AssistantMessageContent,
   type RelatedTextbookImage,
@@ -70,30 +76,9 @@ const suggestedTopics = [
   "How does Newton's third law work?",
 ];
 
-// API URL from environment variable
-const API_URL = import.meta.env.VITE_API_URL || "";
-
-// Voice API URL from environment
-const VOICE_URL = import.meta.env.VITE_VOICE_URL || API_URL;
-
-// Upload PDF file
+// Upload PDF file (mock)
 const uploadPDF = async (file: File): Promise<void> => {
-  if (!API_URL) {
-    throw new Error("API_URL is not configured");
-  }
-
-  const formData = new FormData();
-  formData.append("file", file);
-
-  const response = await fetch(`${API_URL}/upload`, {
-    method: "POST",
-    body: formData,
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Upload failed: ${errorText}`);
-  }
+  await mockUploadPdf(file);
 };
 
 interface ChapterContext {
@@ -125,47 +110,15 @@ function useChapterContext(): ChapterContext | null {
 }
 
 const sendChatMessage = async (query: string): Promise<string> => {
-  if (!API_URL) {
-    throw new Error("API_URL is not configured");
-  }
-
-  const response = await fetch(`${API_URL}/chat`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Chat failed: ${errorText}`);
-  }
-
-  const data = await response.json();
-  return data.answer || "";
+  return mockSendChatMessage(query);
 };
 
 const sendChapterChatMessage = async (
   query: string,
   ctx: ChapterContext,
-  conversationHistory?: Array<{ role: string; content: string }>,
+  _conversationHistory?: Array<{ role: string; content: string }>,
 ): Promise<{ answer: string; relatedImages: RelatedTextbookImage[] }> => {
-  const data = await apiFetch<{ answer: string; related_images?: RelatedTextbookImage[] }>("/auth/chat", {
-    method: "POST",
-    body: JSON.stringify({
-      query,
-      board: ctx.board,
-      class_level: ctx.classLevel,
-      subject_name: ctx.subject,
-      chapter_ids: ctx.chapterIds,
-      chapter: ctx.chapterNames[0] || "",
-      chapter_names: ctx.chapterNames,
-      conversation_history: conversationHistory ?? [],
-    }),
-  });
-  return {
-    answer: data.answer || "",
-    relatedImages: data.related_images ?? [],
-  };
+  return mockSendChapterChatMessage(query, { subject: ctx.subject });
 };
 
 function buildConversationHistory(
@@ -185,69 +138,9 @@ async function streamChapterChatMessage(
     onToken: (chunk: string) => void;
     onImages: (images: RelatedTextbookImage[]) => void;
   },
-  conversationHistory?: Array<{ role: string; content: string }>,
+  _conversationHistory?: Array<{ role: string; content: string }>,
 ): Promise<string> {
-  const res = await authFetch("/auth/chat/stream", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      query,
-      board: ctx.board,
-      class_level: ctx.classLevel,
-      subject_name: ctx.subject,
-      chapter_ids: ctx.chapterIds,
-      chapter: ctx.chapterNames[0] || "",
-      chapter_names: ctx.chapterNames,
-      conversation_history: conversationHistory ?? [],
-    }),
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `Stream failed (${res.status})`);
-  }
-  if (!res.body) {
-    throw new Error("Stream response has no body");
-  }
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let full = "";
-
-  const parseLine = (trimmed: string) => {
-    if (!trimmed) return;
-    let evt: { type?: string; content?: string; images?: RelatedTextbookImage[] };
-    try {
-      evt = JSON.parse(trimmed);
-    } catch {
-      return;
-    }
-    if (evt.type === "token" && evt.content) {
-      full += evt.content;
-      handlers.onToken(evt.content);
-    } else if (evt.type === "related_images" && Array.isArray(evt.images)) {
-      handlers.onImages(evt.images);
-    }
-  };
-
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    for (const line of lines) {
-      parseLine(line.trim());
-    }
-  }
-  if (buffer.trim()) {
-    parseLine(buffer.trim());
-  }
-
-  return full;
+  return mockStreamChapterChatMessage(query, { subject: ctx.subject }, handlers);
 }
 
 export default function AITutorPage() {
@@ -330,18 +223,11 @@ export default function AITutorPage() {
       return;
     }
 
-    if (!API_URL) {
-      setUploadError("API_URL is not configured. Please set VITE_API_URL in your .env file and restart the dev server.");
-      return;
-    }
-
     setIsUploading(true);
     setUploadError(null);
 
     try {
-      console.log("Uploading file to:", `${API_URL}/upload`);
       await uploadPDF(file);
-      console.log("Upload successful");
       setUploadedFile(file);
     } catch (error) {
       console.error("Upload error:", error);
@@ -465,18 +351,9 @@ export default function AITutorPage() {
             /* stream answer is still shown */
           }
         }
-      } else if (API_URL) {
+      } else {
         fullContent = await sendChatMessage(content);
         patchAssistant(fullContent);
-      } else {
-        fullContent = `That's a great question! Let me explain this concept step by step.\n\nBased on your question about "${content.slice(0, 50)}...", here's a detailed explanation:\n\nThis topic involves several key concepts that work together. First, let's understand the fundamental principles. Then we can explore how these principles apply in different scenarios.\n\nKey points to remember:\n• Understanding the basics is crucial\n• Practice helps reinforce learning\n• Real-world applications make concepts clearer\n\nWould you like me to elaborate on any specific aspect of this topic?`;
-        const words = fullContent.split(" ");
-        for (let i = 0; i < words.length; i++) {
-          await new Promise((resolve) => setTimeout(resolve, 20));
-          const partial = words.slice(0, i + 1).join(" ");
-          patchAssistant(partial);
-        }
-        fullContent = words.join(" ");
       }
 
       setConversations((prev) =>
@@ -554,10 +431,6 @@ export default function AITutorPage() {
   // Stream MP3 from /chat-voice; optionally play while buffering for cache replay.
   const fetchVoiceForMessage = async (message: Message, opts?: { play?: boolean }) => {
     if (!message.content.trim()) return;
-    if (!VOICE_URL) {
-      setVoiceError("VOICE_URL (or VITE_API_URL) is not configured. Please update your .env and restart the dev server.");
-      return;
-    }
 
     stopChatVoicePlayback();
     const controller = new AbortController();
@@ -568,18 +441,8 @@ export default function AITutorPage() {
       setIsVoiceLoading(true);
       setVoiceError(null);
 
-      const response = await fetch(`${VOICE_URL}/chat-voice`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: message.content }),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || "Voice request failed");
-      }
-      if (!response.body) {
+      const body = await mockChatVoiceStream(message.content);
+      if (!body) {
         throw new Error("Voice response has no stream body");
       }
 
@@ -595,7 +458,7 @@ export default function AITutorPage() {
       }
 
       const chunks: Uint8Array[] = [];
-      const reader = response.body.getReader();
+      const reader = body.getReader();
 
       while (true) {
         const { done, value } = await reader.read();
@@ -1096,12 +959,10 @@ export default function AITutorPage() {
                 size="icon"
                 disabled={isUploading || isLoading}
                 className="flex-shrink-0"
-                title={API_URL ? "Upload PDF" : "API_URL not configured - upload will fail"}
+                title="Upload PDF"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  console.log("Upload button clicked, API_URL:", API_URL);
-                  console.log("File input ref:", fileInputRef.current);
                   if (fileInputRef.current && !isUploading && !isLoading) {
                     fileInputRef.current.click();
                   } else {

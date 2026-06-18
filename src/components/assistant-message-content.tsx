@@ -1,7 +1,6 @@
 import { type ReactNode, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { API_BASE } from "@/api";
 import { isSafeImageInjectionPoint } from "@/lib/stream-safe-images";
 
 const BOLD_RE = /\*\*(.+?)\*\*/g;
@@ -341,10 +340,7 @@ function MainSectionWithImages({
 
 export function textbookImageSrc(relativeUrl: string, accessToken?: string | null): string {
   if (!relativeUrl) return "";
-  let u =
-    relativeUrl.startsWith("http://") || relativeUrl.startsWith("https://")
-      ? relativeUrl
-      : `${API_BASE}${relativeUrl.startsWith("/") ? "" : "/"}${relativeUrl}`;
+  let u = relativeUrl;
   if (accessToken) {
     u += `${u.includes("?") ? "&" : "?"}access_token=${encodeURIComponent(accessToken)}`;
   }

@@ -8,6 +8,7 @@ import { useAuthStore } from "@/lib/auth-store";
 import { Mp3StreamPlayer } from "@/lib/mp3-stream-player";
 import { VoiceLiveCall } from "@/components/voice/voice-live-call";
 import type { TranscriptEntry, VoiceRelatedImage, VoicePhase } from "@/components/voice/voice-types";
+import { mockVoiceHealthCheck, mockVoiceStream } from "@/mock-data";
 import { ArrowLeft, BookOpen } from "lucide-react";
 
 type Phase = VoicePhase;
@@ -37,21 +38,9 @@ class FrameParser {
   }
 }
 
-function getAccessToken(): string {
-  return (
-    localStorage.getItem("access_token") ||
-    localStorage.getItem("token") ||
-    sessionStorage.getItem("access_token") ||
-    sessionStorage.getItem("token") ||
-    ""
-  );
-}
-
 export default function AIVoicePage() {
   const [, setLocation] = useLocation();
   const { token: accessToken, user } = useAuthStore();
-  const API_URL = import.meta.env.VITE_API_URL || "";
-  const VOICE_URL = import.meta.env.VITE_VOICE_URL || "";
   const bargeInEnabled = import.meta.env.VITE_VOICE_BARGE_IN === "true";
 
   const chapterCtx = useMemo(() => {
@@ -71,10 +60,18 @@ export default function AIVoicePage() {
     };
   }, []);
 
-  const normalizedVoiceUrl = useMemo(() => {
-    const url = (VOICE_URL || API_URL).trim();
-    return url.endsWith("/") ? url.slice(0, -1) : url;
-  }, [VOICE_URL, API_URL]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const ok = await mockVoiceHealthCheck();
+        if (!cancelled) setConnectionStatus(ok ? "Connected" : "Voice unavailable");
+      } catch {
+        if (!cancelled) setConnectionStatus("Voice unavailable");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const subjectLabel = chapterCtx?.subject || "General";
 
@@ -94,7 +91,7 @@ export default function AIVoicePage() {
   const [transcriptEntries, setTranscriptEntries] = useState<TranscriptEntry[]>([]);
   const [callSeconds, setCallSeconds] = useState(0);
   const [isCallLive, setIsCallLive] = useState(false);
-  const [tutorState, setTutorState] = useState("LISTENING");
+  const [tutorState] = useState("LISTENING");
 
   const volumeRef = useRef(0);
   const [volumeUi, setVolumeUi] = useState(0);
@@ -117,7 +114,6 @@ export default function AIVoicePage() {
   const phaseRef = useRef<Phase>(phase);
   const micEnabledRef = useRef(micEnabled);
   const speakerEnabledRef = useRef(speakerEnabled);
-  const speakingStartedAtRef = useRef(0);
   const callStartRef = useRef<number | null>(null);
   const assistantTextRef = useRef("");
   const voiceImagesRef = useRef<VoiceRelatedImage[]>([]);
@@ -181,35 +177,6 @@ export default function AIVoicePage() {
     [getCallSeconds],
   );
 
-  const resumeListeningAfterPlayback = useCallback(async () => {
-    if (shuttingDownRef.current) return;
-    const player = mp3PlayerRef.current;
-    if (player) {
-      player.signalNoMoreChunks();
-      await player.waitForPlaybackEnd();
-      // Brief pause so speaker tail is not picked up by the mic.
-      await new Promise<void>((r) => window.setTimeout(r, 400));
-    }
-    if (
-      phaseRef.current === "speaking" ||
-      phaseRef.current === "thinking" ||
-      phaseRef.current === "connecting"
-    ) {
-      micListenAllowedRef.current = true;
-      setPhase("listening");
-      setInterimTranscript("");
-      if (micEnabledRef.current) startRecognition();
-    }
-  }, []);
-
-  const resetMp3Player = useCallback(() => {
-    mp3PlayerRef.current?.stop();
-    const player = new Mp3StreamPlayer();
-    player.resetTurnClock();
-    mp3PlayerRef.current = player;
-    void player.ready().then(() => player.unlock()).catch(() => {});
-  }, []);
-
   const unlockAudioPlayback = useCallback(async () => {
     if (!mp3PlayerRef.current) {
       mp3PlayerRef.current = new Mp3StreamPlayer();
@@ -224,27 +191,6 @@ export default function AIVoicePage() {
     }
   }, []);
 
-  const enqueueMp3Chunk = useCallback((raw: ArrayBuffer) => {
-    if (shuttingDownRef.current) return;
-    if (!speakerEnabledRef.current || raw.byteLength === 0) return;
-    if (!mp3PlayerRef.current) {
-      const player = new Mp3StreamPlayer();
-      player.resetTurnClock();
-      mp3PlayerRef.current = player;
-    }
-    const player = mp3PlayerRef.current;
-    void player.ready().then(() => {
-      player.enqueue(raw);
-      if (player.element.paused) {
-        void player.element.play().catch(() => {});
-      }
-    });
-    if (phaseRef.current !== "speaking") {
-      setPhase("speaking");
-      speakingStartedAtRef.current = Date.now();
-    }
-  }, []);
-
   useEffect(() => {
     if (!isCallLive) return;
     const id = window.setInterval(() => {
@@ -255,25 +201,6 @@ export default function AIVoicePage() {
     return () => window.clearInterval(id);
   }, [isCallLive]);
 
-  useEffect(() => {
-    if (!normalizedVoiceUrl) {
-      setConnectionStatus("Missing VITE_API_URL");
-      setPhase("error");
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`${normalizedVoiceUrl}/health`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        if (!cancelled) setConnectionStatus("Connected");
-      } catch {
-        if (!cancelled) setConnectionStatus("Voice API unreachable");
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [normalizedVoiceUrl]);
-
   const stopVoiceSessionResources = useCallback(() => {
     shuttingDownRef.current = true;
     turnIdRef.current += 1;
@@ -283,21 +210,6 @@ export default function AIVoicePage() {
       reconnectTimerRef.current = null;
     }
 
-    const ws = wsRef.current;
-    if (ws?.readyState === WebSocket.OPEN) {
-      try {
-        ws.send(JSON.stringify({ type: "stop" }));
-      } catch {
-        /* ignore */
-      }
-    }
-    if (ws && ws.readyState <= WebSocket.OPEN) {
-      try {
-        ws.close();
-      } catch {
-        /* ignore */
-      }
-    }
     wsRef.current = null;
     wsReadyRef.current = false;
     wsActiveRef.current += 1;
@@ -324,162 +236,21 @@ export default function AIVoicePage() {
   }, []);
 
   const connectWS = useCallback(() => {
-    if (!normalizedVoiceUrl || shuttingDownRef.current) return;
-    if (reconnectTimerRef.current) {
-      window.clearTimeout(reconnectTimerRef.current);
-      reconnectTimerRef.current = null;
+    if (shuttingDownRef.current) return;
+    setConnectionStatus("Connected");
+    setIsCallLive(true);
+    if (!callStartRef.current) callStartRef.current = Date.now();
+    const sendGreet = shouldGreetOnConnectRef.current && Boolean(chapterCtx);
+    if (sendGreet) {
+      shouldGreetOnConnectRef.current = false;
+      stripGreetSearchParam();
+      micListenAllowedRef.current = false;
+      setPhase("connecting");
     }
-    if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) return;
-
-    const myGen = ++wsActiveRef.current;
-    const wsBase = normalizedVoiceUrl.startsWith("https://")
-      ? normalizedVoiceUrl.replace("https://", "wss://")
-      : normalizedVoiceUrl.replace("http://", "ws://");
-    const token = getAccessToken();
-    const fullUrl = token ? `${wsBase}/ws/voice?token=${encodeURIComponent(token)}` : `${wsBase}/ws/voice`;
-
-    const ws = new WebSocket(fullUrl);
-    ws.binaryType = "arraybuffer";
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      wsReadyRef.current = true;
-      setConnectionStatus("Connected");
-      setIsCallLive(true);
-      if (!callStartRef.current) callStartRef.current = Date.now();
-      const sendGreet = shouldGreetOnConnectRef.current && Boolean(chapterCtx);
-      if (sendGreet) {
-        shouldGreetOnConnectRef.current = false;
-        stripGreetSearchParam();
-        micListenAllowedRef.current = false;
-        setPhase("connecting");
-      }
-      void unlockAudioPlayback();
-      ws.send(
-        JSON.stringify({
-          type: "session_start",
-          board: chapterCtx?.board || "",
-          class_level: chapterCtx?.classLevel || "",
-          subject_name: chapterCtx?.subject || "",
-          chapter_ids: chapterCtx?.chapterIds || null,
-          chapter: chapterCtx?.chapterNames?.[0] || "",
-          chapter_names: chapterCtx?.chapterNames || [],
-          student_name: user?.fullName || "",
-          greet: sendGreet,
-        }),
-      );
-    };
-
-    ws.onmessage = async (event) => {
-      if (shuttingDownRef.current) return;
-      if (event.data instanceof ArrayBuffer) {
-        enqueueMp3Chunk(event.data);
-        return;
-      }
-      if (event.data instanceof Blob) {
-        try {
-          const buf = await event.data.arrayBuffer();
-          enqueueMp3Chunk(buf);
-        } catch {
-          /* ignore */
-        }
-        return;
-      }
-      let msg: Record<string, unknown>;
-      try {
-        msg = JSON.parse(event.data as string);
-      } catch {
-        return;
-      }
-
-      switch (msg.type) {
-        case "greeting_start":
-          micListenAllowedRef.current = false;
-          stopRecognition();
-          setPhase("speaking");
-          setAssistantText(String(msg.text ?? ""));
-          setVoiceRelatedImages([]);
-          resetMp3Player();
-          break;
-        case "thinking":
-          micListenAllowedRef.current = false;
-          stopRecognition();
-          setPhase("thinking");
-          setAssistantText("");
-          setVoiceRelatedImages([]);
-          resetMp3Player();
-          break;
-        case "related_images": {
-          const raw = msg.images;
-          const imgs = Array.isArray(raw)
-            ? (raw.filter((x) => x && typeof x === "object") as VoiceRelatedImage[])
-            : [];
-          setVoiceRelatedImages(imgs);
-          break;
-        }
-        case "speaking":
-          if (!bargeInEnabled) stopRecognition();
-          else if (micEnabledRef.current) startRecognition();
-          setPhase("speaking");
-          speakingStartedAtRef.current = Date.now();
-          break;
-        case "ai_text_token": {
-          const tok = String(msg.token ?? "");
-          if (!bargeInEnabled) stopRecognition();
-          setAssistantText((prev) => prev + tok);
-          if (phaseRef.current === "thinking") setPhase("speaking");
-          break;
-        }
-        case "interrupt_ack":
-          stopAudioPlayback();
-          micListenAllowedRef.current = true;
-          setPhase("listening");
-          setAssistantText("");
-          setVoiceRelatedImages([]);
-          if (micEnabledRef.current) startRecognition();
-          break;
-        case "tutor_state":
-          setTutorState(String(msg.state ?? "LISTENING"));
-          break;
-        case "done": {
-          finalizeAssistantTurn();
-          void resumeListeningAfterPlayback();
-          break;
-        }
-        case "listening":
-          if (!mp3PlayerRef.current?.isPlaying()) {
-            micListenAllowedRef.current = true;
-            setPhase("listening");
-          }
-          break;
-        case "error":
-          setErrorText(String(msg.message || "Voice assistant error."));
-          setPhase("error");
-          break;
-        case "ping":
-          ws.send(JSON.stringify({ type: "pong" }));
-          break;
-      }
-    };
-
-    ws.onerror = () => {
-      wsReadyRef.current = false;
-      setConnectionStatus("WebSocket error");
-    };
-
-    ws.onclose = () => {
-      wsReadyRef.current = false;
-      setIsCallLive(false);
-      if (shuttingDownRef.current || myGen !== wsActiveRef.current) return;
-      wsRef.current = null;
-      if (phaseRef.current === "error") return;
-      setConnectionStatus("Reconnecting…");
-      reconnectTimerRef.current = window.setTimeout(connectWS, 2500);
-    };
-  }, [normalizedVoiceUrl, chapterCtx, user?.fullName, enqueueMp3Chunk, resetMp3Player, finalizeAssistantTurn, unlockAudioPlayback, resumeListeningAfterPlayback]); // eslint-disable-line
+    void unlockAudioPlayback();
+  }, [chapterCtx, unlockAudioPlayback]);
 
   useEffect(() => {
-    if (!normalizedVoiceUrl) return;
     shuttingDownRef.current = false;
     connectWS();
     return () => {
@@ -545,7 +316,6 @@ export default function AIVoicePage() {
     opts?: { requireMic?: boolean; skipPhaseCheck?: boolean },
   ) => {
     if (shuttingDownRef.current) return;
-    if (!normalizedVoiceUrl) return;
     if (opts?.requireMic !== false && !micEnabled) return;
     if (
       !opts?.skipPhaseCheck &&
@@ -569,41 +339,14 @@ export default function AIVoicePage() {
     appendUserTranscript(trimmed);
     stopAudioPlayback();
 
-    if (wsRef.current?.readyState === WebSocket.OPEN && wsReadyRef.current) {
-      void unlockAudioPlayback();
-      resetMp3Player();
-      wsRef.current.send(JSON.stringify({ type: "question", text: trimmed }));
-      return;
-    }
-
     const controller = new AbortController();
     abortRef.current = controller;
     try {
-      const voiceEndpoint = chapterCtx
-        ? `${normalizedVoiceUrl}/auth/voice-stream`
-        : `${normalizedVoiceUrl}/voice-stream`;
-      const body: Record<string, unknown> = { message: trimmed, conversation_id: "frontend-call" };
-      if (chapterCtx) {
-        Object.assign(body, {
-          board: chapterCtx.board,
-          class_level: chapterCtx.classLevel,
-          subject_name: chapterCtx.subject,
-          chapter_ids: chapterCtx.chapterIds,
-          chapter: chapterCtx.chapterNames?.[0] || "",
-          chapter_names: chapterCtx.chapterNames,
-        });
-      }
-      const res = await fetch(voiceEndpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal: controller.signal,
-      });
-      if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
-      if (!res.body || turnIdRef.current !== turnId) return;
+      const body = await mockVoiceStream(trimmed, chapterCtx?.subject);
+      if (!body || turnIdRef.current !== turnId) return;
 
       const frameParser = new FrameParser();
-      const reader = res.body.getReader();
+      const reader = body.getReader();
       streamReaderRef.current = reader;
       const fallbackPlayer = new Mp3StreamPlayer();
       fallbackPlayer.resetTurnClock();

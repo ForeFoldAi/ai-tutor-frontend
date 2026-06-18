@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { GraduationCap, Eye, EyeOff, Loader2 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { API_BASE } from "@/api";
+import { mockSignupOrganization, mockSignupStudent } from "@/mock-data";
 
 const signupSchema = z.object({
   full_name: z.string().min(2, "Full name is required"),
@@ -69,33 +69,20 @@ export default function SignupPage() {
   const onSubmit = async (data: SignupFormValues) => {
     setIsLoading(true);
     try {
-      const endpoint =
-        data.role === "organization" ? "/auth/signup/organization" : "/auth/signup/student";
-      const payload =
-        data.role === "organization"
-          ? {
-              full_name: data.full_name,
-              email: data.email,
-              password: data.password,
-              organization_name: data.organization_name,
-              phone: data.phone,
-              address: data.address,
-            }
-          : {
-              full_name: data.full_name,
-              email: data.email,
-              password: data.password,
-              school_name: data.school_name,
-              grade: data.grade,
-              board: data.board,
-            };
-      const res = await fetch(`${API_BASE}${endpoint}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const txt = await res.text();
-      if (!res.ok) throw new Error(txt || "Could not create account");
+      if (data.role === "organization") {
+        await mockSignupOrganization({
+          full_name: data.full_name,
+          email: data.email,
+          password: data.password,
+          organization_name: data.organization_name!,
+        });
+      } else {
+        await mockSignupStudent({
+          full_name: data.full_name,
+          email: data.email,
+          password: data.password,
+        });
+      }
 
       if (data.role === "organization" && data.no_of_schools) {
         localStorage.setItem("org_signup_no_of_schools", data.no_of_schools);
