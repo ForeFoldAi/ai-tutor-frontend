@@ -6,14 +6,19 @@ export default {
   theme: {
     extend: {
       borderRadius: {
-        lg: ".5625rem", /* 9px */
-        md: ".375rem", /* 6px */
-        sm: ".1875rem", /* 3px */
+        lg: "var(--radius-card)",
+        md: "var(--radius-button)",
+        sm: "calc(var(--radius-button) - 4px)",
+        button: "var(--radius-button)",
+        input: "var(--radius-input)",
+        card: "var(--radius-card)",
+        dialog: "var(--radius-dialog)",
+        badge: "var(--radius-badge)",
       },
       colors: {
-        // Flat / base colors (regular buttons)
         background: "hsl(var(--background) / <alpha-value>)",
         foreground: "hsl(var(--foreground) / <alpha-value>)",
+        "body-foreground": "hsl(var(--body-foreground) / <alpha-value>)",
         border: "hsl(var(--border) / <alpha-value>)",
         input: "hsl(var(--input) / <alpha-value>)",
         card: {
@@ -28,6 +33,7 @@ export default {
         },
         primary: {
           DEFAULT: "hsl(var(--primary) / <alpha-value>)",
+          hover: "hsl(var(--primary-hover) / <alpha-value>)",
           foreground: "hsl(var(--primary-foreground) / <alpha-value>)",
           border: "var(--primary-border)",
         },
@@ -35,6 +41,9 @@ export default {
           DEFAULT: "hsl(var(--secondary) / <alpha-value>)",
           foreground: "hsl(var(--secondary-foreground) / <alpha-value>)",
           border: "var(--secondary-border)",
+        },
+        "brand-secondary": {
+          DEFAULT: "hsl(var(--brand-secondary) / <alpha-value>)",
         },
         muted: {
           DEFAULT: "hsl(var(--muted) / <alpha-value>)",
@@ -50,6 +59,15 @@ export default {
           DEFAULT: "hsl(var(--destructive) / <alpha-value>)",
           foreground: "hsl(var(--destructive-foreground) / <alpha-value>)",
           border: "var(--destructive-border)",
+        },
+        success: {
+          DEFAULT: "hsl(var(--success) / <alpha-value>)",
+        },
+        warning: {
+          DEFAULT: "hsl(var(--warning) / <alpha-value>)",
+        },
+        info: {
+          DEFAULT: "hsl(var(--info) / <alpha-value>)",
         },
         ring: "hsl(var(--ring) / <alpha-value>)",
         chart: {
@@ -73,7 +91,14 @@ export default {
         "sidebar-accent": {
           DEFAULT: "hsl(var(--sidebar-accent) / <alpha-value>)",
           foreground: "hsl(var(--sidebar-accent-foreground) / <alpha-value>)",
-          border: "var(--sidebar-accent-border)"
+          border: "var(--sidebar-accent-border)",
+        },
+        subject: {
+          math: "hsl(var(--subject-math) / <alpha-value>)",
+          english: "hsl(var(--subject-english) / <alpha-value>)",
+          science: "hsl(var(--subject-science) / <alpha-value>)",
+          social: "hsl(var(--subject-social) / <alpha-value>)",
+          cs: "hsl(var(--subject-cs) / <alpha-value>)",
         },
         status: {
           online: "rgb(34 197 94)",
@@ -81,6 +106,15 @@ export default {
           busy: "rgb(239 68 68)",
           offline: "rgb(156 163 175)",
         },
+      },
+      boxShadow: {
+        card: "var(--shadow-card)",
+        "card-hover": "var(--shadow-card-hover)",
+        focus: "var(--shadow-focus)",
+      },
+      backgroundImage: {
+        "gradient-brand": "var(--gradient-brand)",
+        "gradient-brand-hover": "var(--gradient-brand-hover)",
       },
       fontFamily: {
         sans: ["var(--font-sans)"],
@@ -100,6 +134,9 @@ export default {
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+      },
+      transitionDuration: {
+        DEFAULT: "200ms",
       },
     },
   },

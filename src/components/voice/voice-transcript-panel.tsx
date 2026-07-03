@@ -4,11 +4,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { renderTutorText } from "@/lib/render-tutor-text";
 import {
   TextbookImageGallery,
   TextbookImagesRetrieving,
   type RelatedTextbookImage,
 } from "@/components/assistant-message-content";
+import { MathLessonPanel } from "@/components/math-lesson/math-lesson-panel";
+import { ScienceExperimentPanel } from "@/components/science-experiment/science-experiment-panel";
+import type { MathLesson } from "@/types/math-lesson";
+import type { ScienceExperiment } from "@/types/science-experiment";
 import type { TranscriptEntry, VoiceRelatedImage } from "./voice-types";
 
 function formatTranscriptTime(sec: number): string {
@@ -20,6 +25,8 @@ export function VoiceTranscriptPanel({
   isTyping,
   streamingAssistantText,
   streamingRelatedImages,
+  streamingMathLesson,
+  streamingScienceExperiment,
   imagesRetrieving,
   imagesRetrievingHint,
   textInput,
@@ -32,6 +39,8 @@ export function VoiceTranscriptPanel({
   isTyping: boolean;
   streamingAssistantText?: string;
   streamingRelatedImages?: VoiceRelatedImage[];
+  streamingMathLesson?: MathLesson | null;
+  streamingScienceExperiment?: ScienceExperiment | null;
   imagesRetrieving?: boolean;
   imagesRetrievingHint?: string;
   textInput: string;
@@ -46,7 +55,7 @@ export function VoiceTranscriptPanel({
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, [entries, isTyping, streamingAssistantText, streamingRelatedImages]);
+  }, [entries, isTyping, streamingAssistantText, streamingRelatedImages, streamingMathLesson, streamingScienceExperiment]);
 
   const streamingImages = (streamingRelatedImages ?? []) as RelatedTextbookImage[];
   const showStreamingImages = streamingImages.length > 0;
@@ -87,7 +96,7 @@ export function VoiceTranscriptPanel({
                 (streamingImages.length > 0 || showStreamingImages) ? "w-full max-w-full" : "max-w-[92%]",
               )}
             >
-              <p className="text-[10px] uppercase tracking-wide text-indigo-300 mb-1">EduAI</p>
+              <p className="text-[10px] uppercase tracking-wide text-indigo-300 mb-1">AI Voice</p>
               {!streamingAssistantText ? (
                 <div className="flex items-center gap-1.5 text-slate-400 text-sm">
                   <span className="inline-flex gap-1">
@@ -100,10 +109,10 @@ export function VoiceTranscriptPanel({
               ) : null}
               {streamingAssistantText ? (
                 <div className="flex flex-col w-full min-w-0" data-layout="text-top-images-row">
-                  <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap break-words">
-                    {streamingAssistantText}
+                  <div className="text-sm text-slate-200 leading-relaxed break-words tutor-message-content">
+                    {renderTutorText(streamingAssistantText)}
                     <span className="inline-block w-1.5 h-3.5 bg-indigo-400 ml-0.5 animate-pulse align-middle" />
-                  </p>
+                  </div>
                   {showStreamingImages ? (
                     <TextbookImageGallery
                       images={streamingImages}
@@ -115,6 +124,10 @@ export function VoiceTranscriptPanel({
                       hint={imagesRetrievingHint}
                       className="border-white/10 [&>div]:border-white/15 [&>div]:bg-slate-900/40 [&_p]:text-slate-300"
                     />
+                  ) : null}
+                  {streamingMathLesson ? <MathLessonPanel lesson={streamingMathLesson} /> : null}
+                  {streamingScienceExperiment ? (
+                    <ScienceExperimentPanel experiment={streamingScienceExperiment} />
                   ) : null}
                 </div>
               ) : null}
@@ -171,7 +184,7 @@ function TranscriptBubble({
   accessToken?: string | null;
 }) {
   const isUser = entry.role === "user";
-  const label = isUser ? "You" : "EduAI";
+  const label = isUser ? "You" : "AI Voice";
   const images = (entry.images ?? []) as RelatedTextbookImage[];
   const hasImages = images.length > 0;
 
@@ -220,7 +233,7 @@ function TranscriptBubble({
           ) : (
             <div className="flex flex-col w-full min-w-0" data-layout="text-top-images-row">
               {entry.text ? (
-                <p className="whitespace-pre-wrap break-words">{entry.text}</p>
+                <div className="break-words tutor-message-content">{renderTutorText(entry.text)}</div>
               ) : null}
               {hasImages ? (
                 <TextbookImageGallery
@@ -228,6 +241,10 @@ function TranscriptBubble({
                   token={accessToken}
                   className="border-white/10 [&_figure]:border-white/15 [&_figure]:bg-slate-900/60 [&_figcaption]:text-slate-400 [&_figcaption]:border-white/10"
                 />
+              ) : null}
+              {entry.mathLesson ? <MathLessonPanel lesson={entry.mathLesson} /> : null}
+              {entry.scienceExperiment ? (
+                <ScienceExperimentPanel experiment={entry.scienceExperiment} />
               ) : null}
             </div>
           )}

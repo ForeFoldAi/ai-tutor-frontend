@@ -467,7 +467,7 @@ export const demoTextbookUploads: TextbookUpload[] = [
     embeddingStatus: "Processing",
     language: "English",
     edition: "2025",
-    publisher: "EduAI Press",
+    publisher: "AI Voice Press",
     academicYear: "2025-2026",
   },
   {
@@ -505,7 +505,7 @@ export const demoTextbookUploads: TextbookUpload[] = [
     embeddingStatus: "Embedded",
     language: "English",
     edition: "2025",
-    publisher: "EduAI Press",
+    publisher: "AI Voice Press",
     academicYear: "2025-2026",
   },
 ];

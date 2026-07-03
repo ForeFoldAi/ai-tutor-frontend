@@ -1,4 +1,5 @@
 import { useAuthStore } from "@/lib/auth-store";
+import { studentFriendlyApiError } from "@/lib/student-messages";
 
 const API_BASE = (import.meta.env.VITE_API_URL || "http://127.0.0.1:8004").replace(/\/$/, "");
 
@@ -73,7 +74,7 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || `Request failed (${res.status})`);
+    throw new Error(studentFriendlyApiError(text, res.status));
   }
 
   if (res.status === 204) return null as T;

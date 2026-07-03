@@ -1,16 +1,10 @@
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { AuthBrandMark } from "@/components/auth/auth-brand-mark";
+import { FloatingSettingsButton } from "@/components/floating-settings-button";
 import { useAuthStore } from "@/lib/auth-store";
-import { Badge } from "@/components/ui/badge";
-
-const roleLabels: Record<string, string> = {
-  student: "Student",
-  tutor: "Tutor",
-  school_admin: "School Admin",
-  org_admin: "Organization",
-  master_admin: "Master Admin",
-};
+import { UserRole } from "@/types/schema";
+import { useLocation } from "wouter";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -18,33 +12,28 @@ interface AppLayoutProps {
 
 export function AppLayout({ children }: AppLayoutProps) {
   const { user } = useAuthStore();
-
+  const [location] = useLocation();
   const style = {
     "--sidebar-width": "16rem",
     "--sidebar-width-icon": "3rem",
   };
+  const isStudent = !user || user.role === UserRole.STUDENT;
+  const showFloatingSettings =
+    isStudent && (location === "/dashboard" || location === "/settings");
 
   return (
     <SidebarProvider style={style as React.CSSProperties}>
-      <div className="flex h-screen w-full">
+      <div className="flex h-screen w-full flex-col md:flex-row">
         <AppSidebar />
-        <div className="flex flex-1 flex-col overflow-hidden min-h-0">
-          <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b px-4 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-            <div className="flex items-center gap-4">
-              <SidebarTrigger data-testid="button-sidebar-toggle" />
-            </div>
-            <div className="flex items-center gap-3">
-              {user && (
-                <Badge variant="outline" className="hidden sm:flex">
-                  {roleLabels[user.role] || "User"}
-                </Badge>
-              )}
-              <ThemeToggle />
-            </div>
+        <div className="flex min-h-0 flex-1 flex-col">
+          <header className="flex shrink-0 items-center gap-3 border-b border-border bg-background px-4 py-3 md:hidden">
+            <SidebarTrigger className="h-9 w-9" data-testid="button-mobile-menu" />
+            <AuthBrandMark variant="sidebar" className="min-w-0 flex-1" />
           </header>
-          <main className="flex-1 min-h-0 overflow-auto bg-background">
+          <main className="flex min-h-0 flex-1 flex-col overflow-auto bg-background [&:has(.dashboard-fit)]:overflow-hidden">
             {children}
           </main>
+          {showFloatingSettings && <FloatingSettingsButton />}
         </div>
       </div>
     </SidebarProvider>

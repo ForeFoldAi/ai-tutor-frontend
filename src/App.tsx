@@ -11,9 +11,9 @@ import LoginPage from "@/pages/login";
 import SignupPage from "@/pages/signup";
 import DashboardPage from "@/pages/dashboard";
 import AILearningStudioPage from "@/pages/ai-learning-studio";
+import MyLearningPage from "@/pages/my-learning";
 import AITutorPage from "@/pages/ai-tutor";
 import AssignmentsPage from "@/pages/assignments";
-import AnalyticsPage from "@/pages/analytics";
 import LiveClassesPage from "@/pages/live-classes";
 import SettingsPage from "@/pages/settings";
 import UsersPage from "@/pages/users";
@@ -110,6 +110,14 @@ function Router() {
         </ProtectedRoute>
       </Route>
       
+      <Route path="/my-learning">
+        <ProtectedRoute>
+          <div className="flex min-h-0 flex-1 flex-col">
+            <MyLearningPage />
+          </div>
+        </ProtectedRoute>
+      </Route>
+
       <Route path="/ai-learning-studio/subject/:subjectId">
         <ProtectedRoute>
           <AILearningStudioPage />
@@ -142,19 +150,23 @@ function Router() {
       
       <Route path="/assignments">
         <ProtectedRoute>
-          <AssignmentsPage />
+          <div className="flex min-h-0 flex-1 flex-col">
+            <AssignmentsPage />
+          </div>
         </ProtectedRoute>
       </Route>
       
       <Route path="/analytics">
         <ProtectedRoute>
-          <AnalyticsPage />
+          <Redirect to="/dashboard" />
         </ProtectedRoute>
       </Route>
       
       <Route path="/live-classes">
         <ProtectedRoute>
-          <LiveClassesPage />
+          <div className="flex min-h-0 flex-1 flex-col">
+            <LiveClassesPage />
+          </div>
         </ProtectedRoute>
       </Route>
       
@@ -166,7 +178,9 @@ function Router() {
       
       <Route path="/settings">
         <ProtectedRoute>
-          <SettingsPage />
+          <div className="flex min-h-0 flex-1 flex-col">
+            <SettingsPage />
+          </div>
         </ProtectedRoute>
       </Route>
       

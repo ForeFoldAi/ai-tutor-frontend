@@ -1,5 +1,6 @@
 import { AlertCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { MSG, studentFriendlyError } from "@/lib/student-messages";
 
 interface DataStateProps {
   loading: boolean;
@@ -24,10 +25,12 @@ export function DataState({ loading, error, empty, emptyText, onRetry, children 
     return (
       <div className="flex flex-col items-center gap-2 py-10 text-center">
         <AlertCircle className="h-5 w-5 text-destructive" />
-        <p className="text-sm text-muted-foreground">{error}</p>
+        <p className="text-sm text-muted-foreground">
+          {studentFriendlyError(error, MSG.server)}
+        </p>
         {onRetry ? (
           <Button variant="outline" size="sm" onClick={onRetry}>
-            Retry
+            {MSG.tryAgain}
           </Button>
         ) : null}
       </div>

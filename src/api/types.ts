@@ -57,6 +57,32 @@ export interface UpdateMeProfilePayload {
   new_password?: string;
 }
 
+/** GET/PATCH/DELETE /auth/me/settings */
+export interface UserSettings {
+  user_id: string;
+  username: string | null;
+  language: string;
+  theme: "light" | "dark";
+  notify_email: boolean;
+  notify_push: boolean;
+  notify_assignments: boolean;
+  notify_sessions: boolean;
+  notify_messages: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UpdateUserSettingsPayload {
+  username?: string | null;
+  language?: string;
+  theme?: "light" | "dark";
+  notify_email?: boolean;
+  notify_push?: boolean;
+  notify_assignments?: boolean;
+  notify_sessions?: boolean;
+  notify_messages?: boolean;
+}
+
 export interface OrganizationSignupPayload {
   full_name: string;
   email: string;

@@ -1,26 +1,27 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Bot,
+  ChevronDown,
   Mic,
   MicOff,
   PhoneOff,
+  Send,
   Square,
   User,
   Volume2,
   VolumeX,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
-  TextbookImageGallery,
-  TextbookImagesRetrieving,
+  AssistantMessageContent,
   type RelatedTextbookImage,
 } from "@/components/assistant-message-content";
+import type { MathLesson } from "@/types/math-lesson";
+import type { ScienceExperiment } from "@/types/science-experiment";
 import { AiWaveform } from "./ai-waveform";
 import type { TranscriptEntry, VoicePhase, VoiceRelatedImage } from "./voice-types";
-
-const figureGalleryClass =
-  "border-border [&_figure]:border-border [&_figure]:bg-muted/60 [&_figcaption]:text-muted-foreground [&_figcaption]:border-border";
 
 function formatTranscriptTime(sec: number): string {
   return `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`;
@@ -31,13 +32,15 @@ type Phase = VoicePhase;
 function phaseLabel(phase: Phase, subjectLabel: string, tutorHint: string | null): string {
   switch (phase) {
     case "speaking":
-      return `Speaking about ${subjectLabel}${tutorHint ? ` · ${tutorHint}` : ""}`;
+      return tutorHint || `Speaking about ${subjectLabel}`;
     case "thinking":
-      return "Thinking…";
+      return tutorHint || "Thinking about what you said…";
     case "listening":
-      return `Listening${tutorHint ? ` · ${tutorHint}` : ""}`;
+      return tutorHint || `Listening · ${subjectLabel}`;
     case "connecting":
       return "Connecting to your tutor…";
+    case "error":
+      return "Connection lost — tap Reconnect above";
     default:
       return "Ready when you are";
   }
@@ -54,6 +57,7 @@ function VoicePresence({
   studentActive,
   studentIntensity,
   micEnabled,
+  hearingYou = false,
 }: {
   phase: Phase;
   subjectLabel: string;
@@ -65,16 +69,19 @@ function VoicePresence({
   studentActive: boolean;
   studentIntensity: number;
   micEnabled: boolean;
+  hearingYou?: boolean;
 }) {
   const tutorTurn = phase === "speaking" || phase === "thinking";
   const userTurn = phase === "listening" && (studentActive || micEnabled);
   const statusText = tutorTurn
     ? phase === "thinking"
-      ? "EduAI is preparing a reply…"
-      : "EduAI is speaking"
+      ? tutorHint || "AI Voice is thinking about what you said…"
+      : tutorHint || "AI Voice is speaking with you"
     : userTurn
       ? studentActive
-        ? "You're speaking"
+        ? hearingYou
+          ? "Hearing you…"
+          : "You're speaking"
         : micEnabled
           ? "Listening for your voice"
           : "Microphone muted"
@@ -121,7 +128,7 @@ function VoicePresence({
 
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-foreground truncate">
-            {tutorTurn ? "EduAI Tutor" : studentName}
+            {tutorTurn ? "AI Voice Tutor" : studentName}
           </p>
           <p className="text-xs text-muted-foreground truncate mt-0.5">{statusText}</p>
         </div>
@@ -149,6 +156,7 @@ function MessageBubble({
   const isUser = entry.role === "user";
   const images = (entry.images ?? []) as RelatedTextbookImage[];
   const hasImages = images.length > 0;
+  const hasRichAssistantContent = Boolean(entry.text || hasImages || entry.mathLesson || entry.scienceExperiment);
 
   return (
     <div className={cn("flex gap-2.5 items-end", isUser ? "flex-row-reverse" : "flex-row")}>
@@ -165,10 +173,22 @@ function MessageBubble({
         )}
       </div>
 
-      <div className={cn("min-w-0 flex flex-col gap-1", isUser ? "items-end max-w-[85%]" : "items-start max-w-[90%]")}>
+      <div
+        className={cn(
+          "min-w-0 flex flex-col gap-1",
+          isUser
+            ? "items-end max-w-[85%]"
+            : cn(
+                "items-start",
+                hasRichAssistantContent && (hasImages || entry.mathLesson)
+                  ? "max-w-[92%] sm:max-w-[min(92%,40rem)] w-full"
+                  : "max-w-[85%] sm:max-w-[80%]",
+              ),
+        )}
+      >
         <div className={cn("flex items-center gap-2 px-1", isUser && "flex-row-reverse")}>
           <span className={cn("text-[10px] font-medium", isUser ? "text-muted-foreground" : "text-indigo-600 dark:text-indigo-300")}>
-            {isUser ? "You" : "EduAI"}
+            {isUser ? "You" : "AI Voice"}
           </span>
           <span className="text-[10px] text-muted-foreground/70 tabular-nums">{formatTranscriptTime(entry.timeSec)}</span>
         </div>
@@ -178,7 +198,10 @@ function MessageBubble({
             "rounded-2xl px-3.5 py-2.5 sm:px-4 sm:py-3 text-sm leading-relaxed shadow-sm",
             isUser
               ? "rounded-br-md bg-primary text-primary-foreground"
-              : "rounded-bl-md bg-card border border-border text-foreground",
+              : cn(
+                  "rounded-bl-md border border-primary/25 bg-[hsl(var(--ai-purple-light))] text-foreground",
+                  hasImages || entry.mathLesson ? "w-full" : "",
+                ),
           )}
         >
           {isUser ? (
@@ -196,12 +219,13 @@ function MessageBubble({
               ) : null}
             </>
           ) : (
-            <div className="flex flex-col w-full min-w-0 gap-2">
-              {entry.text ? <p className="whitespace-pre-wrap break-words">{entry.text}</p> : null}
-              {hasImages ? (
-                <TextbookImageGallery images={images} token={accessToken} className={figureGalleryClass} />
-              ) : null}
-            </div>
+            <AssistantMessageContent
+              content={entry.text || ""}
+              relatedImages={images}
+              mathLesson={entry.mathLesson}
+              scienceExperiment={entry.scienceExperiment}
+              token={accessToken}
+            />
           )}
         </div>
       </div>
@@ -212,26 +236,40 @@ function MessageBubble({
 function StreamingBubble({
   streamingAssistantText,
   streamingRelatedImages,
+  streamingMathLesson,
+  streamingScienceExperiment,
   imagesRetrieving,
   imagesRetrievingHint,
   accessToken,
 }: {
   streamingAssistantText?: string;
   streamingRelatedImages?: VoiceRelatedImage[];
+  streamingMathLesson?: MathLesson | null;
+  streamingScienceExperiment?: ScienceExperiment | null;
   imagesRetrieving?: boolean;
   imagesRetrievingHint?: string;
   accessToken?: string | null;
 }) {
   const streamingImages = (streamingRelatedImages ?? []) as RelatedTextbookImage[];
+  const hasStreamingRichContent = Boolean(
+    streamingAssistantText || streamingImages.length > 0 || streamingMathLesson || streamingScienceExperiment,
+  );
 
   return (
     <div className="flex gap-2.5 items-end">
       <div className="h-8 w-8 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shrink-0 mb-0.5">
         <Bot className="h-4 w-4 text-white" />
       </div>
-      <div className="min-w-0 flex flex-col gap-1 items-start max-w-[90%]">
-        <span className="text-[10px] font-medium text-indigo-600 dark:text-indigo-300 px-1">EduAI</span>
-        <div className="rounded-2xl rounded-bl-md px-3.5 py-2.5 sm:px-4 sm:py-3 bg-card border border-border text-sm leading-relaxed shadow-sm w-full min-w-0 text-foreground">
+      <div
+        className={cn(
+          "min-w-0 flex flex-col gap-1 items-start",
+          hasStreamingRichContent && (streamingImages.length > 0 || streamingMathLesson || streamingScienceExperiment)
+            ? "max-w-[92%] sm:max-w-[min(92%,40rem)] w-full"
+            : "max-w-[85%] sm:max-w-[80%]",
+        )}
+      >
+        <span className="text-[10px] font-medium text-indigo-600 dark:text-indigo-300 px-1">AI Voice</span>
+        <div className="rounded-2xl rounded-bl-md px-3.5 py-2.5 sm:px-4 sm:py-3 border border-primary/25 bg-[hsl(var(--ai-purple-light))] text-sm leading-relaxed shadow-sm w-full min-w-0 text-foreground">
           {!streamingAssistantText ? (
             <div className="flex items-center gap-2 text-muted-foreground">
               <span className="inline-flex gap-1">
@@ -242,20 +280,16 @@ function StreamingBubble({
               <span>Composing reply…</span>
             </div>
           ) : (
-            <div className="flex flex-col w-full min-w-0 gap-2">
-              <p className="whitespace-pre-wrap break-words">
-                {streamingAssistantText}
-                <span className="inline-block w-1.5 h-3.5 bg-indigo-500 ml-0.5 animate-pulse align-middle" />
-              </p>
-              {streamingImages.length > 0 ? (
-                <TextbookImageGallery images={streamingImages} token={accessToken} className={figureGalleryClass} />
-              ) : imagesRetrieving ? (
-                <TextbookImagesRetrieving
-                  hint={imagesRetrievingHint}
-                  className="border-border [&>div]:border-border [&>div]:bg-muted/50 [&_p]:text-muted-foreground"
-                />
-              ) : null}
-            </div>
+            <AssistantMessageContent
+              content={streamingAssistantText}
+              relatedImages={streamingImages}
+              mathLesson={streamingMathLesson}
+              scienceExperiment={streamingScienceExperiment}
+              token={accessToken}
+              isStreaming
+              imagesRetrieving={imagesRetrieving}
+              imagesRetrievingHint={imagesRetrievingHint}
+            />
           )}
         </div>
       </div>
@@ -275,10 +309,13 @@ export function VoiceLiveCall({
   studentActive,
   studentIntensity,
   tutorState,
+  understandingHint,
   entries,
   isTyping,
   streamingAssistantText,
   streamingRelatedImages,
+  streamingMathLesson,
+  streamingScienceExperiment,
   imagesRetrieving,
   imagesRetrievingHint,
   accessToken,
@@ -287,6 +324,13 @@ export function VoiceLiveCall({
   onInterrupt,
   canInterrupt,
   onEndCall,
+  textInput = "",
+  interimTranscript = "",
+  onTextInputChange,
+  onTextInputOpenChange,
+  onSendText,
+  isCallLive = false,
+  sessionResumed = false,
 }: {
   phase: Phase;
   subjectLabel: string;
@@ -299,10 +343,13 @@ export function VoiceLiveCall({
   studentActive: boolean;
   studentIntensity: number;
   tutorState?: string;
+  understandingHint?: string | null;
   entries: TranscriptEntry[];
   isTyping: boolean;
   streamingAssistantText?: string;
   streamingRelatedImages?: VoiceRelatedImage[];
+  streamingMathLesson?: MathLesson | null;
+  streamingScienceExperiment?: ScienceExperiment | null;
   imagesRetrieving?: boolean;
   imagesRetrievingHint?: string;
   accessToken?: string | null;
@@ -311,20 +358,46 @@ export function VoiceLiveCall({
   onInterrupt: () => void;
   canInterrupt: boolean;
   onEndCall: () => void;
+  textInput?: string;
+  interimTranscript?: string;
+  onTextInputChange?: (value: string) => void;
+  onTextInputOpenChange?: (open: boolean) => void;
+  onSendText?: () => void;
+  isCallLive?: boolean;
+  sessionResumed?: boolean;
 }) {
+  const [textInputOpen, setTextInputOpen] = useState(false);
+  const textFieldRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const tutorHint =
-    tutorState && tutorState !== "LISTENING" && tutorState !== "TEACHING"
+    understandingHint?.trim() ||
+    (tutorState && tutorState !== "LISTENING" && tutorState !== "TEACHING"
       ? tutorState.replace(/_/g, " ").toLowerCase()
-      : null;
+      : null);
 
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, [entries, isTyping, streamingAssistantText, streamingRelatedImages]);
+  }, [entries, isTyping, streamingAssistantText, streamingRelatedImages, streamingMathLesson, streamingScienceExperiment]);
+
+  useEffect(() => {
+    if (textInputOpen) {
+      textFieldRef.current?.focus();
+      onTextInputOpenChange?.(true);
+    } else {
+      onTextInputOpenChange?.(false);
+    }
+  }, [textInputOpen, onTextInputOpenChange]);
+
+  const textFieldDisplay = interimTranscript.trim()
+    ? textInput.trim()
+      ? `${textInput.trim()} ${interimTranscript.trim()}`
+      : interimTranscript.trim()
+    : textInput;
 
   const showEmptyState = entries.length === 0 && !isTyping;
+  const hearingYou = Boolean(interimTranscript.trim());
 
   return (
     <div className="flex flex-col h-full min-h-0 w-full overflow-hidden bg-background">
@@ -339,6 +412,7 @@ export function VoiceLiveCall({
         studentActive={studentActive}
         studentIntensity={studentIntensity}
         micEnabled={micEnabled}
+        hearingYou={hearingYou}
       />
 
       <div
@@ -348,13 +422,46 @@ export function VoiceLiveCall({
         <div className="max-w-4xl mx-auto w-full space-y-4">
           {showEmptyState ? (
             <div className="flex flex-col items-center justify-center text-center py-8 sm:py-12 px-4">
-              <div className="h-16 w-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center mb-4">
-                <Bot className="h-8 w-8 text-indigo-600 dark:text-indigo-300" />
+              <div
+                className={cn(
+                  "h-16 w-16 rounded-2xl flex items-center justify-center mb-4 border",
+                  hearingYou
+                    ? "bg-emerald-500/10 border-emerald-500/30"
+                    : "bg-indigo-500/10 border-indigo-500/20",
+                )}
+              >
+                {hearingYou ? (
+                  <User className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
+                ) : (
+                  <Bot className="h-8 w-8 text-indigo-600 dark:text-indigo-300" />
+                )}
               </div>
-              <h3 className="text-base font-medium text-foreground mb-1">Start a conversation</h3>
-              <p className="text-sm text-muted-foreground max-w-xs leading-relaxed">
-                Ask a question out loud or type below. Your tutor will reply with voice and text.
-              </p>
+              {hearingYou ? (
+                <>
+                  <h3 className="text-base font-medium text-foreground mb-1">Hearing you…</h3>
+                  <p className="text-sm text-foreground max-w-md leading-relaxed rounded-2xl bg-emerald-500/10 border border-emerald-500/20 px-4 py-3">
+                    {interimTranscript.trim()}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-3">Pause briefly when you finish your question.</p>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-base font-medium text-foreground mb-1">
+                    {sessionResumed
+                      ? "Welcome back"
+                      : isCallLive
+                        ? "Your tutor is ready"
+                        : "Start a conversation"}
+                  </h3>
+                  <p className="text-sm text-muted-foreground max-w-xs leading-relaxed">
+                    {sessionResumed
+                      ? "Your earlier messages are below. Ask your next question out loud or type below."
+                      : isCallLive
+                        ? "Tap anywhere once, then ask your question out loud or type below."
+                        : "Ask a question out loud or type below. Your tutor will reply with voice and text."}
+                  </p>
+                </>
+              )}
             </div>
           ) : null}
 
@@ -366,6 +473,8 @@ export function VoiceLiveCall({
             <StreamingBubble
               streamingAssistantText={streamingAssistantText}
               streamingRelatedImages={streamingRelatedImages}
+              streamingMathLesson={streamingMathLesson}
+              streamingScienceExperiment={streamingScienceExperiment}
               imagesRetrieving={imagesRetrieving}
               imagesRetrievingHint={imagesRetrievingHint}
               accessToken={accessToken}
@@ -429,7 +538,52 @@ export function VoiceLiveCall({
           >
             <PhoneOff className="h-4 w-4" />
           </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className={cn(
+              "h-9 w-9 rounded-full border border-border ml-0.5",
+              textInputOpen
+                ? "text-primary bg-primary/10 border-primary/30"
+                : "text-muted-foreground bg-muted hover:bg-muted/80",
+            )}
+            onClick={() => setTextInputOpen((open) => !open)}
+            aria-label={textInputOpen ? "Hide text input" : "Type a message"}
+            aria-expanded={textInputOpen}
+          >
+            <ChevronDown
+              className={cn("h-4 w-4 transition-transform duration-200", textInputOpen && "rotate-180")}
+            />
+          </Button>
         </div>
+        {textInputOpen && onTextInputChange && onSendText ? (
+          <div className="flex items-center gap-2 px-4 pb-3 sm:px-6 sm:pb-3.5">
+            <Input
+              ref={textFieldRef}
+              value={textFieldDisplay}
+              onChange={(e) => onTextInputChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  onSendText();
+                }
+              }}
+              placeholder="Type or speak your question…"
+              className="flex-1 h-10 rounded-full bg-background border-border text-sm"
+            />
+            <Button
+              type="button"
+              size="icon"
+              className="h-10 w-10 shrink-0 rounded-full bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-400 hover:to-violet-500 text-white"
+              onClick={onSendText}
+              disabled={!textFieldDisplay.trim()}
+              aria-label="Send message"
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
+        ) : null}
       </div>
     </div>
   );

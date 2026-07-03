@@ -1,11 +1,18 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Bot,
   Send,
@@ -16,22 +23,23 @@ import {
   Plus,
   MessageSquare,
   Trash2,
-  Menu,
   Upload,
   X,
-  ChevronLeft,
   ChevronRight,
   Volume2,
   Square,
-  BookOpen,
   ArrowLeft,
+  History,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/auth-store";
 import { apiFetch, authFetch } from "@/api";
+import { MSG, studentFriendlyApiError, studentFriendlyError } from "@/lib/student-messages";
 import {
   AssistantMessageContent,
   type RelatedTextbookImage,
 } from "@/components/assistant-message-content";
+import type { MathLesson } from "@/types/math-lesson";
+import type { ScienceExperiment } from "@/types/science-experiment";
 import { cn } from "@/lib/utils";
 import { Mp3StreamPlayer } from "@/lib/mp3-stream-player";
 import {
@@ -49,6 +57,8 @@ interface Message {
   content: string;
   timestamp: Date;
   relatedImages?: RelatedTextbookImage[];
+  mathLesson?: MathLesson | null;
+  scienceExperiment?: ScienceExperiment | null;
 }
 
 interface Conversation {
@@ -79,7 +89,7 @@ const VOICE_URL = import.meta.env.VITE_VOICE_URL || API_URL;
 // Upload PDF file
 const uploadPDF = async (file: File): Promise<void> => {
   if (!API_URL) {
-    throw new Error("API_URL is not configured");
+    throw new Error(MSG.configUnavailable);
   }
 
   const formData = new FormData();
@@ -92,7 +102,7 @@ const uploadPDF = async (file: File): Promise<void> => {
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Upload failed: ${errorText}`);
+    throw new Error(studentFriendlyApiError(errorText, response.status, MSG.uploadFailed));
   }
 };
 
@@ -126,7 +136,7 @@ function useChapterContext(): ChapterContext | null {
 
 const sendChatMessage = async (query: string): Promise<string> => {
   if (!API_URL) {
-    throw new Error("API_URL is not configured");
+    throw new Error(MSG.configUnavailable);
   }
 
   const response = await fetch(`${API_URL}/chat`, {
@@ -137,7 +147,7 @@ const sendChatMessage = async (query: string): Promise<string> => {
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Chat failed: ${errorText}`);
+    throw new Error(studentFriendlyApiError(errorText, response.status, MSG.chatFailed));
   }
 
   const data = await response.json();
@@ -148,8 +158,18 @@ const sendChapterChatMessage = async (
   query: string,
   ctx: ChapterContext,
   conversationHistory?: Array<{ role: string; content: string }>,
-): Promise<{ answer: string; relatedImages: RelatedTextbookImage[] }> => {
-  const data = await apiFetch<{ answer: string; related_images?: RelatedTextbookImage[] }>("/auth/chat", {
+): Promise<{
+  answer: string;
+  relatedImages: RelatedTextbookImage[];
+  mathLesson?: MathLesson | null;
+  scienceExperiment?: ScienceExperiment | null;
+}> => {
+  const data = await apiFetch<{
+    answer: string;
+    related_images?: RelatedTextbookImage[];
+    math_lesson?: MathLesson | null;
+    science_experiment?: ScienceExperiment | null;
+  }>("/auth/chat", {
     method: "POST",
     body: JSON.stringify({
       query,
@@ -165,6 +185,8 @@ const sendChapterChatMessage = async (
   return {
     answer: data.answer || "",
     relatedImages: data.related_images ?? [],
+    mathLesson: data.math_lesson ?? null,
+    scienceExperiment: data.science_experiment ?? null,
   };
 };
 
@@ -184,6 +206,8 @@ async function streamChapterChatMessage(
   handlers: {
     onToken: (chunk: string) => void;
     onImages: (images: RelatedTextbookImage[]) => void;
+    onMathLesson?: (lesson: MathLesson, cleanAnswer: string) => void;
+    onScienceExperiment?: (experiment: ScienceExperiment, cleanAnswer: string) => void;
   },
   conversationHistory?: Array<{ role: string; content: string }>,
 ): Promise<string> {
@@ -206,10 +230,10 @@ async function streamChapterChatMessage(
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || `Stream failed (${res.status})`);
+    throw new Error(studentFriendlyApiError(text, res.status, MSG.streamFailed));
   }
   if (!res.body) {
-    throw new Error("Stream response has no body");
+    throw new Error(MSG.streamFailed);
   }
 
   const reader = res.body.getReader();
@@ -219,7 +243,14 @@ async function streamChapterChatMessage(
 
   const parseLine = (trimmed: string) => {
     if (!trimmed) return;
-    let evt: { type?: string; content?: string; images?: RelatedTextbookImage[] };
+    let evt: {
+      type?: string;
+      content?: string;
+      images?: RelatedTextbookImage[];
+      lesson?: MathLesson;
+      experiment?: ScienceExperiment;
+      clean_answer?: string;
+    };
     try {
       evt = JSON.parse(trimmed);
     } catch {
@@ -230,6 +261,10 @@ async function streamChapterChatMessage(
       handlers.onToken(evt.content);
     } else if (evt.type === "related_images" && Array.isArray(evt.images)) {
       handlers.onImages(evt.images);
+    } else if (evt.type === "math_lesson" && evt.lesson) {
+      handlers.onMathLesson?.(evt.lesson, evt.clean_answer ?? full);
+    } else if (evt.type === "science_experiment" && evt.experiment) {
+      handlers.onScienceExperiment?.(evt.experiment, evt.clean_answer ?? full);
     }
   };
 
@@ -259,8 +294,6 @@ export default function AITutorPage() {
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -268,8 +301,8 @@ export default function AITutorPage() {
   const [isVoicePlaying, setIsVoicePlaying] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const chatVoicePlayerRef = useRef<Mp3StreamPlayer | null>(null);
   const chatVoiceAbortRef = useRef<AbortController | null>(null);
@@ -277,11 +310,13 @@ export default function AITutorPage() {
   const lastVoiceUrl = useRef<string | null>(null);
   const startGreetingHandledRef = useRef(false);
 
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    messagesEndRef.current?.scrollIntoView({ behavior, block: "end" });
+  }, []);
+
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [activeConversation?.messages]);
+    scrollToBottom(isStreaming ? "auto" : "smooth");
+  }, [activeConversation?.messages, isStreaming, scrollToBottom]);
 
   // Welcome message when arriving from Learning Studio → Start Learning
   useEffect(() => {
@@ -318,7 +353,6 @@ export default function AITutorPage() {
     };
     setConversations((prev) => [newConversation, ...prev]);
     setActiveConversation(newConversation);
-    setMobileMenuOpen(false);
     inputRef.current?.focus();
   };
 
@@ -326,12 +360,12 @@ export default function AITutorPage() {
     console.log("handleFileUpload called with file:", file.name, file.type, file.size);
     
     if (file.type !== "application/pdf") {
-      setUploadError("Please upload a PDF file");
+      setUploadError(MSG.uploadPdfOnly);
       return;
     }
 
     if (!API_URL) {
-      setUploadError("API_URL is not configured. Please set VITE_API_URL in your .env file and restart the dev server.");
+      setUploadError(MSG.configUnavailable);
       return;
     }
 
@@ -345,7 +379,7 @@ export default function AITutorPage() {
       setUploadedFile(file);
     } catch (error) {
       console.error("Upload error:", error);
-      setUploadError(error instanceof Error ? error.message : "Failed to upload PDF");
+      setUploadError(studentFriendlyError(error, MSG.uploadFailed));
     } finally {
       setIsUploading(false);
     }
@@ -400,8 +434,12 @@ export default function AITutorPage() {
       prev.map((c) => (c.id === conversation!.id ? updatedConversation : c))
     );
     setInput("");
+    if (inputRef.current) {
+      inputRef.current.style.height = "auto";
+    }
     setIsLoading(true);
     setIsStreaming(true);
+    requestAnimationFrame(() => scrollToBottom("smooth"));
 
     const assistantMessage: Message = {
       id: (Date.now() + 1).toString(),
@@ -419,8 +457,15 @@ export default function AITutorPage() {
     try {
       let fullContent = "";
       let relatedImages: RelatedTextbookImage[] = [];
+      let mathLesson: MathLesson | null = null;
+      let scienceExperiment: ScienceExperiment | null = null;
 
-      const patchAssistant = (content: string, images?: RelatedTextbookImage[]) => {
+      const patchAssistant = (
+        content: string,
+        images?: RelatedTextbookImage[],
+        lesson?: MathLesson | null,
+        experiment?: ScienceExperiment | null,
+      ) => {
         setActiveConversation((prev) => {
           if (!prev) return prev;
           const messages = [...prev.messages];
@@ -429,6 +474,8 @@ export default function AITutorPage() {
             ...last,
             content,
             relatedImages: images ?? last.relatedImages,
+            mathLesson: lesson !== undefined ? lesson : last.mathLesson,
+            scienceExperiment: experiment !== undefined ? experiment : last.scienceExperiment,
           };
           return { ...prev, messages };
         });
@@ -450,16 +497,28 @@ export default function AITutorPage() {
               relatedImages = images;
               patchAssistant(fullContent, images);
             },
+            onMathLesson: (lesson, cleanAnswer) => {
+              mathLesson = lesson;
+              fullContent = cleanAnswer;
+              patchAssistant(cleanAnswer, relatedImages, lesson, scienceExperiment);
+            },
+            onScienceExperiment: (experiment, cleanAnswer) => {
+              scienceExperiment = experiment;
+              fullContent = cleanAnswer;
+              patchAssistant(cleanAnswer, relatedImages, mathLesson, experiment);
+            },
           },
           history,
         );
         if (relatedImages.length === 0 && fullContent.trim()) {
           try {
             const fallback = await sendChapterChatMessage(content, chapterCtx, history);
-            if (fallback.relatedImages.length > 0) {
+            if (fallback.relatedImages.length > 0 || fallback.mathLesson || fallback.scienceExperiment) {
               relatedImages = fallback.relatedImages;
               fullContent = fallback.answer || fullContent;
-              patchAssistant(fullContent, relatedImages);
+              mathLesson = fallback.mathLesson ?? mathLesson;
+              scienceExperiment = fallback.scienceExperiment ?? scienceExperiment;
+              patchAssistant(fullContent, relatedImages, mathLesson, scienceExperiment);
             }
           } catch {
             /* stream answer is still shown */
@@ -487,6 +546,8 @@ export default function AITutorPage() {
               ...messages[messages.length - 1],
               content: fullContent,
               relatedImages,
+              mathLesson,
+              scienceExperiment,
             };
             return { ...c, messages };
           }
@@ -500,9 +561,7 @@ export default function AITutorPage() {
         const messages = [...prev.messages];
         messages[messages.length - 1] = {
           ...messages[messages.length - 1],
-          content: error instanceof Error 
-            ? `I apologize, but I encountered an error: ${error.message}. Please try again.`
-            : "I apologize, but I encountered an error. Please try again.",
+          content: MSG.tutorError,
         };
         return { ...prev, messages };
       });
@@ -555,7 +614,7 @@ export default function AITutorPage() {
   const fetchVoiceForMessage = async (message: Message, opts?: { play?: boolean }) => {
     if (!message.content.trim()) return;
     if (!VOICE_URL) {
-      setVoiceError("VOICE_URL (or VITE_API_URL) is not configured. Please update your .env and restart the dev server.");
+      setVoiceError(MSG.voiceUnavailable);
       return;
     }
 
@@ -577,10 +636,10 @@ export default function AITutorPage() {
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(errorText || "Voice request failed");
+        throw new Error(studentFriendlyApiError(errorText, response.status, MSG.voiceError));
       }
       if (!response.body) {
-        throw new Error("Voice response has no stream body");
+        throw new Error(MSG.streamFailed);
       }
 
       const shouldPlay = Boolean(opts?.play);
@@ -629,11 +688,7 @@ export default function AITutorPage() {
     } catch (error) {
       if ((error as Error)?.name === "AbortError") return;
       console.error("Voice error:", error);
-      setVoiceError(
-        error instanceof Error
-          ? `Unable to fetch audio: ${error.message}`
-          : "Unable to fetch audio. Please try again.",
-      );
+      setVoiceError(studentFriendlyError(error, MSG.voiceError));
       setIsVoiceLoading(false);
     } finally {
       if (chatVoiceAbortRef.current === controller) {
@@ -677,11 +732,7 @@ export default function AITutorPage() {
         return;
       } catch (error) {
         console.error("Voice play error:", error);
-        setVoiceError(
-          error instanceof Error
-            ? `Unable to play audio: ${error.message}`
-            : "Unable to play audio. Please try again."
-        );
+        setVoiceError(studentFriendlyError(error, MSG.voiceError));
         setIsVoiceLoading(false);
         // fall through to refetch below
       }
@@ -716,170 +767,119 @@ export default function AITutorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeConversation?.messages, isStreaming]);
 
-  const ConversationList = ({ 
-    testIdSuffix = "",
-    showToggle = false,
-    onToggle,
-    isOpen,
-  }: { 
-    testIdSuffix?: string;
-    showToggle?: boolean;
-    onToggle?: () => void;
-    isOpen?: boolean;
-  }) => (
-    <>
-      <div className="p-3 sm:p-4 border-b">
-        <div className="flex gap-2">
-          <Button
-            onClick={createNewConversation}
-            className="flex-1"
-            data-testid={`button-new-chat${testIdSuffix}`}
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            New Chat
-          </Button>
-          {showToggle && onToggle && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onToggle}
-              title={isOpen ? "Close sidebar" : "Open sidebar"}
-              className="flex-shrink-0"
-            >
-              {isOpen ? (
-                <ChevronLeft className="h-4 w-4" />
-              ) : (
-                <ChevronRight className="h-4 w-4" />
-              )}
-            </Button>
-          )}
-        </div>
-      </div>
-      <ScrollArea className="flex-1 p-2">
-        <div className="space-y-1">
-          {conversations.map((conv) => (
-            <div
-              key={conv.id}
-              className={cn(
-                "group flex items-center gap-2 rounded-lg px-3 py-2 text-sm cursor-pointer hover-elevate transition-colors",
-                activeConversation?.id === conv.id && "bg-primary/10 text-primary"
-              )}
-              onClick={() => {
-                setActiveConversation(conv);
-                setMobileMenuOpen(false);
-              }}
-              data-testid={`conversation-${conv.id}`}
-            >
-              <MessageSquare className="h-4 w-4 flex-shrink-0" />
-              <span className="truncate flex-1">{conv.title}</span>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  deleteConversation(conv.id);
-                }}
-                className="opacity-0 group-hover:opacity-100 p-1 hover-elevate rounded transition-opacity"
-                data-testid={`button-delete-conversation-${conv.id}`}
-                aria-label={`Delete conversation: ${conv.title}`}
-              >
-                <Trash2 className="h-3 w-3 text-destructive" />
-              </button>
-            </div>
-          ))}
-          {conversations.length === 0 && (
-            <p className="text-sm text-muted-foreground text-center py-4">
-              No conversations yet
-            </p>
-          )}
-        </div>
-      </ScrollArea>
-    </>
-  );
+  const primaryChapterName =
+    chapterCtx?.chapterNames[0] ||
+    (chapterCtx?.chapterIds.length ? `Chapter ${chapterCtx.chapterIds.length}` : "Chapter");
+
+  const formatClassLabel = (classLevel: string) =>
+    classLevel.replace("CLASS_", "Class ");
+
+  const selectConversation = (conv: Conversation) => {
+    setActiveConversation(conv);
+  };
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] relative">
-      {/* Desktop Sidebar */}
-      <div
-        className={cn(
-          "border-r bg-muted/30 flex-col hidden md:flex transition-all duration-300 ease-in-out overflow-hidden",
-          sidebarOpen ? "w-64" : "w-0"
-        )}
-      >
-        {sidebarOpen && (
-          <ConversationList 
-            testIdSuffix="-desktop" 
-            showToggle={true}
-            onToggle={() => setSidebarOpen(!sidebarOpen)}
-            isOpen={sidebarOpen}
-          />
-        )}
-      </div>
-
-      {/* Toggle Button when sidebar is closed */}
-      {!sidebarOpen && (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="hidden md:flex absolute left-0 top-4 z-20 h-8 w-8 rounded-r-md rounded-l-none border-r border-t border-b bg-background shadow-sm hover:bg-muted"
-          onClick={() => setSidebarOpen(true)}
-          title="Open sidebar"
-        >
-          <ChevronRight className="h-4 w-4" />
-        </Button>
-      )}
-
-      <div className="flex-1 flex flex-col">
-        <div className="md:hidden border-b p-2 flex items-center gap-2">
-          <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" data-testid="button-mobile-menu">
-                <Menu className="h-5 w-5" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="left" className="w-72 p-0 flex flex-col">
-              <SheetHeader className="p-4 border-b">
-                <SheetTitle className="flex items-center gap-2">
-                  <Bot className="h-5 w-5 text-primary" />
-                  Chat History
-                </SheetTitle>
-              </SheetHeader>
-              <ConversationList testIdSuffix="-mobile" />
-            </SheetContent>
-          </Sheet>
-          <span className="font-medium text-sm">
-            {activeConversation?.title || "AI Tutor"}
-          </span>
-        </div>
-
-        {/* Chapter context banner */}
-        {chapterCtx && (
-          <div className="border-b bg-primary/5 px-4 py-2.5 flex items-center gap-3">
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* Chat header */}
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b bg-background px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2">
+          {chapterCtx && (
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 shrink-0"
+              className="h-8 w-8 shrink-0"
               onClick={() => setLocation(chapterSelectionPath(chapterCtx.subjectId))}
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <BookOpen className="h-4 w-4 text-primary shrink-0" />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">
-                {chapterCtx.subject}
-                <span className="text-muted-foreground font-normal ml-2">
-                  {chapterCtx.board} &middot; {chapterCtx.classLevel.replace("CLASS_", "Class ")}
-                </span>
+          )}
+          <div className="min-w-0">
+            {chapterCtx ? (
+              <p className="truncate text-sm font-semibold text-foreground sm:text-base">
+                <span>{chapterCtx.subject}</span>
+                <ChevronRight className="mx-1 inline h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-muted-foreground">{primaryChapterName}</span>
               </p>
-              <div className="flex flex-wrap gap-1 mt-0.5">
-                {chapterCtx.chapterNames.map((name, i) => (
-                  <Badge key={i} variant="secondary" className="text-xs py-0">
-                    {name}
-                  </Badge>
-                ))}
-              </div>
-            </div>
+            ) : (
+              <p className="text-sm font-semibold text-foreground sm:text-base">AI Tutor</p>
+            )}
           </div>
-        )}
+        </div>
 
+        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+          {chapterCtx && (
+            <div className="hidden items-center gap-2 sm:flex">
+              <span className="text-xs text-muted-foreground sm:text-sm">
+                {chapterCtx.subject} {chapterCtx.board} · {formatClassLabel(chapterCtx.classLevel)}
+              </span>
+              <Badge variant="secondary" className="max-w-[140px] truncate text-xs font-medium">
+                {primaryChapterName}
+              </Badge>
+            </div>
+          )}
+
+          <Button
+            className="h-8 shrink-0 gap-1.5 bg-gradient-brand px-3 sm:h-9 sm:px-4"
+            onClick={createNewConversation}
+            data-testid="button-new-chat"
+          >
+            <Plus className="h-4 w-4" />
+            <span className="text-sm">New Chat</span>
+          </Button>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8 shrink-0"
+                title="Chat history"
+                data-testid="button-chat-history"
+              >
+                <History className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-72">
+              <DropdownMenuLabel>Chat History</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {conversations.length === 0 ? (
+                <div className="px-2 py-4 text-center text-sm text-muted-foreground">
+                  No conversations yet
+                </div>
+              ) : (
+                conversations.map((conv) => (
+                  <DropdownMenuItem
+                    key={conv.id}
+                    className={cn(
+                      "flex cursor-pointer items-center gap-2",
+                      activeConversation?.id === conv.id && "bg-primary/10 text-primary"
+                    )}
+                    onClick={() => selectConversation(conv)}
+                    data-testid={`conversation-${conv.id}`}
+                  >
+                    <MessageSquare className="h-4 w-4 shrink-0" />
+                    <span className="flex-1 truncate">{conv.title}</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteConversation(conv.id);
+                      }}
+                      className="rounded p-1 hover:bg-destructive/10"
+                      aria-label={`Delete conversation: ${conv.title}`}
+                      data-testid={`button-delete-conversation-${conv.id}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                    </button>
+                  </DropdownMenuItem>
+                ))
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      <div className="flex min-h-0 flex-1 flex-col">
         {!activeConversation || activeConversation.messages.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6">
             <div className="max-w-xl w-full text-center space-y-4 sm:space-y-6">
@@ -923,7 +923,7 @@ export default function AITutorPage() {
             </div>
           </div>
         ) : (
-          <ScrollArea className="flex-1 p-3 sm:p-4" ref={scrollRef}>
+          <ScrollArea className="flex-1 p-3 sm:p-4">
             <div className="max-w-3xl mx-auto space-y-4 sm:space-y-6">
               {activeConversation.messages.map((message) => (
                 <div
@@ -947,7 +947,7 @@ export default function AITutorPage() {
                         ? "max-w-[85%] sm:max-w-[80%] bg-primary text-primary-foreground"
                         : cn(
                             "border border-primary/25 bg-[hsl(var(--ai-purple-light))] text-foreground shadow-sm",
-                            (message.relatedImages?.length ?? 0) > 0
+                            (message.relatedImages?.length ?? 0) > 0 || message.mathLesson
                               ? "max-w-[92%] sm:max-w-[min(92%,40rem)] w-full"
                               : "max-w-[85%] sm:max-w-[80%]",
                           ),
@@ -958,6 +958,8 @@ export default function AITutorPage() {
                       <AssistantMessageContent
                         content={message.content}
                         relatedImages={message.relatedImages}
+                        mathLesson={message.mathLesson}
+                        scienceExperiment={message.scienceExperiment}
                         token={token}
                         isStreaming={
                           isStreaming &&
@@ -1046,6 +1048,7 @@ export default function AITutorPage() {
                   </>
                 )}
             </div>
+            <div ref={messagesEndRef} className="h-px shrink-0" aria-hidden />
           </ScrollArea>
         )}
 
@@ -1081,7 +1084,7 @@ export default function AITutorPage() {
               </div>
             )}
 
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-end">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -1096,7 +1099,7 @@ export default function AITutorPage() {
                 size="icon"
                 disabled={isUploading || isLoading}
                 className="flex-shrink-0"
-                title={API_URL ? "Upload PDF" : "API_URL not configured - upload will fail"}
+                title={API_URL ? "Upload PDF" : "Upload isn't available right now"}
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -1115,18 +1118,32 @@ export default function AITutorPage() {
                   <Upload className="h-4 w-4" />
                 )}
               </Button>
-              <Input
+              <Textarea
                 ref={inputRef}
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  e.target.style.height = "auto";
+                  e.target.style.height = `${Math.min(e.target.scrollHeight, 128)}px`;
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    if (input.trim() && !isLoading) {
+                      sendMessage(input);
+                    }
+                  }
+                }}
                 placeholder="Ask me anything..."
                 disabled={isLoading}
-                className="flex-1 text-base"
+                rows={1}
+                className="flex-1 min-h-[44px] max-h-32 resize-none py-2.5 text-base leading-relaxed"
                 data-testid="input-chat-message"
               />
               <Button
                 type="submit"
                 disabled={!input.trim() || isLoading}
+                className="flex-shrink-0"
                 data-testid="button-send-message"
               >
                 {isLoading ? (

@@ -1,37 +1,16 @@
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { MSG } from "@/lib/student-messages";
 import { API_BASE } from "@/api";
 import { isSafeImageInjectionPoint } from "@/lib/stream-safe-images";
-
-const BOLD_RE = /\*\*(.+?)\*\*/g;
-
-/** Turn `**bold**` markers from the tutor into real bold text. */
-function renderFormattedText(text: string): ReactNode {
-  const parts: ReactNode[] = [];
-  let lastIndex = 0;
-  let key = 0;
-  let match: RegExpExecArray | null;
-
-  BOLD_RE.lastIndex = 0;
-  while ((match = BOLD_RE.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      parts.push(text.slice(lastIndex, match.index));
-    }
-    parts.push(
-      <strong key={key++} className="font-semibold">
-        {match[1]}
-      </strong>,
-    );
-    lastIndex = BOLD_RE.lastIndex;
-  }
-
-  if (lastIndex < text.length) {
-    parts.push(text.slice(lastIndex));
-  }
-
-  return parts.length === 0 ? text : parts.length === 1 ? parts[0] : parts;
-}
+import { renderTutorText } from "@/lib/render-tutor-text";
+import { MathLessonPanel } from "@/components/math-lesson/math-lesson-panel";
+import { ScienceExperimentPanel } from "@/components/science-experiment/science-experiment-panel";
+import type { MathLesson } from "@/types/math-lesson";
+import { cleanTutorDisplayContent, stripMathLessonBlock } from "@/types/math-lesson";
+import type { ScienceExperiment } from "@/types/science-experiment";
+import { stripScienceExperimentBlock } from "@/types/science-experiment";
 
 export interface RelatedTextbookImage {
   url: string;
@@ -43,9 +22,40 @@ export interface RelatedTextbookImage {
   subtopic?: string | null;
   title?: string | null;
   figure_number?: string | null;
+  /** LaTeX or markdown for formula/table assets from the ML pipeline */
+  structured_content?: string | null;
+  content_kind?: string | null;
+  file_name?: string | null;
 }
 
 const FIG_NUMBER_PREFIX_RE = /^\s*Fig\.?\s*(\d+(?:\.\d+)*)\s*[.:]?\s*/i;
+
+/** Wrap plain formula text for KaTeX when needed. */
+function formatStructuredMath(text: string): string {
+  const t = text.trim();
+  if (!t) return "";
+  if (t.includes("$$")) return t;
+  if (/\\frac|\\text|[\^_{}]/.test(t)) {
+    return `$$${t}$$`;
+  }
+  return t
+    .split("\n")
+    .map((line) => {
+      const s = line.trim();
+      if (!s) return "";
+      if (s.startsWith("=") || /^[0-9(]/.test(s)) {
+        return `$$${s}$$`;
+      }
+      return s;
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function isFormulaAsset(img: RelatedTextbookImage): boolean {
+  if (img.content_kind === "formula") return true;
+  return Boolean(img.file_name?.includes("formulas/"));
+}
 
 /** e.g. "Fig. 1.21" — from figure_number or parsed from caption. */
 export function figureNumberLabel(img: RelatedTextbookImage): string | null {
@@ -314,7 +324,7 @@ function MainSectionWithImages({
       >
         <h4 className="text-sm font-semibold text-foreground mb-2">{block.title}</h4>
         <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground/90">
-          {renderFormattedText(body)}
+          {renderTutorText(body)}
           {isLast && !closingQuestion ? cursor : null}
         </div>
         {img ? (
@@ -331,7 +341,7 @@ function MainSectionWithImages({
       {sections}
       {closingQuestion ? (
         <p className="text-sm leading-relaxed whitespace-pre-wrap text-foreground/90 pt-1">
-          {renderFormattedText(closingQuestion)}
+          {renderTutorText(closingQuestion)}
           {cursor}
         </p>
       ) : null}
@@ -434,6 +444,11 @@ function TextbookFigureCard({
             <span className="text-foreground/85">{captionBody}</span>
           ) : null}
         </p>
+        {img.structured_content?.trim() && isFormulaAsset(img) ? (
+          <div className="text-[11px] text-foreground/90 whitespace-pre-wrap border-t border-border/40 pt-2 mt-1">
+            {renderTutorText(formatStructuredMath(img.structured_content))}
+          </div>
+        ) : null}
         {!loaded && !failed ? (
           <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
             <Loader2 className="h-3 w-3 animate-spin shrink-0" aria-hidden />
@@ -441,7 +456,7 @@ function TextbookFigureCard({
           </p>
         ) : null}
         {failed ? (
-          <p className="text-[11px] text-destructive/90">Could not load this figure.</p>
+          <p className="text-[11px] text-destructive/90">{MSG.figureLoad}</p>
         ) : null}
         {img.page != null ? (
           <p className="text-[11px] text-muted-foreground/80">Page {img.page}</p>
@@ -506,6 +521,8 @@ export { TextbookImageGallery, TextbookImagesRetrieving };
 export function AssistantMessageContent({
   content,
   relatedImages,
+  mathLesson,
+  scienceExperiment,
   token,
   isStreaming,
   imagesRetrieving,
@@ -513,6 +530,8 @@ export function AssistantMessageContent({
 }: {
   content: string;
   relatedImages?: RelatedTextbookImage[];
+  mathLesson?: MathLesson | null;
+  scienceExperiment?: ScienceExperiment | null;
   token?: string | null;
   isStreaming?: boolean;
   /** True while the backend is still ranking textbook figures for this answer. */
@@ -522,21 +541,37 @@ export function AssistantMessageContent({
   const images = relatedImages ?? [];
   const showImages = images.length > 0;
 
+  const { cleanContent, lesson: embeddedLesson, experiment: embeddedExperiment } = useMemo(() => {
+    const { cleanContent: afterMath, lesson } = stripMathLessonBlock(content);
+    const { cleanContent: stripped, experiment } = stripScienceExperimentBlock(afterMath);
+    return {
+      cleanContent: cleanTutorDisplayContent(stripped),
+      lesson,
+      experiment,
+    };
+  }, [content]);
+  const resolvedLesson = mathLesson ?? embeddedLesson;
+  const resolvedExperiment = scienceExperiment ?? embeddedExperiment;
+
   const cursor = isStreaming ? (
     <span className="inline-block w-2 h-4 ml-1 bg-current animate-pulse align-middle" />
   ) : null;
 
-  const useSubtopicSections = shouldUseSubtopicSectionLayout(content, images);
+  const useSubtopicSections = shouldUseSubtopicSectionLayout(cleanContent, images);
 
   if (useSubtopicSections) {
     return (
       <div className="flex flex-col w-full min-w-0">
         <MainSectionWithImages
-          content={content.trim()}
+          content={cleanContent.trim()}
           images={images}
           token={token}
           cursor={cursor}
         />
+        {resolvedLesson && !isStreaming ? <MathLessonPanel lesson={resolvedLesson} /> : null}
+        {resolvedExperiment && !isStreaming ? (
+          <ScienceExperimentPanel experiment={resolvedExperiment} />
+        ) : null}
         {!showImages && imagesRetrieving ? (
           <TextbookImagesRetrieving hint={imagesRetrievingHint} />
         ) : null}
@@ -549,14 +584,18 @@ export function AssistantMessageContent({
     return images.findIndex((o) => o.url === img.url) === idx;
   });
 
-  const prose = stripKnownFigureCaptions(content.trim(), images);
+  const prose = stripKnownFigureCaptions(cleanContent.trim(), images);
 
   return (
     <div className="flex flex-col w-full min-w-0" data-layout="text-top-images-row">
-      <div className="text-sm leading-relaxed whitespace-pre-wrap">
-        {renderFormattedText(prose)}
+      <div className="text-sm leading-relaxed whitespace-pre-wrap tutor-message-prose">
+        {renderTutorText(prose)}
         {cursor}
       </div>
+      {resolvedLesson && !isStreaming ? <MathLessonPanel lesson={resolvedLesson} /> : null}
+      {resolvedExperiment && !isStreaming ? (
+        <ScienceExperimentPanel experiment={resolvedExperiment} />
+      ) : null}
       {showImages ? <TextbookImageGallery images={uniqueImages} token={token} /> : null}
       {!showImages && imagesRetrieving ? (
         <TextbookImagesRetrieving hint={imagesRetrievingHint} />

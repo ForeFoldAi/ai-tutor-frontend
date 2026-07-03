@@ -10,6 +10,8 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarRail,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import {
   LayoutDashboard,
@@ -28,23 +30,33 @@ import {
   UploadCloud,
   CreditCard,
   Database,
-  User,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/auth-store";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { AuthBrandMark } from "@/components/auth/auth-brand-mark";
 import { UserRole } from "@/types/schema";
+import type { LucideIcon } from "lucide-react";
 
-const studentMenuItems = [
+type MenuItem = {
+  title: string;
+  url: string;
+  icon?: LucideIcon;
+  imageIcon?: string;
+};
+
+const studentMenuItems: MenuItem[] = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
-  { title: "AI Learning Studio", url: "/ai-learning-studio", icon: Bot },
-  { title: "Live Classes", url: "/live-classes", icon: Video },
+  { title: "My Learning", url: "/my-learning", icon: BookOpen },
+  { title: "AI Tutor", url: "/ai-learning-studio", imageIcon: "/icon.png" },
+  { title: "Session", url: "/live-classes", icon: Video },
   { title: "Assignments", url: "/assignments", icon: FileText },
-  { title: "Analytics", url: "/analytics", icon: BarChart3 },
-  { title: "Settings", url: "/settings", icon: Settings },
 ];
 
-const tutorMenuItems = [
+const tutorMenuItems: MenuItem[] = [
   { title: "Dashboard", url: "/tutor/dashboard", icon: LayoutDashboard },
   { title: "Assigned Students", url: "/tutor/students", icon: Users },
   { title: "Sessions", url: "/tutor/sessions", icon: Calendar },
@@ -53,15 +65,14 @@ const tutorMenuItems = [
   { title: "Settings", url: "/tutor/settings", icon: Settings },
 ];
 
-const schoolAdminMenuItems = [
+const schoolAdminMenuItems: MenuItem[] = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "Students", url: "/students", icon: GraduationCap },
   { title: "Tutors", url: "/tutors", icon: Users },
-  { title: "Analytics", url: "/analytics", icon: BarChart3 },
   { title: "Settings", url: "/settings", icon: Settings },
 ];
 
-const masterAdminMenuItems = [
+const masterAdminMenuItems: MenuItem[] = [
   { title: "Dashboard", url: "/master-admin/dashboard", icon: LayoutDashboard },
   { title: "Organizations", url: "/master-admin/organizations", icon: Building2 },
   { title: "Schools", url: "/master-admin/schools", icon: GraduationCap },
@@ -74,7 +85,7 @@ const masterAdminMenuItems = [
   { title: "Settings", url: "/master-admin/settings", icon: Settings },
 ];
 
-const organizationMenuItems = [
+const organizationMenuItems: MenuItem[] = [
   { title: "Dashboard", url: "/organization/dashboard", icon: LayoutDashboard },
   { title: "Schools", url: "/organization/schools", icon: Building2 },
   { title: "Tutors", url: "/organization/tutors", icon: Users },
@@ -93,19 +104,42 @@ const roleLabels: Record<string, string> = {
 
 const roleColors: Record<string, string> = {
   student: "bg-primary",
-  tutor: "bg-accent",
+  tutor: "bg-accent text-accent-foreground",
   school_admin: "bg-muted-foreground",
-  org_admin: "bg-blue-600",
+  org_admin: "bg-brand-secondary",
   master_admin: "bg-destructive",
 };
+
+function SidebarMenuIcon({ item }: { item: MenuItem }) {
+  if (item.imageIcon) {
+    return (
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-md bg-[#EEF2FF] dark:bg-primary/15">
+        <img
+          src={item.imageIcon}
+          alt=""
+          aria-hidden
+          className="h-[88%] w-[88%] object-contain"
+        />
+      </span>
+    );
+  }
+
+  if (item.icon) {
+    const Icon = item.icon;
+    return <Icon className="h-4 w-4 shrink-0" />;
+  }
+
+  return null;
+}
 
 export function AppSidebar() {
   const [location] = useLocation();
   const { user, logout } = useAuthStore();
+  const { state, toggleSidebar, isMobile, setOpenMobile } = useSidebar();
 
-  const getMenuItems = () => {
+  const getMenuItems = (): MenuItem[] => {
     if (!user) return studentMenuItems;
-    
+
     switch (user.role) {
       case UserRole.TUTOR:
         return tutorMenuItems;
@@ -122,35 +156,57 @@ export function AppSidebar() {
 
   const menuItems = getMenuItems();
 
+  const handleNavClick = () => {
+    if (isMobile) setOpenMobile(false);
+  };
+
   return (
-    <Sidebar>
-      <SidebarHeader className="border-b border-sidebar-border p-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
-            <GraduationCap className="h-6 w-6 text-primary-foreground" />
+    <Sidebar collapsible="icon">
+      <SidebarHeader className="relative border-b border-sidebar-border px-3 py-4 group-data-[collapsible=icon]:px-2">
+        <div className="flex items-center pr-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:pr-0">
+          <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
+            <AuthBrandMark variant="sidebar" />
           </div>
-          <div className="flex flex-col">
-            <span className="text-base font-semibold">AI Tutor</span>
-            <span className="text-xs text-muted-foreground">Smart Learning</span>
-          </div>
+          <img
+            src="/logo.png"
+            alt="AI Tutor"
+            className="hidden h-8 w-8 shrink-0 object-contain group-data-[collapsible=icon]:block"
+          />
         </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="absolute -right-3 top-[calc(50%+1.25rem)] z-20 hidden h-7 w-7 -translate-y-1/2 rounded-md border border-border bg-background shadow-sm hover:bg-accent md:inline-flex"
+          onClick={toggleSidebar}
+          data-testid="button-sidebar-toggle"
+        >
+          {state === "expanded" ? (
+            <ChevronLeft className="h-4 w-4" />
+          ) : (
+            <ChevronRight className="h-4 w-4" />
+          )}
+          <span className="sr-only">Toggle Sidebar</span>
+        </Button>
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>Navigation</SidebarGroupLabel>
+        <SidebarGroup className="px-2 py-2">
+          <SidebarGroupLabel className="px-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            Navigation
+          </SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu>
+            <SidebarMenu className="gap-1.5">
               {menuItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     asChild
                     isActive={location === item.url}
+                    tooltip={item.title}
                     data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, "-")}`}
                   >
-                    <Link href={item.url}>
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
+                    <Link href={item.url} onClick={handleNavClick}>
+                      <SidebarMenuIcon item={item} />
+                      <span className="group-data-[collapsible=icon]:hidden">{item.title}</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -160,15 +216,15 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-sidebar-border p-4">
+      <SidebarFooter className="border-t border-sidebar-border px-3 py-4">
         {user && (
-          <div className="flex items-center gap-3">
-            <Avatar className="h-9 w-9">
-              <AvatarFallback className="bg-primary text-primary-foreground text-sm">
+          <div className="flex items-center gap-3 group-data-[collapsible=icon]:justify-center">
+            <Avatar className="h-9 w-9 shrink-0">
+              <AvatarFallback className="bg-gradient-brand text-primary-foreground text-sm">
                 {user.fullName?.charAt(0)?.toUpperCase() || "U"}
               </AvatarFallback>
             </Avatar>
-            <div className="flex flex-1 flex-col overflow-hidden">
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden group-data-[collapsible=icon]:hidden">
               <span className="truncate text-sm font-medium">{user.fullName}</span>
               <Badge
                 variant="secondary"
@@ -179,7 +235,7 @@ export function AppSidebar() {
             </div>
             <button
               onClick={logout}
-              className="p-2 hover-elevate rounded-md text-muted-foreground hover:text-foreground transition-colors"
+              className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground group-data-[collapsible=icon]:hidden"
               data-testid="button-logout"
             >
               <LogOut className="h-4 w-4" />
@@ -187,6 +243,8 @@ export function AppSidebar() {
           </div>
         )}
       </SidebarFooter>
+
+      <SidebarRail />
     </Sidebar>
   );
 }

@@ -21,6 +21,10 @@ export default function DashboardPage() {
     case UserRole.ORG_ADMIN:
       return <OrganizationDashboardPage />;
     default:
-      return <StudentDashboard user={user} />;
+      return (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <StudentDashboard user={user} />
+        </div>
+      );
   }
 }

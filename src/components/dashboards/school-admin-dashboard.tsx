@@ -134,12 +134,6 @@ export default function SchoolAdminDashboard({ user: _user }: SchoolAdminDashboa
                 <Progress value={item.avgScore} className="h-2" />
               </div>
             ))}
-            <Button asChild variant="ghost" className="w-full">
-              <Link href="/analytics">
-                View Detailed Analytics
-                <ChevronRight className="ml-2 h-4 w-4" />
-              </Link>
-            </Button>
           </CardContent>
         </Card>
 
@@ -205,12 +199,6 @@ export default function SchoolAdminDashboard({ user: _user }: SchoolAdminDashboa
               <Link href="/tutors">
                 <Users className="h-6 w-6" />
                 <span>View Tutors</span>
-              </Link>
-            </Button>
-            <Button variant="outline" className="h-auto p-4 flex flex-col gap-2" asChild>
-              <Link href="/analytics">
-                <BarChart3 className="h-6 w-6" />
-                <span>Analytics</span>
               </Link>
             </Button>
             <Button variant="outline" className="h-auto p-4 flex flex-col gap-2" asChild>

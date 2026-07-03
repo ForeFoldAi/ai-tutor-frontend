@@ -100,7 +100,6 @@ export class Mp3StreamPlayer {
     });
 
     console.debug(LOG, "MSE ready", `${(performance.now() - this.turnT0).toFixed(0)}ms`);
-    void this.audio.play().catch(() => {});
     void this.drainQueue();
   }
 
@@ -314,6 +313,11 @@ export class Mp3StreamPlayer {
 
   isPlaying(): boolean {
     return !this.audio.paused && !this.audio.ended;
+  }
+
+  /** True only when real tutor audio has been buffered and is playing. */
+  hasAudiblePlayback(): boolean {
+    return this.firstChunkLogged && this.isPlaying();
   }
 
   get element(): HTMLAudioElement {

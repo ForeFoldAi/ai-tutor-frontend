@@ -1,6 +1,10 @@
 import { apiFetch } from "@/api/index";
 import type { ApiUser, UpdateMeProfilePayload } from "@/api/types";
 
+export async function getMyProfile(): Promise<ApiUser> {
+  return apiFetch<ApiUser>("/auth/me");
+}
+
 export async function updateMyProfile(payload: UpdateMeProfilePayload): Promise<ApiUser> {
   const body: Record<string, string> = {
     full_name: payload.full_name.trim(),

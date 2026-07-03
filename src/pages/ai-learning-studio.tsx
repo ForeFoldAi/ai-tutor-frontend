@@ -1,421 +1,450 @@
-import { useEffect, useState } from "react";
-import { useLocation, useRoute } from "wouter";
+import { useCallback, useEffect, useState } from "react";
+import { Link, useLocation, useRoute } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import {
-  Bot,
   BookOpen,
   ChevronRight,
-  Search,
-  ArrowLeft,
-  Mic,
-  PlayCircle,
-  Loader2,
   AlertCircle,
+  RefreshCw,
+  Calculator,
+  FlaskConical,
+  Globe,
+  Monitor,
+  MessageCircle,
+  PencilLine,
+  Lightbulb,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AiTutorButtonIcon } from "@/components/ai-tutor-button-icon";
+import { AiTutorStudioSkeleton } from "@/components/skeletons/student-page-skeletons";
 import { getMySubjects } from "@/api/student";
 import type { StudentSubjectApi } from "@/api/types";
+import { useAuthStore } from "@/lib/auth-store";
+import { LearningSetupWizard } from "@/components/learning/learning-setup-wizard";
+import { MSG, studentFriendlyError } from "@/lib/student-messages";
 
-const SUBJECT_STYLES: Record<string, { color: string; bgColor: string }> = {
-  Mathematics: { color: "text-blue-600", bgColor: "bg-blue-500" },
-  Science: { color: "text-green-600", bgColor: "bg-green-500" },
-  Physics: { color: "text-cyan-600", bgColor: "bg-cyan-500" },
-  Chemistry: { color: "text-emerald-600", bgColor: "bg-emerald-500" },
-  Biology: { color: "text-lime-600", bgColor: "bg-lime-500" },
-  English: { color: "text-purple-600", bgColor: "bg-purple-500" },
-  Hindi: { color: "text-orange-600", bgColor: "bg-orange-500" },
-  History: { color: "text-amber-600", bgColor: "bg-amber-500" },
-  Geography: { color: "text-teal-600", bgColor: "bg-teal-500" },
-  "Computer Science": { color: "text-indigo-600", bgColor: "bg-indigo-500" },
-  "Social Science": { color: "text-rose-600", bgColor: "bg-rose-500" },
-  Economics: { color: "text-yellow-600", bgColor: "bg-yellow-500" },
+type SubjectConfig = {
+  icon: typeof Calculator;
+  color: string;
+  bg: string;
+  cardBg: string;
 };
 
-const FALLBACK_STYLE = { color: "text-slate-600", bgColor: "bg-slate-500" };
+const SUBJECT_CONFIG: Record<string, SubjectConfig> = {
+  Mathematics: {
+    icon: Calculator,
+    color: "text-subject-math",
+    bg: "bg-subject-math",
+    cardBg: "bg-subject-math/10",
+  },
+  Science: {
+    icon: FlaskConical,
+    color: "text-subject-science",
+    bg: "bg-subject-science",
+    cardBg: "bg-subject-science/10",
+  },
+  English: {
+    icon: Globe,
+    color: "text-subject-english",
+    bg: "bg-subject-english",
+    cardBg: "bg-subject-english/10",
+  },
+  "Computer Science": {
+    icon: Monitor,
+    color: "text-subject-cs",
+    bg: "bg-subject-cs",
+    cardBg: "bg-subject-cs/10",
+  },
+  Computer: {
+    icon: Monitor,
+    color: "text-subject-cs",
+    bg: "bg-subject-cs",
+    cardBg: "bg-subject-cs/10",
+  },
+};
 
-function getSubjectStyle(name: string) {
-  return SUBJECT_STYLES[name] ?? FALLBACK_STYLE;
-}
+const FALLBACK_CONFIG: SubjectConfig = {
+  icon: BookOpen,
+  color: "text-primary",
+  bg: "bg-primary",
+  cardBg: "bg-primary/10",
+};
 
-function formatClassLevel(cl: string) {
-  return cl.replace("CLASS_", "Class ");
+function getSubjectConfig(name: string) {
+  return SUBJECT_CONFIG[name] ?? FALLBACK_CONFIG;
 }
 
 type LearningMethod = "ai-tutor" | "ai-voice" | "pre-recorded";
 
-interface Chapter {
-  id: string;
-  chapter: string;
-  file_name: string;
+const QUICK_START = [
+  {
+    title: "Ask Anything",
+    description: "Get instant answers",
+    icon: MessageCircle,
+    iconColor: "text-blue-600",
+    bg: "bg-blue-50 dark:bg-blue-950/30",
+    method: "ai-tutor" as LearningMethod,
+  },
+  {
+    title: "Practice Problems",
+    description: "Solve with AI help",
+    icon: PencilLine,
+    iconColor: "text-pink-600",
+    bg: "bg-pink-50 dark:bg-pink-950/30",
+    method: "ai-tutor" as LearningMethod,
+  },
+  {
+    title: "Explain a Topic",
+    description: "Step-by-step help",
+    icon: Lightbulb,
+    iconColor: "text-amber-600",
+    bg: "bg-amber-50 dark:bg-amber-950/30",
+    method: "ai-tutor" as LearningMethod,
+  },
+];
+
+function buildTutorUrl(subject: StudentSubjectApi, chapterIds: string[], chapterNames: string[]) {
+  const params = new URLSearchParams({
+    board: subject.board,
+    class: subject.class_level,
+    subject: subject.subject_name,
+    subjectId: subject.id,
+    chapters: chapterIds.join(","),
+    chapterNames: chapterNames.join("||"),
+    greet: "1",
+  });
+  return `/ai-tutor?${params.toString()}`;
 }
 
-function SubjectDetailView({ subjectId, subjects }: { subjectId: string; subjects: StudentSubjectApi[] }) {
+function StudioHomeView({
+  subjects,
+  loading,
+  error,
+  onSubjectSelect,
+  onRetry,
+  retrying,
+}: {
+  subjects: StudentSubjectApi[];
+  loading: boolean;
+  error: string | null;
+  onSubjectSelect: (subjectId: string) => void;
+  onRetry: () => void;
+  retrying?: boolean;
+}) {
   const [, setLocation] = useLocation();
-  const subject = subjects.find((s) => s.id === subjectId);
+  const { user } = useAuthStore();
+  const firstName = user?.fullName?.split(" ")[0] || "Student";
 
-  const [selectedChapters, setSelectedChapters] = useState<Set<string>>(new Set());
-  const [selectedMethod, setSelectedMethod] = useState<LearningMethod | null>(null);
-  const [expandedChapters, setExpandedChapters] = useState<Set<string>>(new Set());
-
-  if (!subject) {
-    return (
-      <div className="p-4 sm:p-6">
-        <p>Subject not found</p>
-      </div>
-    );
-  }
-
-  const style = getSubjectStyle(subject.subject_name);
-  const chapters: Chapter[] = subject.chapters.map((ch, idx) => ({
-    id: ch.id,
-    chapter: ch.chapter || `Chapter ${idx + 1}`,
-    file_name: ch.file_name,
-  }));
-
-  const toggleChapter = (chapterId: string) => {
-    const next = new Set(selectedChapters);
-    if (next.has(chapterId)) next.delete(chapterId);
-    else next.add(chapterId);
-    setSelectedChapters(next);
-  };
-
-  const toggleChapterExpansion = (chapterId: string) => {
-    const next = new Set(expandedChapters);
-    if (next.has(chapterId)) next.delete(chapterId);
-    else next.add(chapterId);
-    setExpandedChapters(next);
-  };
-
-  const handleStartLearning = () => {
-    if (selectedChapters.size === 0 || !selectedMethod) return;
-
-    const params = new URLSearchParams({
-      board: subject.board,
-      class: subject.class_level,
-      subject: subject.subject_name,
-      subjectId: subject.id,
-      chapters: Array.from(selectedChapters).join(","),
-      chapterNames: chapters
-        .filter((ch) => selectedChapters.has(ch.id))
-        .map((ch) => ch.chapter)
-        .join("||"),
-      greet: "1",
-    });
-
-    if (selectedMethod === "ai-tutor") {
-      setLocation(`/ai-tutor?${params.toString()}`);
-    } else if (selectedMethod === "ai-voice") {
-      setLocation(`/ai-voice?${params.toString()}`);
-    } else if (selectedMethod === "pre-recorded") {
-      alert("Pre-recorded videos feature coming soon!");
-    }
-  };
-
-  return (
-    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-      <div className="flex items-center gap-4">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setLocation("/ai-learning-studio")}
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div className="flex items-center gap-3">
-          <div className={cn("p-2 rounded-lg", style.bgColor)}>
-            <BookOpen className="h-6 w-6 text-white" />
-          </div>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-semibold">{subject.subject_name}</h1>
-            <p className="text-sm text-muted-foreground">
-              {subject.board} &middot; {formatClassLevel(subject.class_level)}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-6">
-        {/* Step 1: Select Chapters */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Step 1: Select Chapters</CardTitle>
-            <CardDescription>
-              {chapters.length > 0
-                ? "Choose the chapters you want to learn"
-                : "No textbook chapters have been uploaded for this subject yet."}
-            </CardDescription>
-          </CardHeader>
-          {chapters.length > 0 && (
-            <CardContent>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {chapters.map((chapter) => (
-                  <div key={chapter.id} className="border rounded-lg p-4">
-                    <div className="flex items-center gap-3">
-                      <Checkbox
-                        checked={selectedChapters.has(chapter.id)}
-                        onCheckedChange={() => toggleChapter(chapter.id)}
-                      />
-                      <div
-                        className="flex-1 flex items-center justify-between cursor-pointer"
-                        onClick={() => toggleChapterExpansion(chapter.id)}
-                      >
-                        <div>
-                          <h3 className="font-medium">{chapter.chapter}</h3>
-                          <p className="text-xs text-muted-foreground truncate max-w-[180px]">
-                            {chapter.file_name}
-                          </p>
-                        </div>
-                        <ChevronRight
-                          className={cn(
-                            "h-4 w-4 transition-transform",
-                            expandedChapters.has(chapter.id) && "rotate-90"
-                          )}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          )}
-        </Card>
-
-        {/* Step 2: Select Learning Method */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Step 2: Select Learning Method</CardTitle>
-            <CardDescription>
-              Choose how you want to learn the selected content
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <Card
-                className={cn(
-                  "cursor-pointer hover-elevate transition-all",
-                  selectedMethod === "ai-tutor" && "ring-2 ring-primary"
-                )}
-                onClick={() => setSelectedMethod("ai-tutor")}
-              >
-                <CardHeader>
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="p-2 rounded-lg bg-primary/10">
-                      <Bot className="h-5 w-5 text-primary" />
-                    </div>
-                    <CardTitle className="text-base">AI Tutor</CardTitle>
-                  </div>
-                  <CardDescription>
-                    Interactive AI-powered tutoring with personalized explanations
-                  </CardDescription>
-                </CardHeader>
-              </Card>
-
-              <Card
-                className={cn(
-                  "cursor-pointer hover-elevate transition-all",
-                  selectedMethod === "ai-voice" && "ring-2 ring-primary"
-                )}
-                onClick={() => setSelectedMethod("ai-voice")}
-              >
-                <CardHeader>
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="p-2 rounded-lg bg-accent/10">
-                      <Mic className="h-5 w-5 text-accent" />
-                    </div>
-                    <CardTitle className="text-base">AI Voice</CardTitle>
-                  </div>
-                  <CardDescription>
-                    Voice-based learning with AI narration and explanations
-                  </CardDescription>
-                </CardHeader>
-              </Card>
-
-              <Card
-                className={cn(
-                  "cursor-pointer hover-elevate transition-all",
-                  selectedMethod === "pre-recorded" && "ring-2 ring-primary"
-                )}
-                onClick={() => setSelectedMethod("pre-recorded")}
-              >
-                <CardHeader>
-                  <div className="flex items-center gap-3 mb-2">
-                    <div className="p-2 rounded-lg bg-green-500/10">
-                      <PlayCircle className="h-5 w-5 text-green-600" />
-                    </div>
-                    <CardTitle className="text-base">Pre-recorded Videos</CardTitle>
-                  </div>
-                  <CardDescription>
-                    Watch pre-recorded class videos at your own pace
-                  </CardDescription>
-                </CardHeader>
-              </Card>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Start Learning Button */}
-        <div className="flex justify-end">
-          <Button
-            onClick={handleStartLearning}
-            disabled={selectedChapters.size === 0 || !selectedMethod}
-            size="lg"
-          >
-            Start Learning
-            <ChevronRight className="ml-2 h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SubjectsTab({ subjects, loading, error }: { subjects: StudentSubjectApi[]; loading: boolean; error: string | null }) {
-  const [, setLocation] = useLocation();
-  const [searchQuery, setSearchQuery] = useState("");
-
-  const filteredSubjects = subjects.filter((s) =>
-    s.subject_name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const continueSubject = subjects[0];
+  const continueChapter = continueSubject?.chapters[0];
 
   const handleSubjectClick = (subjectId: string) => {
-    setLocation(`/ai-learning-studio/subject/${subjectId}`);
+    onSubjectSelect(subjectId);
+  };
+
+  const handleResume = () => {
+    if (!continueSubject || !continueChapter) return;
+    setLocation(
+      buildTutorUrl(
+        continueSubject,
+        [continueChapter.id],
+        [continueChapter.chapter || "Chapter 1"]
+      )
+    );
+  };
+
+  const handleQuickStart = (subject?: StudentSubjectApi) => {
+    const target = subject ?? continueSubject ?? subjects[0];
+    if (!target) return;
+    const chapter = target.chapters[0];
+    if (!chapter) {
+      onSubjectSelect(target.id);
+      return;
+    }
+    setLocation(
+      buildTutorUrl(target, [chapter.id], [chapter.chapter || "Chapter 1"])
+    );
   };
 
   if (loading) {
-    return (
-      <div className="p-4 sm:p-6 flex flex-col items-center justify-center gap-3 min-h-[300px]">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="text-muted-foreground">Loading your subjects...</p>
-      </div>
-    );
+    return <AiTutorStudioSkeleton />;
   }
 
   if (error) {
     return (
-      <div className="p-4 sm:p-6 flex flex-col items-center justify-center gap-3 min-h-[300px]">
+      <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 p-6 text-center">
         <AlertCircle className="h-8 w-8 text-destructive" />
-        <p className="text-destructive font-medium">Failed to load subjects</p>
-        <p className="text-sm text-muted-foreground">{error}</p>
+        <p className="font-medium text-destructive">{MSG.subjectsLoad}</p>
+        <p className="max-w-md text-sm text-muted-foreground">{error}</p>
+        <Button
+          type="button"
+          variant="outline"
+          className="mt-1 gap-2"
+          onClick={onRetry}
+          disabled={retrying}
+        >
+          <RefreshCw className={cn("h-4 w-4", retrying && "animate-spin")} />
+          {retrying ? "Refreshing…" : MSG.refresh}
+        </Button>
       </div>
     );
   }
 
   return (
-    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-semibold">Subjects</h1>
-          <p className="text-sm sm:text-base text-muted-foreground">
-            Explore and learn from your enrolled subjects.
+    <div className="space-y-5 p-4 md:p-6">
+      {/* Header */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold text-foreground sm:text-2xl">Hi {firstName}! 👋</h1>
+          <p className="mt-0.5 text-sm text-muted-foreground sm:text-base">
+            Your personal AI learning assistant
           </p>
         </div>
-        <div className="relative w-full sm:w-64">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search subjects..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
-            data-testid="input-search-subjects"
-          />
+        <Button asChild className="h-10 shrink-0 gap-2 bg-gradient-brand px-5">
+          <Link href="/ai-tutor?greet=1">
+            <AiTutorButtonIcon />
+            Ask AI Tutor
+          </Link>
+        </Button>
+      </div>
+
+      {/* Continue Learning */}
+      <Card className="overflow-hidden shadow-card">
+        <CardContent className="p-0">
+          <div className="flex flex-col sm:flex-row">
+            <div className="flex shrink-0 items-center justify-center bg-gradient-to-br from-primary/5 to-accent/10 p-4 sm:w-44 md:w-52">
+              <img
+                src="/book.png"
+                alt=""
+                aria-hidden
+                className="h-28 w-full object-contain sm:h-32"
+              />
+            </div>
+            <div className="relative flex flex-1 flex-col justify-center gap-3 p-4 sm:p-5">
+              {continueSubject && continueChapter ? (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="absolute right-4 top-4 h-8 border-primary/20 bg-primary/5 text-primary hover:bg-primary/10"
+                    onClick={handleResume}
+                  >
+                    Resume
+                  </Button>
+                  <div className="pr-20">
+                    <p className="text-base font-bold text-foreground">{continueSubject.subject_name}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {continueChapter.chapter || "Chapter 1: Getting Started"}
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Progress</span>
+                      <span className="font-semibold text-foreground">60%</span>
+                    </div>
+                    <Progress value={60} className="h-2" />
+                    <p className="text-xs text-muted-foreground">Last studied: Today, 10:30 AM</p>
+                  </div>
+                </>
+              ) : (
+                <div className="py-2">
+                  <p className="text-base font-bold text-foreground">Start your learning journey</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Your subjects will appear here once they are assigned to you.
+                  </p>
+                  <Button className="mt-4 bg-gradient-brand" disabled={subjects.length === 0}>
+                    Explore Subjects
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Quick Start */}
+      <div>
+        <h2 className="text-base font-semibold text-foreground sm:text-lg">Quick Start with AI Tutor</h2>
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          Get help instantly or explore suggested topics
+        </p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          {QUICK_START.map((item) => (
+            <button
+              key={item.title}
+              type="button"
+              className={cn(
+                "rounded-2xl border border-border/60 p-4 text-left transition-all hover:border-primary/30 hover:shadow-card",
+                item.bg
+              )}
+              onClick={() => handleQuickStart()}
+            >
+              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-background/80 shadow-sm">
+                <item.icon className={cn("h-5 w-5", item.iconColor)} />
+              </div>
+              <p className="text-sm font-semibold text-foreground">{item.title}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{item.description}</p>
+            </button>
+          ))}
         </div>
       </div>
 
-      {filteredSubjects.length === 0 && !searchQuery ? (
-        <Card className="p-8 text-center">
-          <BookOpen className="mx-auto h-12 w-12 text-muted-foreground/50 mb-4" />
-          <h3 className="text-lg font-medium mb-2">No subjects available yet</h3>
-          <p className="text-sm text-muted-foreground">
-            Your subjects will appear here once your school admin or tutor assigns them to your board and class.
-          </p>
-        </Card>
-      ) : (
-        <div className="grid gap-4 sm:gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {filteredSubjects.map((subject) => {
-            const style = getSubjectStyle(subject.subject_name);
-            return (
-              <Card
-                key={subject.id}
-                className="overflow-hidden hover-elevate cursor-pointer transition-all"
-                onClick={() => handleSubjectClick(subject.id)}
-                data-testid={`subject-card-${subject.id}`}
-              >
-                <div className={cn("h-2", style.bgColor)} />
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className={cn("p-3 rounded-lg", style.bgColor)}>
-                      <BookOpen className="h-6 w-6 text-white" />
-                    </div>
-                    <Badge variant="outline" className="text-xs">
-                      {subject.board}
-                    </Badge>
-                  </div>
-                  <CardTitle className="mt-3">{subject.subject_name}</CardTitle>
-                  <CardDescription>
-                    {formatClassLevel(subject.class_level)}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-1 text-muted-foreground">
-                      <BookOpen className="h-4 w-4" />
-                      <span>
-                        {subject.chapters.length}{" "}
-                        {subject.chapters.length === 1 ? "Chapter" : "Chapters"}
-                      </span>
-                    </div>
-                    <Button variant="ghost" size="sm">
-                      Explore
-                      <ChevronRight className="ml-1 h-4 w-4" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+      {/* Your Subjects */}
+      <div>
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="text-base font-semibold text-foreground sm:text-lg">Your Subjects</h2>
+          {subjects.length > 0 && (
+            <button
+              type="button"
+              className="flex items-center gap-0.5 text-sm font-medium text-primary hover:underline"
+              onClick={() => subjects[0] && handleSubjectClick(subjects[0].id)}
+            >
+              Select All
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          )}
         </div>
-      )}
+
+        {subjects.length === 0 ? (
+          <Card className="shadow-card">
+            <CardContent className="flex flex-col items-center p-8 text-center">
+              <BookOpen className="mb-3 h-10 w-10 text-muted-foreground/50" />
+              <p className="font-medium text-foreground">No subjects available yet</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Subjects will appear here once your school assigns them to your class.
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {subjects.map((subject) => {
+              const config = getSubjectConfig(subject.subject_name);
+              const SubjectIcon = config.icon;
+              return (
+                <Card
+                  key={subject.id}
+                  className="cursor-pointer shadow-card transition-all hover:border-primary/30 hover:shadow-card-hover"
+                  onClick={() => handleSubjectClick(subject.id)}
+                  data-testid={`subject-card-${subject.id}`}
+                >
+                  <CardContent className="flex flex-col items-center p-4 text-center">
+                    <div className={cn("mb-3 flex h-11 w-11 items-center justify-center rounded-xl", config.bg)}>
+                      <SubjectIcon className="h-5 w-5 text-white" />
+                    </div>
+                    <p className="truncate text-sm font-semibold text-foreground">{subject.subject_name}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {subject.chapters.length} {subject.chapters.length === 1 ? "Chapter" : "Chapters"}
+                    </p>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* AI Recommended */}
+      <div>
+        <div className="mb-3 flex items-center gap-2">
+          <h2 className="text-base font-semibold text-foreground sm:text-lg">AI Recommended for You</h2>
+          <Badge className="bg-primary/10 text-primary hover:bg-primary/10">New</Badge>
+        </div>
+        <Card className="shadow-card">
+          <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-brand">
+              <Sparkles className="h-5 w-5 text-primary-foreground" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold text-foreground">Polynomials – Practice Questions</p>
+              <p className="text-sm text-muted-foreground">Based on your recent performance</p>
+            </div>
+            <Button
+              className="h-9 shrink-0 bg-gradient-brand"
+              onClick={() => handleQuickStart(subjects.find((s) => s.subject_name === "Mathematics") ?? continueSubject)}
+            >
+              Start Now
+              <ChevronRight className="ml-1 h-4 w-4" />
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
 
 export default function AILearningStudioPage() {
   const [match, params] = useRoute<{ subjectId: string }>("/ai-learning-studio/subject/:subjectId");
+  const [, setLocation] = useLocation();
 
   const [subjects, setSubjects] = useState<StudentSubjectApi[]>([]);
   const [loading, setLoading] = useState(true);
+  const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardSubjectId, setWizardSubjectId] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    getMySubjects()
-      .then((data) => {
-        if (!cancelled) {
-          setSubjects(data);
-          setError(null);
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err.message || "Failed to fetch subjects");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => { cancelled = true; };
+  const wizardSubject = subjects.find((s) => s.id === wizardSubjectId) ?? null;
+
+  const openWizard = (subjectId: string) => {
+    setWizardSubjectId(subjectId);
+    setWizardOpen(true);
+  };
+
+  const handleWizardOpenChange = (open: boolean) => {
+    setWizardOpen(open);
+    if (!open) {
+      setWizardSubjectId(null);
+      if (match) setLocation("/ai-learning-studio");
+    }
+  };
+
+  const loadSubjects = useCallback(async (isRetry = false) => {
+    if (isRetry) {
+      setRetrying(true);
+    } else {
+      setLoading(true);
+    }
+    setError(null);
+    try {
+      const data = await getMySubjects();
+      setSubjects(data);
+    } catch (err) {
+      setError(studentFriendlyError(err, MSG.subjectsLoad));
+    } finally {
+      setLoading(false);
+      setRetrying(false);
+    }
   }, []);
 
-  if (match && params?.subjectId) {
-    return <SubjectDetailView subjectId={params.subjectId} subjects={subjects} />;
-  }
+  useEffect(() => {
+    void loadSubjects();
+  }, [loadSubjects]);
+
+  useEffect(() => {
+    if (match && params?.subjectId && subjects.length > 0 && !loading) {
+      openWizard(params.subjectId);
+    }
+  }, [match, params?.subjectId, subjects.length, loading]);
 
   return (
-    <div className="h-[calc(100vh-3.5rem)] overflow-auto">
-      <SubjectsTab subjects={subjects} loading={loading} error={error} />
+    <div className="min-h-0 flex-1 overflow-auto">
+      <StudioHomeView
+        subjects={subjects}
+        loading={loading}
+        error={error}
+        onSubjectSelect={openWizard}
+        onRetry={() => void loadSubjects(true)}
+        retrying={retrying}
+      />
+      <LearningSetupWizard
+        open={wizardOpen}
+        onOpenChange={handleWizardOpenChange}
+        subject={wizardSubject}
+      />
     </div>
   );
 }
