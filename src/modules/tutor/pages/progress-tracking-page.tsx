@@ -1,44 +1,41 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 import { useTutorData } from "@/modules/tutor/hooks/use-tutor-data";
-import { DataState } from "@/modules/shared/components/data-state";
-import { UserTable } from "@/modules/master-admin/components/user-table";
+import { AtRiskStudentsCard } from "@/modules/tutor/components/progress-analytics/at-risk-students-card";
+import { ClassHealthScoreCard } from "@/modules/tutor/components/progress-analytics/class-health-score-card";
+import { CompletionTrendCard } from "@/modules/tutor/components/progress-analytics/completion-trend-card";
+import { TopicMasteryCard } from "@/modules/tutor/components/progress-analytics/topic-mastery-card";
+import {
+  DEMO_AT_RISK_STUDENTS,
+  DEMO_AT_RISK_STUDENTS_PREVIEW,
+  DEMO_CLASS_HEALTH,
+  DEMO_COMPLETION_TREND,
+  DEMO_TOPIC_MASTERY,
+  DEMO_TOPIC_MASTERY_PREVIEW,
+} from "@/modules/tutor/data/demo-progress-analytics";
 
 export default function TutorProgressTrackingPage() {
-  const { progressQuery, studentsQuery } = useTutorData();
-  const metrics = progressQuery.data;
-  const students = studentsQuery.data ?? [];
-  return (
-    <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-semibold">Progress Tracking</h1>
-      <DataState
-        loading={progressQuery.isLoading}
-        error={progressQuery.error ? String(progressQuery.error) : null}
-        empty={!metrics}
-        emptyText="No progress data available."
-        onRetry={() => void progressQuery.refetch()}
-      >
-        <Card>
-          <CardHeader><CardTitle>Student Completion Health</CardTitle></CardHeader>
-          <CardContent className="space-y-2">
-            <p className="text-sm text-muted-foreground">Overall completion: {metrics?.averageCompletion ?? 0}%</p>
-            <Progress value={metrics?.averageCompletion ?? 0} />
-            <p className="text-xs text-muted-foreground">
-              Based on students tagged to this tutor by matching school, class, and section.
-            </p>
-          </CardContent>
-        </Card>
-      </DataState>
+  const { progressQuery } = useTutorData();
+  const apiScore = progressQuery.data?.averageCompletion;
 
-      <DataState
-        loading={studentsQuery.isLoading}
-        error={studentsQuery.error ? String(studentsQuery.error) : null}
-        empty={students.length === 0}
-        emptyText="No tagged students found for this tutor."
-        onRetry={() => void studentsQuery.refetch()}
-      >
-        <UserTable title="Tagged students for this tutor" users={students} />
-      </DataState>
+  const classHealth = {
+    ...DEMO_CLASS_HEALTH,
+    score: apiScore ?? DEMO_CLASS_HEALTH.score,
+  };
+
+  return (
+    <div className="dashboard-fit flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 md:p-5">
+      <div className="shrink-0">
+        <h1 className="text-2xl font-bold text-blue-900 dark:text-blue-100">Progress Analytics</h1>
+        <p className="text-sm text-muted-foreground">
+          Track class health, topic mastery, and students who need attention.
+        </p>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2 2xl:grid-cols-4">
+        <ClassHealthScoreCard metrics={classHealth} />
+        <TopicMasteryCard topics={DEMO_TOPIC_MASTERY_PREVIEW} allTopics={DEMO_TOPIC_MASTERY} />
+        <CompletionTrendCard data={DEMO_COMPLETION_TREND} />
+        <AtRiskStudentsCard students={DEMO_AT_RISK_STUDENTS_PREVIEW} allStudents={DEMO_AT_RISK_STUDENTS} />
+      </div>
     </div>
   );
 }

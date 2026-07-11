@@ -30,7 +30,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             <SidebarTrigger className="h-9 w-9" data-testid="button-mobile-menu" />
             <AuthBrandMark variant="sidebar" className="min-w-0 flex-1" />
           </header>
-          <main className="flex min-h-0 flex-1 flex-col overflow-auto bg-background [&:has(.dashboard-fit)]:overflow-hidden">
+          <main className="flex min-h-0 flex-1 flex-col overflow-auto bg-background [&:has(.dashboard-fit)]:overflow-y-auto">
             {children}
           </main>
           {showFloatingSettings && <FloatingSettingsButton />}

@@ -15,7 +15,6 @@ import {
 } from "@/components/ui/sidebar";
 import {
   LayoutDashboard,
-  Bot,
   BookOpen,
   Video,
   FileText,
@@ -24,12 +23,15 @@ import {
   Users,
   GraduationCap,
   Calendar,
-  ClipboardList,
+  Sparkles,
+  NotebookPen,
   Building2,
   LogOut,
   UploadCloud,
   CreditCard,
   Database,
+  LayoutGrid,
+  KeyRound,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
@@ -38,6 +40,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AuthBrandMark } from "@/components/auth/auth-brand-mark";
+import { getDashboardPath } from "@/lib/dashboard-routes";
+import { brandImages } from "@/lib/brand-images";
 import { UserRole } from "@/types/schema";
 import type { LucideIcon } from "lucide-react";
 
@@ -58,18 +62,19 @@ const studentMenuItems: MenuItem[] = [
 
 const tutorMenuItems: MenuItem[] = [
   { title: "Dashboard", url: "/tutor/dashboard", icon: LayoutDashboard },
-  { title: "Assigned Students", url: "/tutor/students", icon: Users },
+  { title: "Students", url: "/tutor/students", icon: Users },
   { title: "Sessions", url: "/tutor/sessions", icon: Calendar },
-  { title: "AI Interaction", url: "/tutor/ai-interaction", icon: Bot },
-  { title: "Progress", url: "/tutor/progress", icon: ClipboardList },
-  { title: "Settings", url: "/tutor/settings", icon: Settings },
+  { title: "Lesson Planner", url: "/tutor/lesson-planner", icon: NotebookPen },
+  { title: "Progress Analytics", url: "/tutor/progress", icon: BarChart3 },
+  { title: "AI Insights", url: "/tutor/ai-insights", icon: Sparkles },
 ];
 
 const schoolAdminMenuItems: MenuItem[] = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
+  { title: "Teachers", url: "/teachers", icon: Users },
   { title: "Students", url: "/students", icon: GraduationCap },
-  { title: "Tutors", url: "/tutors", icon: Users },
-  { title: "Settings", url: "/settings", icon: Settings },
+  { title: "Classes", url: "/classes", icon: LayoutGrid },
+  { title: "Credentials", url: "/credentials", icon: KeyRound },
 ];
 
 const masterAdminMenuItems: MenuItem[] = [
@@ -100,14 +105,6 @@ const roleLabels: Record<string, string> = {
   school_admin: "School Admin",
   org_admin: "Organization",
   master_admin: "Master Admin",
-};
-
-const roleColors: Record<string, string> = {
-  student: "bg-primary",
-  tutor: "bg-accent text-accent-foreground",
-  school_admin: "bg-muted-foreground",
-  org_admin: "bg-brand-secondary",
-  master_admin: "bg-destructive",
 };
 
 function SidebarMenuIcon({ item }: { item: MenuItem }) {
@@ -155,23 +152,46 @@ export function AppSidebar() {
   };
 
   const menuItems = getMenuItems();
+  const sidebarMascot =
+    user?.role === UserRole.TUTOR
+      ? "/tutor-sidebar.png"
+      : user?.role === UserRole.SCHOOL_ADMIN
+        ? "/schooladmin.png"
+        : !user || user.role === UserRole.STUDENT
+          ? brandImages.studentMascot
+          : null;
+  const dashboardPath = getDashboardPath(user?.role);
 
   const handleNavClick = () => {
     if (isMobile) setOpenMobile(false);
   };
 
   return (
-    <Sidebar collapsible="icon">
-      <SidebarHeader className="relative border-b border-sidebar-border px-3 py-4 group-data-[collapsible=icon]:px-2">
+    <Sidebar collapsible="icon" className="tutor-sidebar-theme">
+      <SidebarHeader className="relative border-b border-white/10 px-3 py-4 group-data-[collapsible=icon]:px-2">
         <div className="flex items-center pr-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:pr-0">
-          <div className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden">
-            <AuthBrandMark variant="sidebar" />
-          </div>
-          <img
-            src="/logo.png"
-            alt="AI Tutor"
-            className="hidden h-8 w-8 shrink-0 object-contain group-data-[collapsible=icon]:block"
-          />
+          <Link
+            href={dashboardPath}
+            onClick={handleNavClick}
+            className="min-w-0 flex-1 group-data-[collapsible=icon]:hidden"
+          >
+            <AuthBrandMark
+              variant="sidebar"
+              logoBackground
+              className="[&_p]:text-white [&_p:last-child]:text-white/75"
+            />
+          </Link>
+          <Link
+            href={dashboardPath}
+            onClick={handleNavClick}
+            className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white shadow-sm group-data-[collapsible=icon]:flex"
+          >
+            <img
+              src="/logo.png"
+              alt="AI Tutor"
+              className="h-7 w-7 object-contain"
+            />
+          </Link>
         </div>
         <Button
           variant="ghost"
@@ -191,7 +211,7 @@ export function AppSidebar() {
 
       <SidebarContent>
         <SidebarGroup className="px-2 py-2">
-          <SidebarGroupLabel className="px-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          <SidebarGroupLabel className="px-3 text-xs font-medium uppercase tracking-wider text-white/55">
             Navigation
           </SidebarGroupLabel>
           <SidebarGroupContent>
@@ -214,28 +234,49 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {sidebarMascot && (
+          <div className="mt-auto flex justify-start px-3 pb-3 pl-0 group-data-[collapsible=icon]:hidden">
+            <img
+              src={sidebarMascot}
+              alt=""
+              aria-hidden
+              className="w-full max-w-[200px] -translate-x-2 object-contain"
+            />
+          </div>
+        )}
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-sidebar-border px-3 py-4">
+      <SidebarFooter className="border-t border-white/10 px-3 py-4">
         {user && (
           <div className="flex items-center gap-3 group-data-[collapsible=icon]:justify-center">
-            <Avatar className="h-9 w-9 shrink-0">
-              <AvatarFallback className="bg-gradient-brand text-primary-foreground text-sm">
+            <Avatar className="h-9 w-9 shrink-0 ring-2 ring-white/25">
+              <AvatarFallback
+                className={
+                  user.role === UserRole.SCHOOL_ADMIN
+                    ? "bg-gradient-brand text-sm font-semibold text-white"
+                    : "bg-white/20 text-sm text-white"
+                }
+              >
                 {user.fullName?.charAt(0)?.toUpperCase() || "U"}
               </AvatarFallback>
             </Avatar>
             <div className="flex min-w-0 flex-1 flex-col overflow-hidden group-data-[collapsible=icon]:hidden">
-              <span className="truncate text-sm font-medium">{user.fullName}</span>
+              <span className="truncate text-sm font-medium text-white">{user.fullName}</span>
               <Badge
                 variant="secondary"
-                className={`w-fit text-xs ${roleColors[user.role]} text-white`}
+                className={
+                  user.role === UserRole.SCHOOL_ADMIN
+                    ? "w-fit border-0 bg-white/25 text-xs text-white hover:bg-white/25"
+                    : "w-fit bg-white/20 text-xs text-white hover:bg-white/20"
+                }
               >
                 {roleLabels[user.role] || "User"}
               </Badge>
             </div>
             <button
               onClick={logout}
-              className="rounded-md p-2 text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground group-data-[collapsible=icon]:hidden"
+              className="rounded-md p-2 text-white/80 transition-colors hover:bg-white/15 hover:text-white group-data-[collapsible=icon]:hidden"
               data-testid="button-logout"
             >
               <LogOut className="h-4 w-4" />

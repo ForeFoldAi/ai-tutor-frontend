@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation, useRoute } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -21,7 +21,7 @@ import {
 import { cn } from "@/lib/utils";
 import { AiTutorButtonIcon } from "@/components/ai-tutor-button-icon";
 import { AiTutorStudioSkeleton } from "@/components/skeletons/student-page-skeletons";
-import { getMySubjects } from "@/api/student";
+import { useMySubjects } from "@/hooks/use-my-subjects";
 import type { StudentSubjectApi } from "@/api/types";
 import { useAuthStore } from "@/lib/auth-store";
 import { LearningSetupWizard } from "@/components/learning/learning-setup-wizard";
@@ -380,10 +380,9 @@ export default function AILearningStudioPage() {
   const [match, params] = useRoute<{ subjectId: string }>("/ai-learning-studio/subject/:subjectId");
   const [, setLocation] = useLocation();
 
-  const [subjects, setSubjects] = useState<StudentSubjectApi[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [retrying, setRetrying] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { data: subjects = [], isLoading, isFetching, error, refetch } = useMySubjects();
+  const loading = isLoading && subjects.length === 0;
+  const retrying = isFetching && !isLoading;
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardSubjectId, setWizardSubjectId] = useState<string | null>(null);
 
@@ -402,28 +401,6 @@ export default function AILearningStudioPage() {
     }
   };
 
-  const loadSubjects = useCallback(async (isRetry = false) => {
-    if (isRetry) {
-      setRetrying(true);
-    } else {
-      setLoading(true);
-    }
-    setError(null);
-    try {
-      const data = await getMySubjects();
-      setSubjects(data);
-    } catch (err) {
-      setError(studentFriendlyError(err, MSG.subjectsLoad));
-    } finally {
-      setLoading(false);
-      setRetrying(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadSubjects();
-  }, [loadSubjects]);
-
   useEffect(() => {
     if (match && params?.subjectId && subjects.length > 0 && !loading) {
       openWizard(params.subjectId);
@@ -431,13 +408,13 @@ export default function AILearningStudioPage() {
   }, [match, params?.subjectId, subjects.length, loading]);
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto">
+    <div className="dashboard-fit overflow-auto">
       <StudioHomeView
         subjects={subjects}
         loading={loading}
-        error={error}
+        error={error ? studentFriendlyError(error, MSG.subjectsLoad) : null}
         onSubjectSelect={openWizard}
-        onRetry={() => void loadSubjects(true)}
+        onRetry={() => void refetch()}
         retrying={retrying}
       />
       <LearningSetupWizard

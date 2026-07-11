@@ -22,9 +22,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AiTutorButtonIcon } from "@/components/ai-tutor-button-icon";
-import { getMySubjects } from "@/api/student";
 import type { StudentSubjectApi } from "@/api/types";
-import { MyLearningSkeleton } from "@/components/skeletons/student-page-skeletons";
+import { useMySubjects } from "@/hooks/use-my-subjects";
 
 type SubjectFilter = "all" | "in_progress" | "not_started" | "completed";
 type SubjectStatus = "in_progress" | "not_started" | "completed";
@@ -173,27 +172,14 @@ function mapApiSubjects(apiSubjects: StudentSubjectApi[]): LearningSubject[] {
 export default function MyLearningPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<SubjectFilter>("all");
-  const [loading, setLoading] = useState(true);
+  const { data } = useMySubjects();
   const [subjects, setSubjects] = useState<LearningSubject[]>(
     DEMO_SUBJECTS.map((s, i) => ({ ...s, id: `demo-${i}` }))
   );
 
   useEffect(() => {
-    let cancelled = false;
-    getMySubjects()
-      .then((data) => {
-        if (!cancelled) setSubjects(mapApiSubjects(data));
-      })
-      .catch(() => {
-        /* keep demo data */
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    if (data) setSubjects(mapApiSubjects(data));
+  }, [data]);
 
   const filteredSubjects = useMemo(() => {
     return subjects.filter((subject) => {
@@ -204,10 +190,6 @@ export default function MyLearningPage() {
       return matchesSearch && matchesFilter;
     });
   }, [subjects, searchQuery, filter]);
-
-  if (loading) {
-    return <MyLearningSkeleton />;
-  }
 
   return (
     <div className="dashboard-fit flex min-h-0 flex-1 flex-col overflow-hidden p-4 md:p-5">

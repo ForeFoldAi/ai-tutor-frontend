@@ -1,19 +1,46 @@
 /**
- * Progressive MP3 playback via MediaSource (Safari-only blob fallback).
+ * Progressive MP3 playback via MediaSource (Safari blob fallback).
+ *
+ * Phase 4 — gapless-oriented playback:
+ * - Buffers MP3 chunks ahead of the playhead
+ * - Recovers from underflow (waiting/stalled) without user action
+ * - Trims old MSE buffer on QuotaExceededError
+ * - Safari: debounced blob URL refresh to reduce stutter between TTS units
  */
+
+import {
+  AUDIO_APPEND_RETRY_MS,
+  AUDIO_AUTO_RESUME_MS,
+  AUDIO_MIN_BUFFER_BYTES,
+  AUDIO_MSE_TRIM_BEHIND_SEC,
+  AUDIO_PLAYBACK_END_TOLERANCE_SEC,
+  AUDIO_UNDERFLOW_POLL_MS,
+  SAFARI_BLOB_DEBOUNCE_MS,
+} from "@/lib/voice-audio-config";
 
 const MIME = "audio/mpeg";
 const LOG = "[voice-audio]";
+
+export type Mp3PlayerStats = {
+  bytesBuffered: number;
+  bytesPending: number;
+  queueDepth: number;
+  chunksReceived: number;
+  playbackStarted: boolean;
+  streamEnded: boolean;
+  underflowRecoveries: number;
+  bufferedAheadSec: number;
+};
 
 export class Mp3StreamPlayer {
   private audio: HTMLAudioElement;
   private mediaSource: MediaSource | null = null;
   private sourceBuffer: SourceBuffer | null = null;
-  private queue: Uint8Array[] = [];
+  private queue: ArrayBuffer[] = [];
   private pending = false;
   private destroyed = false;
   private readonly useMse: boolean;
-  private blobChunks: Uint8Array[] = [];
+  private blobChunks: ArrayBuffer[] = [];
   private blobUrl: string | null = null;
   private readyPromise: Promise<void> | null = null;
   private firstChunkLogged = false;
@@ -23,18 +50,34 @@ export class Mp3StreamPlayer {
   private playbackEndWaiters: Array<() => void> = [];
   private unlocked = false;
   private allowAutoResume = true;
+  private bytesBuffered = 0;
+  private bytesPending = 0;
+  private chunksReceived = 0;
+  private underflowRecoveries = 0;
+  private underflowTimer: number | null = null;
+  private safariRefreshTimer: number | null = null;
 
   constructor() {
     this.audio = new Audio();
     this.audio.preload = "auto";
-    // Attached elements play more reliably across browsers.
     this.audio.style.display = "none";
     if (typeof document !== "undefined") {
       document.body.appendChild(this.audio);
     }
     this.useMse =
       typeof MediaSource !== "undefined" && MediaSource.isTypeSupported(MIME);
+
     this.audio.addEventListener("ended", () => this.notifyIfPlaybackComplete());
+    this.audio.addEventListener("timeupdate", () => this.notifyIfPlaybackComplete());
+
+    // Underflow: decoder starved — drain pending appends and retry play immediately
+    const onStarved = () => {
+      void this.drainQueue();
+      this.scheduleUnderflowRecovery();
+    };
+    this.audio.addEventListener("waiting", onStarved);
+    this.audio.addEventListener("stalled", onStarved);
+
     this.audio.addEventListener("pause", () => {
       if (!this.allowAutoResume || this.destroyed || !this.firstChunkLogged || this.streamEnded) {
         return;
@@ -43,11 +86,36 @@ export class Mp3StreamPlayer {
       window.setTimeout(() => {
         if (this.destroyed || this.audio.ended || !this.audio.paused) return;
         void this.audio.play().catch(() => {});
-      }, 40);
+      }, AUDIO_AUTO_RESUME_MS);
     });
   }
 
-  /** Resolve when MediaSource + SourceBuffer are ready for appendBuffer. */
+  stats(): Mp3PlayerStats {
+    return {
+      bytesBuffered: this.bytesBuffered,
+      bytesPending: this.bytesPending,
+      queueDepth: this.queue.length,
+      chunksReceived: this.chunksReceived,
+      playbackStarted: this.playbackStartedLogged,
+      streamEnded: this.streamEnded,
+      underflowRecoveries: this.underflowRecoveries,
+      bufferedAheadSec: this.bufferedAheadSec(),
+    };
+  }
+
+  /** Seconds of audio buffered ahead of current playhead (0 if unknown). */
+  bufferedAheadSec(): number {
+    if (this.destroyed) return 0;
+    const t = this.audio.currentTime;
+    const ranges = this.audio.buffered;
+    for (let i = 0; i < ranges.length; i += 1) {
+      if (t >= ranges.start(i) && t <= ranges.end(i)) {
+        return Math.max(0, ranges.end(i) - t);
+      }
+    }
+    return 0;
+  }
+
   ready(): Promise<void> {
     if (this.destroyed) {
       return Promise.reject(new Error("Mp3StreamPlayer destroyed"));
@@ -87,20 +155,43 @@ export class Mp3StreamPlayer {
     if (this.destroyed || !this.mediaSource) return;
 
     this.sourceBuffer = this.mediaSource.addSourceBuffer(MIME);
+    // sequence mode: back-to-back MP3 frames from multiple TTS units stitch continuously
     this.sourceBuffer.mode = "sequence";
     this.sourceBuffer.addEventListener("updateend", () => {
       this.pending = false;
       this.logPlaybackStarted();
       void this.drainQueue();
       this.tryEndStream();
-      if (this.audio.paused && !this.audio.ended) {
-        void this.audio.play().catch(() => {});
-      }
+      this.ensurePlaying();
       this.notifyIfPlaybackComplete();
     });
 
     console.debug(LOG, "MSE ready", `${(performance.now() - this.turnT0).toFixed(0)}ms`);
     void this.drainQueue();
+  }
+
+  private ensurePlaying(): void {
+    if (this.destroyed || this.audio.ended) return;
+    if (!this.firstChunkLogged || this.bytesBuffered < AUDIO_MIN_BUFFER_BYTES) return;
+    if (this.audio.paused) {
+      void this.audio.play().catch(() => {});
+    }
+  }
+
+  private scheduleUnderflowRecovery(): void {
+    if (this.destroyed || this.streamEnded || !this.firstChunkLogged) return;
+    if (this.underflowTimer !== null) return;
+    this.underflowTimer = window.setTimeout(() => {
+      this.underflowTimer = null;
+      if (this.destroyed || this.audio.ended || !this.audio.paused) return;
+      const hasPending =
+        this.queue.length > 0 || this.pending || Boolean(this.sourceBuffer?.updating);
+      if (hasPending || this.bufferedAheadSec() > 0.05) {
+        this.underflowRecoveries += 1;
+        void this.drainQueue();
+        void this.audio.play().catch(() => {});
+      }
+    }, AUDIO_UNDERFLOW_POLL_MS);
   }
 
   private logFirstChunk(): void {
@@ -116,23 +207,40 @@ export class Mp3StreamPlayer {
     console.debug(LOG, "playback started", `${(performance.now() - this.turnT0).toFixed(0)}ms`);
   }
 
+  private syncPendingBytes(): void {
+    this.bytesPending = this.queue.reduce((sum, c) => sum + c.byteLength, 0);
+  }
+
   enqueue(chunk: ArrayBuffer): void {
     if (this.destroyed || chunk.byteLength === 0) return;
     this.logFirstChunk();
-    const data = new Uint8Array(chunk);
+    this.chunksReceived += 1;
+    this.bytesBuffered += chunk.byteLength;
+    const data = chunk.slice(0);
 
     if (this.useMse) {
       void this.ready().then(() => {
         if (this.destroyed || !this.sourceBuffer) return;
         this.queue.push(data);
+        this.syncPendingBytes();
         void this.drainQueue();
+        this.ensurePlaying();
       });
       return;
     }
 
     this.blobChunks.push(data);
-    this.refreshBlobSrc();
+    this.scheduleSafariRefresh();
     if (this.streamEnded) this.notifyIfPlaybackComplete();
+  }
+
+  /** Safari: debounce blob URL rebuilds so rapid TTS chunks don't reset playhead repeatedly */
+  private scheduleSafariRefresh(): void {
+    if (this.safariRefreshTimer !== null) return;
+    this.safariRefreshTimer = window.setTimeout(() => {
+      this.safariRefreshTimer = null;
+      this.refreshBlobSrc();
+    }, SAFARI_BLOB_DEBOUNCE_MS);
   }
 
   private refreshBlobSrc(): void {
@@ -164,6 +272,7 @@ export class Mp3StreamPlayer {
 
     const next = this.queue.shift();
     if (!next) return;
+    this.syncPendingBytes();
 
     this.pending = true;
     try {
@@ -171,8 +280,60 @@ export class Mp3StreamPlayer {
     } catch (err) {
       this.pending = false;
       this.queue.unshift(next);
-      console.debug(LOG, "appendBuffer retry", err);
+      this.syncPendingBytes();
+      this.recoverFromAppendError(err);
     }
+  }
+
+  /**
+   * MSE buffer full — trim played audio behind playhead, then retry.
+   * ponytail: naive trim; upgrade path: managed buffer window with timestamps.
+   */
+  private recoverFromAppendError(err: unknown): void {
+    const name = err instanceof DOMException ? err.name : "";
+    console.debug(LOG, "appendBuffer retry", name || err);
+
+    if (
+      name === "QuotaExceededError" &&
+      this.sourceBuffer &&
+      !this.sourceBuffer.updating &&
+      this.audio.currentTime > AUDIO_MSE_TRIM_BEHIND_SEC
+    ) {
+      try {
+        const trimEnd = this.audio.currentTime - AUDIO_MSE_TRIM_BEHIND_SEC;
+        this.pending = true;
+        this.sourceBuffer.remove(0, trimEnd);
+        this.sourceBuffer.addEventListener(
+          "updateend",
+          () => {
+            this.pending = false;
+            void this.drainQueue();
+          },
+          { once: true },
+        );
+        return;
+      } catch {
+        /* fall through to timed retry */
+      }
+    }
+
+    window.setTimeout(() => void this.drainQueue(), AUDIO_APPEND_RETRY_MS);
+  }
+
+  /**
+   * Drop queued-but-unplayed bytes without destroying the element.
+   * Used on interrupt so the next turn can reuse an unlocked player when safe.
+   */
+  flushPending(): void {
+    this.queue = [];
+    this.bytesPending = 0;
+    this.streamEnded = true;
+    try {
+      this.audio.pause();
+    } catch {
+      /* ignore */
+    }
+    this.notifyIfPlaybackComplete();
   }
 
   stop(): void {
@@ -182,6 +343,16 @@ export class Mp3StreamPlayer {
     this.blobChunks = [];
     this.pending = false;
     this.readyPromise = null;
+    this.bytesBuffered = 0;
+    this.bytesPending = 0;
+    if (this.underflowTimer !== null) {
+      window.clearTimeout(this.underflowTimer);
+      this.underflowTimer = null;
+    }
+    if (this.safariRefreshTimer !== null) {
+      window.clearTimeout(this.safariRefreshTimer);
+      this.safariRefreshTimer = null;
+    }
 
     try {
       this.audio.pause();
@@ -221,9 +392,12 @@ export class Mp3StreamPlayer {
     this.firstChunkLogged = false;
     this.playbackStartedLogged = false;
     this.streamEnded = false;
+    this.bytesBuffered = 0;
+    this.bytesPending = 0;
+    this.chunksReceived = 0;
+    this.underflowRecoveries = 0;
   }
 
-  /** Tell the player no more MP3 chunks will arrive for this utterance. */
   signalNoMoreChunks(): void {
     if (this.destroyed) return;
     this.streamEnded = true;
@@ -253,7 +427,7 @@ export class Mp3StreamPlayer {
     if (
       Number.isFinite(d) &&
       d > 0 &&
-      this.audio.currentTime >= d - 0.15 &&
+      this.audio.currentTime >= d - AUDIO_PLAYBACK_END_TOLERANCE_SEC &&
       this.audio.paused
     ) {
       return true;
@@ -267,7 +441,6 @@ export class Mp3StreamPlayer {
     for (const resolve of waiters) resolve();
   }
 
-  /** Wait until all buffered audio has finished playing. */
   waitForPlaybackEnd(timeoutMs = 120_000): Promise<void> {
     if (this.isPlaybackComplete()) return Promise.resolve();
     return new Promise((resolve) => {
@@ -280,10 +453,8 @@ export class Mp3StreamPlayer {
     });
   }
 
-  /** Call after a user gesture to satisfy autoplay policies. */
   async unlock(): Promise<void> {
     if (this.destroyed) return;
-    // Never pause/reset audio that is already playing or has buffered speech.
     if (this.unlocked && (this.isPlaying() || this.firstChunkLogged)) return;
     await this.ready();
     if (this.isPlaying() || this.firstChunkLogged) {
@@ -296,7 +467,7 @@ export class Mp3StreamPlayer {
       this.audio.currentTime = 0;
       this.unlocked = true;
     } catch {
-      /* ignore — first real chunk will retry play */
+      /* ignore */
     }
   }
 
@@ -315,7 +486,6 @@ export class Mp3StreamPlayer {
     return !this.audio.paused && !this.audio.ended;
   }
 
-  /** True only when real tutor audio has been buffered and is playing. */
   hasAudiblePlayback(): boolean {
     return this.firstChunkLogged && this.isPlaying();
   }

@@ -1,7 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { stripGreetSearchParam } from "@/lib/tutor-greeting";
 import {
   buildVoiceSessionKey,
@@ -21,18 +28,56 @@ import {
 } from "@/lib/voice-stt-postprocess";
 import { buildVoiceConversationHistory } from "@/lib/voice-http-history";
 import {
-  createVoiceRecorder,
+  createContinuousMicRecorder,
   fetchServerSttAvailable,
   shouldUseServerStt,
   transcribeWithServer,
-  useExclusiveServerStt,
 } from "@/lib/voice-server-stt";
+import {
+  BARGE_IN_ARM_DELAY_MS,
+  BARGE_IN_DUCK_VOLUME,
+  BARGE_IN_HOLD_MS,
+  BARGE_CHECK_REQUIRED,
+  INTERRUPT_COOLDOWN_MS,
+  INTERRUPT_RESUME_LISTEN_MS,
+  POST_PLAYBACK_ECHO_MS,
+  POST_PLAYBACK_LISTEN_MS,
+  STT_FINAL_DEBOUNCE_MS,
+  STT_INTERIM_COMPLETE_MS,
+  VOICE_PROTECTION_ENABLED,
+} from "@/lib/voice-conversation-config";
+import {
+  appendAiSpeechTail,
+  evaluateIncomingTranscript,
+  logSttVerdict,
+} from "@/lib/voice-echo-guard";
+import { detectInterruptIntent } from "@/lib/voice-interrupt-intent";
+import {
+  checkBargeIn,
+  createClientProtectionMetrics,
+} from "@/lib/voice-protection";
+import { logVoiceStreamMetrics } from "@/lib/voice-stream-diagnostics";
+import { logVoicePlayerStats } from "@/lib/voice-audio-diagnostics";
+import {
+  loadTutorVoiceGender,
+  saveTutorVoiceGender,
+  tutorVoiceId,
+  type TutorVoiceGender,
+} from "@/lib/tutor-voice";
 import type { MathLesson } from "@/types/math-lesson";
 import type { ScienceExperiment } from "@/types/science-experiment";
 import { ArrowLeft, BookOpen, RefreshCw } from "lucide-react";
 
 type Phase = VoicePhase;
 const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
+
+/** WS assistant events after interrupt/question must match this epoch or are dropped */
+function isStaleAssistantStream(
+  streamEpochRef: MutableRefObject<number>,
+  activeQuestionEpochRef: MutableRefObject<number>,
+): boolean {
+  return streamEpochRef.current !== activeQuestionEpochRef.current;
+}
 
 const FRAME_TEXT = 1;
 const FRAME_AUDIO = 2;
@@ -80,6 +125,26 @@ function getAccessToken(): string {
 
 function tutorIsSpeaking(player: Mp3StreamPlayer | null | undefined): boolean {
   return Boolean(player?.hasAudiblePlayback());
+}
+
+function isTutorAudible(
+  wsPlayer: Mp3StreamPlayer | null | undefined,
+  fallbackPlayer: Mp3StreamPlayer | null | undefined,
+): boolean {
+  return tutorIsSpeaking(wsPlayer) || tutorIsSpeaking(fallbackPlayer);
+}
+
+function setTutorPlaybackVolume(
+  wsPlayer: Mp3StreamPlayer | null | undefined,
+  fallbackPlayer: Mp3StreamPlayer | null | undefined,
+  volume: number,
+): void {
+  try {
+    if (wsPlayer?.element) wsPlayer.element.volume = volume;
+    if (fallbackPlayer?.element) fallbackPlayer.element.volume = volume;
+  } catch {
+    /* ignore */
+  }
 }
 
 export default function AIVoicePage() {
@@ -139,13 +204,17 @@ export default function AIVoicePage() {
   const [phase, setPhase] = useState<Phase>("connecting");
   const [micEnabled, setMicEnabled] = useState(true);
   const [speakerEnabled, setSpeakerEnabled] = useState(true);
+  const [voiceGender, setVoiceGender] = useState<TutorVoiceGender>(() => loadTutorVoiceGender());
   const [connectionStatus, setConnectionStatus] = useState("Connecting...");
   const [interimTranscript, setInterimTranscript] = useState("");
+  const interimTranscriptRef = useRef("");
   const [assistantText, setAssistantText] = useState("");
   const [errorText, setErrorText] = useState<string | null>(null);
   const [voiceRelatedImages, setVoiceRelatedImages] = useState<VoiceRelatedImage[]>([]);
   const [streamingMathLesson, setStreamingMathLesson] = useState<MathLesson | null>(null);
   const [streamingScienceExperiment, setStreamingScienceExperiment] = useState<ScienceExperiment | null>(null);
+  const [spokenUnitText, setSpokenUnitText] = useState<string | null>(null);
+  const [spokenUnitIndex, setSpokenUnitIndex] = useState(-1);
 
   const volumeRef = useRef(0);
   const [volumeUi, setVolumeUi] = useState(0);
@@ -160,13 +229,19 @@ export default function AIVoicePage() {
   const recognitionRef = useRef<any>(null);
   const startRecognitionRef = useRef<() => void>(() => {});
   const stopRecognitionRef = useRef<() => void>(() => {});
+  const abortRecognitionRef = useRef<() => void>(() => {});
   const startRecognition = () => startRecognitionRef.current();
   const stopRecognition = () => stopRecognitionRef.current();
+  const abortRecognition = () => abortRecognitionRef.current();
   const turnIdRef = useRef(0);
+  /** Bumped on new question or interrupt — invalidates in-flight WS assistant stream */
+  const streamEpochRef = useRef(0);
+  const activeQuestionEpochRef = useRef(0);
   const analyserCleanupRef = useRef<(() => void) | null>(null);
   const phaseRef = useRef<Phase>(phase);
   const micEnabledRef = useRef(micEnabled);
   const speakerEnabledRef = useRef(speakerEnabled);
+  const voiceGenderRef = useRef(voiceGender);
   const speakingStartedAtRef = useRef(0);
   const callStartRef = useRef<number | null>(null);
   const assistantTextRef = useRef("");
@@ -200,28 +275,106 @@ export default function AIVoicePage() {
   const analyserStreamRef = useRef<MediaStream | null>(null);
   const transcriptEntriesRef = useRef(transcriptEntries);
   const tutorStateRef = useRef(tutorState);
-  const serverSttRecorderRef = useRef<ReturnType<typeof createVoiceRecorder> | null>(null);
+  const serverSttRecorderRef = useRef<ReturnType<typeof createContinuousMicRecorder> | null>(null);
   const serverSttProcessingRef = useRef(false);
   const speechActiveRef = useRef(false);
   const silenceSinceRef = useRef<number | null>(null);
+  const utteranceStartedAtRef = useRef(0);
+  const bargeUtteranceActiveRef = useRef(false);
+  const bargeEchoGuardRef = useRef("");
+  const recentAiSpeechRef = useRef("");
+  const sttCooldownUntilRef = useRef(0);
+  const echoBaselineRef = useRef(0);
+  const bargeInHoldSinceRef = useRef<number | null>(null);
+  const bargeVolumeHistoryRef = useRef<number[]>([]);
+  const tickBargeInMonitorRef = useRef<(level: number) => void>(() => {});
+  const bargeInEnabledRef = useRef(bargeInEnabled);
+  const protectionMetricsRef = useRef(createClientProtectionMetrics());
+
+  useEffect(() => { interimTranscriptRef.current = interimTranscript; }, [interimTranscript]);
 
   useEffect(() => { chapterCtxRef.current = chapterCtx; }, [chapterCtx]);
+  useEffect(() => { bargeInEnabledRef.current = bargeInEnabled; }, [bargeInEnabled]);
   useEffect(() => { userRef.current = user; }, [user]);
 
   useEffect(() => { phaseRef.current = phase; }, [phase]);
   useEffect(() => { micEnabledRef.current = micEnabled; }, [micEnabled]);
   useEffect(() => { speakerEnabledRef.current = speakerEnabled; }, [speakerEnabled]);
+  useEffect(() => { voiceGenderRef.current = voiceGender; }, [voiceGender]);
 
   const syncAssistantText = useCallback((next: string) => {
     assistantTextRef.current = next;
     setAssistantText(next);
+    if (next.trim()) {
+      recentAiSpeechRef.current = appendAiSpeechTail("", next);
+      bargeEchoGuardRef.current = recentAiSpeechRef.current;
+    }
   }, []);
 
   const appendAssistantToken = useCallback((tok: string) => {
     const next = assistantTextRef.current + tok;
     assistantTextRef.current = next;
     setAssistantText(next);
+    if (tok) {
+      recentAiSpeechRef.current = appendAiSpeechTail(recentAiSpeechRef.current, tok);
+      bargeEchoGuardRef.current = recentAiSpeechRef.current;
+    }
   }, []);
+
+  const armSttCooldown = useCallback((ms = POST_PLAYBACK_ECHO_MS) => {
+    sttCooldownUntilRef.current = Date.now() + ms;
+  }, []);
+
+  const isSttCooldownActive = useCallback(() => Date.now() < sttCooldownUntilRef.current, []);
+
+  const isAiSpeakingNow = useCallback(
+    () =>
+      phaseRef.current === "speaking" ||
+      isTutorAudible(mp3PlayerRef.current, fallbackMp3Ref.current),
+    [],
+  );
+
+  const canAcceptSttNow = useCallback(() => {
+    if (shuttingDownRef.current) return false;
+    if (isAiSpeakingNow()) return false;
+    if (isSttCooldownActive()) return false;
+    return true;
+  }, [isAiSpeakingNow, isSttCooldownActive]);
+
+  const rejectTranscriptCandidate = useCallback(
+    (raw: string, source: string): boolean => {
+      const cleaned = postprocessVoiceTranscript(raw, subjectLabel).trim();
+      const intent = detectInterruptIntent(cleaned);
+      if (intent.isInterruptIntent) {
+        logSttVerdict("accepted", cleaned, { source, reason: "interrupt_intent", phrase: intent.matchedPhrase });
+        return false;
+      }
+      const { verdict, similarity } = evaluateIncomingTranscript(
+        cleaned,
+        recentAiSpeechRef.current,
+      );
+      if (verdict === "echo_rejected") {
+        protectionMetricsRef.current.bump("echo_rejected_count");
+        protectionMetricsRef.current.set("echo_similarity_score", similarity);
+      }
+      if (verdict !== "accepted") {
+        logSttVerdict(verdict, cleaned, { source, similarity });
+        return true;
+      }
+      logSttVerdict("accepted", cleaned, { source, similarity });
+      return false;
+    },
+    [subjectLabel],
+  );
+
+  const canAcceptSttNowRef = useRef(canAcceptSttNow);
+  const rejectTranscriptCandidateRef = useRef(rejectTranscriptCandidate);
+  useEffect(() => {
+    canAcceptSttNowRef.current = canAcceptSttNow;
+  }, [canAcceptSttNow]);
+  useEffect(() => {
+    rejectTranscriptCandidateRef.current = rejectTranscriptCandidate;
+  }, [rejectTranscriptCandidate]);
 
   useEffect(() => { voiceImagesRef.current = voiceRelatedImages; }, [voiceRelatedImages]);
   useEffect(() => { transcriptEntriesRef.current = transcriptEntries; }, [transcriptEntries]);
@@ -241,7 +394,7 @@ export default function AIVoicePage() {
   }, [voiceSessionKey, transcriptEntries]);
 
   useEffect(() => {
-    if (!serverSttPreferred || !normalizedVoiceUrl) {
+    if (!serverSttPreferred) {
       setServerSttActive(false);
       return;
     }
@@ -309,16 +462,18 @@ export default function AIVoicePage() {
     if (player) {
       player.signalNoMoreChunks();
       await player.waitForPlaybackEnd();
-      // Brief pause so speaker tail is not picked up by the mic.
-      await new Promise<void>((r) => window.setTimeout(r, 400));
+      armSttCooldown(POST_PLAYBACK_ECHO_MS);
+      await new Promise<void>((r) => window.setTimeout(r, POST_PLAYBACK_ECHO_MS));
+    } else {
+      armSttCooldown(POST_PLAYBACK_ECHO_MS);
     }
     if (shuttingDownRef.current) return;
     if (phaseRef.current === "thinking" || phaseRef.current === "connecting") return;
     micListenAllowedRef.current = true;
     setPhase("listening");
     setInterimTranscript("");
-    window.setTimeout(() => scheduleVoiceCaptureRef.current(), 500);
-  }, []);
+    window.setTimeout(() => scheduleVoiceCaptureRef.current(), POST_PLAYBACK_LISTEN_MS);
+  }, [armSttCooldown]);
 
   const resetMp3Player = useCallback(() => {
     mp3PlayerRef.current?.stop();
@@ -344,6 +499,7 @@ export default function AIVoicePage() {
 
   const enqueueMp3Chunk = useCallback((raw: ArrayBuffer) => {
     if (shuttingDownRef.current) return;
+    if (isStaleAssistantStream(streamEpochRef, activeQuestionEpochRef)) return;
     if (!speakerEnabledRef.current || raw.byteLength === 0) return;
     if (!mp3PlayerRef.current) {
       const player = new Mp3StreamPlayer();
@@ -352,6 +508,9 @@ export default function AIVoicePage() {
     }
     const player = mp3PlayerRef.current;
     void player.ready().then(() => {
+      if (bargeInEnabledRef.current && phaseRef.current === "speaking") {
+        player.element.volume = BARGE_IN_DUCK_VOLUME;
+      }
       player.enqueue(raw);
       if (player.element.paused) {
         void player.element.play().catch(() => {});
@@ -360,6 +519,13 @@ export default function AIVoicePage() {
     if (phaseRef.current !== "speaking") {
       setPhase("speaking");
       speakingStartedAtRef.current = Date.now();
+      if (bargeInEnabledRef.current) {
+        scheduleVoiceCaptureRef.current();
+      } else {
+        abortRecognitionRef.current();
+      }
+      echoBaselineRef.current = 0;
+      bargeInHoldSinceRef.current = null;
     }
   }, []);
 
@@ -374,11 +540,6 @@ export default function AIVoicePage() {
   }, [isCallLive]);
 
   useEffect(() => {
-    if (!normalizedVoiceUrl) {
-      setConnectionStatus("Can't connect to tutor");
-      setPhase("error");
-      return;
-    }
     let cancelled = false;
     (async () => {
       try {
@@ -464,7 +625,6 @@ export default function AIVoicePage() {
   }, [disconnectVoiceSocket]);
 
   const connectWS = useCallback(() => {
-    if (!normalizedVoiceUrl) return;
     if (reconnectTimerRef.current) {
       window.clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
@@ -514,6 +674,8 @@ export default function AIVoicePage() {
           chapter_names: ctx?.chapterNames || [],
           student_name: userRef.current?.fullName || "",
           greet: sendGreet,
+          voice_gender: voiceGenderRef.current,
+          tts_voice: tutorVoiceId(voiceGenderRef.current),
         }),
       );
       if (!sendGreet) {
@@ -524,11 +686,16 @@ export default function AIVoicePage() {
 
     ws.onmessage = async (event) => {
       if (shuttingDownRef.current) return;
+
+      const staleAssistant = isStaleAssistantStream(streamEpochRef, activeQuestionEpochRef);
+
       if (event.data instanceof ArrayBuffer) {
+        if (staleAssistant) return;
         enqueueMp3Chunk(event.data);
         return;
       }
       if (event.data instanceof Blob) {
+        if (staleAssistant) return;
         try {
           const buf = await event.data.arrayBuffer();
           enqueueMp3Chunk(buf);
@@ -544,10 +711,26 @@ export default function AIVoicePage() {
         return;
       }
 
+      // Phase 1: drop assistant stream events from a cancelled/previous turn
+      const assistantEventTypes = new Set([
+        "thinking",
+        "speaking",
+        "ai_text_token",
+        "done",
+        "related_images",
+        "math_lesson",
+        "science_experiment",
+        "tutor_hint",
+        "stream_metrics",
+      ]);
+      if (assistantEventTypes.has(String(msg.type)) && staleAssistant) {
+        return;
+      }
+
       switch (msg.type) {
         case "greeting_start":
           micListenAllowedRef.current = false;
-          stopRecognition();
+          abortRecognition();
           setPhase("speaking");
           syncAssistantText(String(msg.text ?? ""));
           setVoiceRelatedImages([]);
@@ -600,23 +783,37 @@ export default function AIVoicePage() {
           break;
         }
         case "speaking":
-          if (!bargeInEnabled) stopRecognition();
-          else if (micEnabledRef.current) scheduleVoiceCaptureRef.current();
+          abortRecognition();
           setPhase("speaking");
           speakingStartedAtRef.current = Date.now();
+          echoBaselineRef.current = 0;
+          bargeInHoldSinceRef.current = null;
           break;
+        case "speech_unit": {
+          const unit = String(msg.text ?? "").trim();
+          setSpokenUnitText(unit || null);
+          setSpokenUnitIndex(typeof msg.index === "number" ? msg.index : -1);
+          break;
+        }
         case "ai_text_token": {
           const tok = String(msg.token ?? "");
-          if (!bargeInEnabled) stopRecognition();
+          if (phaseRef.current === "thinking") {
+            abortRecognition();
+            setPhase("speaking");
+            echoBaselineRef.current = 0;
+            bargeInHoldSinceRef.current = null;
+          }
           appendAssistantToken(tok);
-          if (phaseRef.current === "thinking") setPhase("speaking");
           break;
         }
         case "interrupt_ack":
+          streamEpochRef.current += 1;
           stopAudioPlayback();
           micListenAllowedRef.current = true;
           setPhase("listening");
           syncAssistantText("");
+          setSpokenUnitText(null);
+          setSpokenUnitIndex(-1);
           setVoiceRelatedImages([]);
           setStreamingMathLesson(null);
           voiceMathLessonRef.current = null;
@@ -627,6 +824,13 @@ export default function AIVoicePage() {
           break;
         case "done": {
           setTutorUnderstandingHint(null);
+          setSpokenUnitText(null);
+          setSpokenUnitIndex(-1);
+          const playerStats = mp3PlayerRef.current?.stats();
+          logVoicePlayerStats(playerStats);
+          if (playerStats) {
+            console.debug("[voice-metrics] player", playerStats);
+          }
           finalizeAssistantTurn();
           void resumeListeningAfterPlayback();
           break;
@@ -635,7 +839,7 @@ export default function AIVoicePage() {
           micListenAllowedRef.current = true;
           setPhase("listening");
           void bootstrapVoiceInputRef.current();
-          window.setTimeout(() => scheduleVoiceCaptureRef.current(), 400);
+          window.setTimeout(() => scheduleVoiceCaptureRef.current(), POST_PLAYBACK_LISTEN_MS);
           break;
         case "error": {
           setErrorText(studentFriendlyError(msg.message, MSG.voiceError));
@@ -649,8 +853,8 @@ export default function AIVoicePage() {
           }
           break;
         }
-        case "ping":
-          ws.send(JSON.stringify({ type: "pong" }));
+        case "stream_metrics":
+          logVoiceStreamMetrics(msg.metrics, msg.phase);
           break;
       }
     };
@@ -674,11 +878,6 @@ export default function AIVoicePage() {
   }, [normalizedVoiceUrl]); // eslint-disable-line
 
   const handleReconnect = useCallback(() => {
-    if (!normalizedVoiceUrl) {
-      setErrorText(MSG.configUnavailable);
-      return;
-    }
-
     setIsReconnecting(true);
     setErrorText(null);
     setConnectionStatus("Reconnecting…");
@@ -725,7 +924,6 @@ export default function AIVoicePage() {
 
   useEffect(() => {
     shuttingDownRef.current = false;
-    if (!normalizedVoiceUrl) return;
     connectWS();
     return () => {
       stopVoiceSessionResources();
@@ -737,7 +935,36 @@ export default function AIVoicePage() {
     return Boolean(w.SpeechRecognition || w.webkitSpeechRecognition);
   }, []);
 
-  const serverSttExclusive = useExclusiveServerStt(recognitionAvailable, serverSttActive);
+  const serverSttActiveRef = useRef(serverSttActive);
+  useEffect(() => { serverSttActiveRef.current = serverSttActive; }, [serverSttActive]);
+
+  const beginBargeUtteranceCapture = () => {
+    const mic = serverSttRecorderRef.current;
+    if (!mic) return;
+    mic.ensureRunning();
+    if (!mic.isCapturingUtterance()) {
+      mic.beginUtteranceCapture();
+      bargeUtteranceActiveRef.current = true;
+      utteranceStartedAtRef.current = Date.now();
+      speechActiveRef.current = true;
+      silenceSinceRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    if (phase !== "listening" || !micEnabled || !recognitionAvailable) return;
+    const id = window.setInterval(() => {
+      if (
+        shuttingDownRef.current ||
+        phaseRef.current !== "listening" ||
+        !isTutorAudible(mp3PlayerRef.current, fallbackMp3Ref.current)
+      ) {
+        return;
+      }
+      abortRecognitionRef.current();
+    }, 200);
+    return () => window.clearInterval(id);
+  }, [phase, micEnabled, recognitionAvailable]);
 
   useEffect(() => {
     if (phase !== "listening" || !micEnabled || !recognitionAvailable) return;
@@ -746,7 +973,7 @@ export default function AIVoicePage() {
         !micBootstrappedRef.current ||
         shuttingDownRef.current ||
         phaseRef.current !== "listening" ||
-        tutorIsSpeaking(mp3PlayerRef.current)
+        isTutorAudible(mp3PlayerRef.current, fallbackMp3Ref.current)
       ) {
         return;
       }
@@ -758,37 +985,48 @@ export default function AIVoicePage() {
     return () => window.clearInterval(id);
   }, [phase, micEnabled, recognitionAvailable]);
 
-  // Server Whisper STT when the browser has no SpeechRecognition (e.g. Firefox).
+  // Whisper + pre-roll only after barge-in interrupt (browser STT handles normal listening).
   useEffect(() => {
-    if (!serverSttExclusive || !micEnabled) return;
+    if (!serverSttActive || !micEnabled) return;
+    const BARGE_SILENCE_MS = 950;
+    const MAX_UTTERANCE_MS = 11_000;
+
     const tick = window.setInterval(() => {
       if (
         shuttingDownRef.current ||
         serverSttProcessingRef.current ||
-        phaseRef.current !== "listening" ||
-        tutorIsSpeaking(mp3PlayerRef.current) ||
-        textInputOpenRef.current
+        textInputOpenRef.current ||
+        !bargeUtteranceActiveRef.current
       ) {
         return;
       }
-      const stream = analyserStreamRef.current;
-      const recorder = serverSttRecorderRef.current;
-      if (!stream || !recorder || !micBootstrappedRef.current) return;
+      const mic = serverSttRecorderRef.current;
+      if (!mic || !micBootstrappedRef.current || !mic.isCapturingUtterance()) return;
+
+      mic.ensureRunning();
 
       const level = volumeRef.current;
-      const speaking = level > 0.06;
+      const speaking = level > 0.045;
 
       if (speaking) {
         speechActiveRef.current = true;
         silenceSinceRef.current = null;
-        if (!recorder.isRecording()) {
-          try {
-            recorder.start();
-          } catch {
-            /* ignore */
-          }
-        }
         setInterimTranscript("Listening…");
+        return;
+      }
+
+      if (utteranceStartedAtRef.current && Date.now() - utteranceStartedAtRef.current > MAX_UTTERANCE_MS) {
+        speechActiveRef.current = false;
+        silenceSinceRef.current = null;
+        const blob = mic.endUtteranceCapture();
+        bargeUtteranceActiveRef.current = false;
+        if (blob.size < 300) {
+          bargeEchoGuardRef.current = "";
+          scheduleVoiceCaptureRef.current();
+          return;
+        }
+        serverSttProcessingRef.current = true;
+        void finalizeBargeUtterance(blob);
         return;
       }
 
@@ -797,43 +1035,209 @@ export default function AIVoicePage() {
         silenceSinceRef.current = Date.now();
         return;
       }
-      if (Date.now() - silenceSinceRef.current < 750) return;
+      if (Date.now() - silenceSinceRef.current < BARGE_SILENCE_MS) return;
 
       speechActiveRef.current = false;
       silenceSinceRef.current = null;
-      if (!recorder.isRecording()) return;
+      const blob = mic.endUtteranceCapture();
+      bargeUtteranceActiveRef.current = false;
+      if (blob.size < 300) {
+        bargeEchoGuardRef.current = "";
+        scheduleVoiceCaptureRef.current();
+        return;
+      }
 
       serverSttProcessingRef.current = true;
-      void (async () => {
-        try {
-          const blob = await recorder.stop();
-          setInterimTranscript("Understanding…");
-          if (blob.size < 400) return;
-          const raw = await transcribeWithServer(blob, normalizedVoiceUrl, {
-            subjectName: subjectLabel,
-            token: getAccessToken() || null,
-            language: "en",
-          });
-          const cleaned = postprocessVoiceTranscript(raw, subjectLabel);
-          if (cleaned.length >= 2 && phaseRef.current === "listening") {
-            void handleUserTurnRef.current(cleaned, ++turnIdRef.current, { requireMic: true });
-          }
-        } catch {
-          if (!serverSttExclusive) scheduleVoiceCaptureRef.current();
-        } finally {
-          serverSttProcessingRef.current = false;
-          setInterimTranscript("");
-        }
-      })();
+      void finalizeBargeUtterance(blob);
     }, 120);
+
+    async function finalizeBargeUtterance(blob: Blob) {
+      const echoGuard = bargeEchoGuardRef.current.trim();
+      bargeEchoGuardRef.current = "";
+      try {
+        setInterimTranscript("Understanding…");
+        const result = await transcribeWithServer(blob, normalizedVoiceUrl, {
+          subjectName: subjectLabel,
+          token: getAccessToken() || null,
+          language: "en",
+          rejectIfSimilarTo: echoGuard,
+        });
+        const cleaned = postprocessVoiceTranscript(result.transcript, subjectLabel);
+        if (
+          !cleaned ||
+          cleaned.length < 2 ||
+          result.rejected ||
+          !canAcceptSttNowRef.current() ||
+          rejectTranscriptCandidateRef.current(cleaned, "whisper-barge")
+        ) {
+          scheduleVoiceCaptureRef.current();
+          return;
+        }
+        if (phaseRef.current === "listening" || phaseRef.current === "thinking") {
+          void handleUserTurnRef.current(cleaned, ++turnIdRef.current, {
+            requireMic: true,
+            skipPlaybackCheck: true,
+          });
+        }
+      } catch {
+        scheduleVoiceCaptureRef.current();
+      } finally {
+        serverSttProcessingRef.current = false;
+        setInterimTranscript("");
+      }
+    }
+
     return () => window.clearInterval(tick);
-  }, [serverSttExclusive, micEnabled, normalizedVoiceUrl, subjectLabel]);
+  }, [serverSttActive, micEnabled, normalizedVoiceUrl, subjectLabel]);
+
+  // Production barge-in: Volume spike → capture → VAD/echo/speaker/intent → interrupt
+  tickBargeInMonitorRef.current = (level: number) => {
+    if (!bargeInEnabledRef.current || !micEnabledRef.current) return;
+    if (
+      shuttingDownRef.current ||
+      interruptingRef.current ||
+      phaseRef.current !== "speaking"
+    ) {
+      bargeVolumeHistoryRef.current = [];
+      bargeInHoldSinceRef.current = null;
+      echoBaselineRef.current = 0;
+      return;
+    }
+
+    const started = speakingStartedAtRef.current;
+    if (started && Date.now() - started < BARGE_IN_ARM_DELAY_MS) return;
+
+    const history = bargeVolumeHistoryRef.current;
+    history.push(level);
+    if (history.length > 40) history.shift();
+
+    let floor = level;
+    if (history.length >= 8) {
+      const sorted = [...history].sort((a, b) => a - b);
+      floor = sorted[Math.floor(sorted.length * 0.2)] ?? level;
+    }
+    echoBaselineRef.current = floor;
+
+    const spike = level - floor;
+    const ratio = floor > 0.015 ? level / floor : 0;
+    const userLikely = level > 0.055 && (spike > 0.035 || ratio > 1.18);
+
+    if (!userLikely) {
+      bargeInHoldSinceRef.current = null;
+      return;
+    }
+
+    if (!bargeInHoldSinceRef.current) {
+      bargeInHoldSinceRef.current = Date.now();
+      beginBargeUtteranceCapture();
+      return;
+    }
+    if (Date.now() - bargeInHoldSinceRef.current < BARGE_IN_HOLD_MS) return;
+
+    bargeInHoldSinceRef.current = null;
+    bargeVolumeHistoryRef.current = [];
+
+    const mic = serverSttRecorderRef.current;
+    const snapshot =
+      mic && mic.isCapturingUtterance() ? mic.endUtteranceCapture() : null;
+    bargeUtteranceActiveRef.current = false;
+
+    // Stop tutor audio immediately — don't wait for server VAD round-trip.
+    handleInterruptRef.current();
+
+    if (
+      !VOICE_PROTECTION_ENABLED ||
+      !BARGE_CHECK_REQUIRED ||
+      !snapshot ||
+      snapshot.size < 200
+    ) {
+      return;
+    }
+
+    void (async () => {
+      const t0 = performance.now();
+      try {
+        const result = await checkBargeIn(snapshot, normalizedVoiceUrl, {
+          transcript: interimTranscriptRef.current || "",
+          recentAiSpeech: recentAiSpeechRef.current,
+          studentKey:
+            String(
+              (userRef.current as { id?: string; email?: string; username?: string } | null)?.id ||
+                (userRef.current as { email?: string } | null)?.email ||
+                (userRef.current as { username?: string } | null)?.username ||
+                "anonymous",
+            ),
+          token: getAccessToken() || null,
+        });
+
+        protectionMetricsRef.current.set(
+          "speech_probability",
+          result.speech_probability ?? 0,
+        );
+        protectionMetricsRef.current.set(
+          "speech_duration_ms",
+          result.speech_duration_ms ?? 0,
+        );
+        protectionMetricsRef.current.set(
+          "speaker_similarity",
+          result.speaker_similarity ?? 0,
+        );
+        protectionMetricsRef.current.set(
+          "echo_similarity_score",
+          result.echo_similarity_score ?? 0,
+        );
+
+        if (!result.allow_interrupt) {
+          protectionMetricsRef.current.bump("interrupt_rejected_count");
+          console.debug("[INTERRUPT_POSTCHECK]", result);
+          return;
+        }
+
+        console.debug("[INTERRUPT_POSTCHECK_ACCEPTED]", {
+          latency_ms: performance.now() - t0,
+          reason: result.reason,
+          intent: result.intent,
+        });
+        protectionMetricsRef.current.bump("interrupt_accepted_count");
+      } catch (err) {
+        console.debug("[INTERRUPT_POSTCHECK]", { reason: "barge_check_error", err });
+      }
+    })();
+  };
+
+  useEffect(() => {
+    const duck = bargeInEnabled && phase === "speaking";
+    setTutorPlaybackVolume(
+      mp3PlayerRef.current,
+      fallbackMp3Ref.current,
+      duck ? BARGE_IN_DUCK_VOLUME : 1,
+    );
+  }, [phase, bargeInEnabled]);
+
+  const voiceCaptureAllowed = () => {
+    if (!canAcceptSttNow()) return false;
+    const phaseNow = phaseRef.current;
+    if (phaseNow === "listening" || phaseNow === "idle") return true;
+    if (bargeInEnabled && micEnabledRef.current && (phaseNow === "thinking" || phaseNow === "speaking")) {
+      return true;
+    }
+    return false;
+  };
 
   const startRecognitionImpl = (attempt = 0) => {
     if (shuttingDownRef.current || !recognitionRef.current) return;
     if (!micEnabledRef.current || !micBootstrappedRef.current) return;
-    if (phaseRef.current !== "listening" && phaseRef.current !== "idle") return;
-    if (tutorIsSpeaking(mp3PlayerRef.current)) return;
+    if (!voiceCaptureAllowed()) return;
+    if (isAiSpeakingNow()) {
+      if (!(bargeInEnabledRef.current && phaseRef.current === "speaking")) return;
+    }
+
+    const cooldownLeft = sttCooldownUntilRef.current - Date.now();
+    if (cooldownLeft > 0) {
+      window.setTimeout(() => startRecognitionImpl(attempt), cooldownLeft + 20);
+      return;
+    }
+
     try {
       recognitionRef.current.start();
       setNeedsVoiceTap(false);
@@ -845,31 +1249,39 @@ export default function AIVoicePage() {
   };
 
   const scheduleVoiceCapture = useCallback(() => {
-    if (shuttingDownRef.current || serverSttExclusive) return;
+    if (shuttingDownRef.current) return;
     if (!recognitionAvailable) return;
     if (!micEnabledRef.current || !micBootstrappedRef.current) return;
-    const currentPhase = phaseRef.current;
-    if (currentPhase !== "listening" && currentPhase !== "idle") return;
+    if (!voiceCaptureAllowed()) return;
 
-    if (!tutorIsSpeaking(mp3PlayerRef.current)) {
-      startRecognitionImpl();
+    if (isAiSpeakingNow()) {
+      if (bargeInEnabledRef.current && phaseRef.current === "speaking") {
+        startRecognitionImpl();
+        return;
+      }
+      abortRecognitionRef.current();
+      const player = mp3PlayerRef.current;
+      const el = player?.element;
+      if (!el) return;
+      const onPlaybackDone = () => {
+        el.removeEventListener("ended", onPlaybackDone);
+        el.removeEventListener("pause", onPlaybackDone);
+        armSttCooldown(POST_PLAYBACK_ECHO_MS);
+        window.setTimeout(() => startRecognitionImpl(), POST_PLAYBACK_ECHO_MS);
+      };
+      el.addEventListener("ended", onPlaybackDone, { once: true });
+      el.addEventListener("pause", onPlaybackDone, { once: true });
       return;
     }
 
-    const player = mp3PlayerRef.current;
-    const el = player?.element;
-    if (!el) {
-      startRecognitionImpl();
+    if (isSttCooldownActive()) {
+      const wait = sttCooldownUntilRef.current - Date.now() + 20;
+      window.setTimeout(() => startRecognitionImpl(), wait);
       return;
     }
-    const onPlaybackDone = () => {
-      el.removeEventListener("ended", onPlaybackDone);
-      el.removeEventListener("pause", onPlaybackDone);
-      window.setTimeout(() => startRecognitionImpl(), 400);
-    };
-    el.addEventListener("ended", onPlaybackDone, { once: true });
-    el.addEventListener("pause", onPlaybackDone, { once: true });
-  }, [recognitionAvailable, serverSttExclusive]);
+
+    startRecognitionImpl();
+  }, [recognitionAvailable, armSttCooldown, canAcceptSttNow, isAiSpeakingNow, isSttCooldownActive]);
 
   scheduleVoiceCaptureRef.current = scheduleVoiceCapture;
 
@@ -905,6 +1317,7 @@ export default function AIVoicePage() {
       }
       const level = clamp01(Math.sqrt(sumSq / data.length) * 3.2);
       volumeRef.current = level;
+      tickBargeInMonitorRef.current(level);
       setVolumeUi(level);
       requestAnimationFrame(tick);
     };
@@ -922,9 +1335,28 @@ export default function AIVoicePage() {
             autoGainControl: true,
           },
         });
+        try {
+          const track = stream.getAudioTracks()[0];
+          const s = track?.getSettings?.() as MediaTrackSettings & {
+            echoCancellation?: boolean;
+            noiseSuppression?: boolean;
+            autoGainControl?: boolean;
+          };
+          console.debug("[MIC_CONSTRAINTS]", {
+            echoCancellation: s?.echoCancellation,
+            noiseSuppression: s?.noiseSuppression,
+            autoGainControl: s?.autoGainControl,
+            sampleRate: s?.sampleRate,
+            channelCount: s?.channelCount,
+            deviceId: s?.deviceId,
+          });
+        } catch {
+          /* ignore */
+        }
         micBootstrappedRef.current = true;
         startMicAnalyser(stream);
-        serverSttRecorderRef.current = createVoiceRecorder(stream);
+        serverSttRecorderRef.current = createContinuousMicRecorder(stream);
+        serverSttRecorderRef.current.ensureRunning();
         setNeedsVoiceTap(false);
         setErrorText(null);
       }
@@ -938,14 +1370,33 @@ export default function AIVoicePage() {
 
   bootstrapVoiceInputRef.current = bootstrapVoiceInput;
 
+  const abortRecognitionImpl = () => {
+    if (!recognitionRef.current) return;
+    try {
+      recognitionRef.current.abort();
+    } catch {
+      try {
+        recognitionRef.current.stop();
+      } catch {
+        /* ignore */
+      }
+    }
+  };
+
   const stopRecognitionImpl = () => {
     if (!recognitionRef.current) return;
-    try { recognitionRef.current.stop(); } catch { /* ignore */ }
+    try {
+      recognitionRef.current.stop();
+    } catch {
+      /* ignore */
+    }
   };
   startRecognitionRef.current = startRecognitionImpl;
   stopRecognitionRef.current = stopRecognitionImpl;
+  abortRecognitionRef.current = abortRecognitionImpl;
 
   const stopAudioPlayback = () => {
+    mp3PlayerRef.current?.flushPending();
     mp3PlayerRef.current?.setAllowAutoResume(false);
     streamReaderRef.current?.cancel().catch(() => {});
     streamReaderRef.current = null;
@@ -959,11 +1410,19 @@ export default function AIVoicePage() {
     if (interruptingRef.current) return;
     interruptingRef.current = true;
 
+    // Invalidate any in-flight WS assistant audio/tokens from the prior turn
+    streamEpochRef.current += 1;
+
     abortRef.current?.abort();
     abortRef.current = null;
     stopAudioPlayback();
+    setTutorPlaybackVolume(mp3PlayerRef.current, fallbackMp3Ref.current, 1);
+    bargeEchoGuardRef.current = recentAiSpeechRef.current || assistantTextRef.current.trim();
     syncAssistantText("");
     setVoiceRelatedImages([]);
+    bargeVolumeHistoryRef.current = [];
+    bargeInHoldSinceRef.current = null;
+    echoBaselineRef.current = 0;
 
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: "interrupt" }));
@@ -972,11 +1431,17 @@ export default function AIVoicePage() {
     micListenAllowedRef.current = true;
     setPhase("listening");
     setInterimTranscript("");
-    if (micEnabledRef.current) scheduleVoiceCaptureRef.current();
+    if (micEnabledRef.current) {
+      if (serverSttActiveRef.current) {
+        beginBargeUtteranceCapture();
+      } else {
+        window.setTimeout(() => scheduleVoiceCaptureRef.current(), INTERRUPT_RESUME_LISTEN_MS);
+      }
+    }
 
     window.setTimeout(() => {
       interruptingRef.current = false;
-    }, 350);
+    }, INTERRUPT_COOLDOWN_MS);
   }, [syncAssistantText]);
 
   handleInterruptRef.current = handleInterrupt;
@@ -987,10 +1452,6 @@ export default function AIVoicePage() {
     opts?: { requireMic?: boolean; skipPhaseCheck?: boolean; skipPlaybackCheck?: boolean },
   ) => {
     if (shuttingDownRef.current) return;
-    if (!normalizedVoiceUrl) {
-      setErrorText(MSG.configUnavailable);
-      return;
-    }
     if (opts?.requireMic !== false && !micEnabled) return;
     if (
       !opts?.skipPhaseCheck &&
@@ -1001,19 +1462,26 @@ export default function AIVoicePage() {
     if (
       !opts?.skipPhaseCheck &&
       phaseRef.current === "speaking" &&
-      tutorIsSpeaking(mp3PlayerRef.current)
+      isTutorAudible(mp3PlayerRef.current, fallbackMp3Ref.current)
     ) {
       return;
     }
     if (
       !opts?.skipPlaybackCheck &&
       !opts?.skipPhaseCheck &&
-      tutorIsSpeaking(mp3PlayerRef.current)
+      isTutorAudible(mp3PlayerRef.current, fallbackMp3Ref.current)
     ) {
       return;
     }
     const trimmed = postprocessVoiceTranscript(userText, subjectLabel).trim();
     if (trimmed.length < 2) return;
+    if (!opts?.skipPlaybackCheck && rejectTranscriptCandidate(trimmed, "user-turn")) {
+      if (phaseRef.current === "listening") scheduleVoiceCaptureRef.current();
+      return;
+    }
+
+    // New user turn — only WS events tagged with this epoch are accepted
+    activeQuestionEpochRef.current = ++streamEpochRef.current;
 
     // Keep speech recognition running; onresult ignores non-listening phases.
     // Stopping here breaks Chrome restart after the first turn.
@@ -1056,6 +1524,8 @@ export default function AIVoicePage() {
         conversation_history: historyForHttp,
         tutor_state: tutorStateRef.current,
         student_name: userRef.current?.fullName || "",
+        voice_gender: voiceGenderRef.current,
+        tts_voice: tutorVoiceId(voiceGenderRef.current),
       };
       if (ctx) {
         Object.assign(body, {
@@ -1208,7 +1678,7 @@ export default function AIVoicePage() {
   handleUserTurnRef.current = handleUserTurn;
 
   useEffect(() => {
-    if (!recognitionAvailable || serverSttExclusive) return;
+    if (!recognitionAvailable) return;
     const w = window as any;
     const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition;
     if (!Ctor) return;
@@ -1218,15 +1688,83 @@ export default function AIVoicePage() {
     rec.lang = voiceRecognitionLang(subjectLabel);
     let finalAccumulator = "";
     let finalizeTimer: number | null = null;
+    let interimFlushTimer: number | null = null;
+    let pendingInterim = "";
+
+    const clearInterimFlush = () => {
+      if (interimFlushTimer) window.clearTimeout(interimFlushTimer);
+      interimFlushTimer = null;
+      pendingInterim = "";
+    };
+
+    const submitListeningTranscript = (raw: string, source: string) => {
+      const t = raw.trim();
+      if (!t || t.length < 2) return;
+      if (textInputOpenRef.current) {
+        const combined = textDictationRef.current
+          ? `${textDictationRef.current} ${t}`.trim()
+          : t;
+        setTextInput("");
+        setInterimTranscript("");
+        textDictationRef.current = "";
+        if (
+          combined.length >= 2 &&
+          !rejectTranscriptCandidateRef.current(combined, "browser-dictation")
+        ) {
+          void handleUserTurnRef.current(combined, ++turnIdRef.current, {
+            requireMic: false,
+            skipPlaybackCheck: true,
+          });
+        }
+        return;
+      }
+      if (rejectTranscriptCandidateRef.current(t, source)) {
+        scheduleVoiceCaptureRef.current();
+        return;
+      }
+      void handleUserTurnRef.current(t, ++turnIdRef.current, { requireMic: true });
+    };
+
+    const scheduleInterimFlush = (combined: string) => {
+      const text = combined.trim();
+      if (!text) return;
+      pendingInterim = text;
+      if (interimFlushTimer) window.clearTimeout(interimFlushTimer);
+      interimFlushTimer = window.setTimeout(() => {
+        interimFlushTimer = null;
+        const candidate = pendingInterim.trim();
+        pendingInterim = "";
+        if (!candidate || finalAccumulator.trim()) return;
+        if (phaseRef.current !== "listening") return;
+        if (!canAcceptSttNowRef.current()) return;
+        submitListeningTranscript(candidate, "browser-interim");
+      }, STT_INTERIM_COMPLETE_MS);
+    };
     rec.onresult = (event: any) => {
       if (shuttingDownRef.current) return;
-      const aiBusy =
-        phaseRef.current === "speaking" ||
-        phaseRef.current === "thinking" ||
-        phaseRef.current === "connecting";
 
-      if (aiBusy) {
-        if (!bargeInEnabled || !micEnabledRef.current || phaseRef.current !== "speaking") return;
+      // Speaking: catch explicit interrupt phrases before other gates drop results.
+      if (phaseRef.current === "speaking" && bargeInEnabled && micEnabledRef.current) {
+        let chunk = "";
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          chunk += (chunk ? " " : "") + (event.results[i][0]?.transcript || "");
+        }
+        const t = chunk.trim();
+        if (t.length >= 2) {
+          const intent = detectInterruptIntent(t);
+          if (intent.isInterruptIntent) {
+            console.debug("[INTERRUPT_ACCEPTED]", { reason: "intent", phrase: intent.matchedPhrase });
+            handleInterruptRef.current();
+          }
+        }
+        return;
+      }
+
+      if (!canAcceptSttNowRef.current() && phaseRef.current !== "thinking") return;
+
+      // Thinking barge-in only — no tutor audio yet; still reject tutor echo.
+      if (phaseRef.current === "thinking" && bargeInEnabled && micEnabledRef.current) {
+        if (isTutorAudible(mp3PlayerRef.current, fallbackMp3Ref.current)) return;
         let interim = "";
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const txt = event.results[i][0]?.transcript || "";
@@ -1236,14 +1774,18 @@ export default function AIVoicePage() {
             finalizeTimer = window.setTimeout(() => {
               const t = finalAccumulator.trim();
               finalAccumulator = "";
-              if (t.length >= 2 && volumeRef.current > 0.06) {
-                handleInterruptRef.current();
-                void handleUserTurnRef.current(t, ++turnIdRef.current, {
-                  requireMic: true,
-                  skipPhaseCheck: true,
-                });
+              if (t.length < 2 || rejectTranscriptCandidateRef.current(t, "browser-thinking")) return;
+              const intent = detectInterruptIntent(t);
+              if (intent.isInterruptIntent) {
+                console.debug("[INTERRUPT_ACCEPTED]", { reason: "intent", phrase: intent.matchedPhrase });
               }
-            }, 300);
+              handleInterruptRef.current();
+              void handleUserTurnRef.current(t, ++turnIdRef.current, {
+                requireMic: true,
+                skipPhaseCheck: true,
+                skipPlaybackCheck: true,
+              });
+            }, STT_FINAL_DEBOUNCE_MS);
           } else {
             interim += txt;
           }
@@ -1252,8 +1794,15 @@ export default function AIVoicePage() {
         return;
       }
 
+      if (
+        phaseRef.current === "connecting" ||
+        isTutorAudible(mp3PlayerRef.current, fallbackMp3Ref.current)
+      ) {
+        return;
+      }
+
       if (phaseRef.current !== "listening") return;
-      if (tutorIsSpeaking(mp3PlayerRef.current)) return;
+      if (!canAcceptSttNowRef.current()) return;
 
       const dictatingToTextField = textInputOpenRef.current;
       let interim = "";
@@ -1261,28 +1810,14 @@ export default function AIVoicePage() {
         const txt = event.results[i][0]?.transcript || "";
         if (event.results[i].isFinal) {
           finalAccumulator += (finalAccumulator ? " " : "") + txt;
+          clearInterimFlush();
           if (finalizeTimer) window.clearTimeout(finalizeTimer);
           finalizeTimer = window.setTimeout(() => {
             const t = finalAccumulator.trim();
             finalAccumulator = "";
             if (!t) return;
-            if (textInputOpenRef.current) {
-              const combined = textDictationRef.current
-                ? `${textDictationRef.current} ${t}`.trim()
-                : t;
-              setTextInput("");
-              setInterimTranscript("");
-              textDictationRef.current = "";
-              if (combined.length >= 2) {
-                void handleUserTurnRef.current(combined, ++turnIdRef.current, {
-                  requireMic: false,
-                  skipPlaybackCheck: true,
-                });
-              }
-              return;
-            }
-            void handleUserTurnRef.current(t, ++turnIdRef.current, { requireMic: true });
-          }, 300);
+            submitListeningTranscript(t, "browser-listening");
+          }, STT_FINAL_DEBOUNCE_MS);
         } else {
           interim += txt;
         }
@@ -1291,12 +1826,33 @@ export default function AIVoicePage() {
         setInterimTranscript(interim.trim());
         return;
       }
+      const combined = [finalAccumulator, interim].filter(Boolean).join(" ").trim();
       setInterimTranscript(interim.trim());
+      if (combined) scheduleInterimFlush(combined);
     };
     rec.onend = () => {
       if (shuttingDownRef.current || !micEnabledRef.current) return;
-      if (phaseRef.current !== "listening") return;
-      window.setTimeout(() => startRecognitionImpl(), 100);
+      if (finalizeTimer) {
+        window.clearTimeout(finalizeTimer);
+        finalizeTimer = null;
+      }
+      const pending = [finalAccumulator, pendingInterim].filter(Boolean).join(" ").trim();
+      finalAccumulator = "";
+      clearInterimFlush();
+      if (
+        pending &&
+        phaseRef.current === "listening" &&
+        canAcceptSttNowRef.current()
+      ) {
+        submitListeningTranscript(pending, "browser-onend");
+      }
+      if (!voiceCaptureAllowed()) return;
+      if (isSttCooldownActive()) {
+        const wait = sttCooldownUntilRef.current - Date.now() + 20;
+        window.setTimeout(() => scheduleVoiceCaptureRef.current(), wait);
+        return;
+      }
+      window.setTimeout(() => scheduleVoiceCaptureRef.current(), 100);
     };
     rec.onerror = (event: any) => {
       const code = event?.error as string | undefined;
@@ -1309,7 +1865,7 @@ export default function AIVoicePage() {
     };
     recognitionRef.current = rec;
     return () => { try { rec.stop(); } catch { /* ignore */ } };
-  }, [recognitionAvailable, subjectLabel, serverSttExclusive]);
+  }, [recognitionAvailable, subjectLabel]);
 
   useEffect(() => {
     return () => {
@@ -1324,13 +1880,24 @@ export default function AIVoicePage() {
       if (micBootstrappedRef.current) {
         scheduleVoiceCapture();
       }
-    } else if (phase === "speaking" && bargeInEnabled && micEnabled && micBootstrappedRef.current) {
+    } else if (
+      phase === "thinking" &&
+      bargeInEnabled &&
+      micEnabled &&
+      micBootstrappedRef.current
+    ) {
       startRecognition();
     } else if (
-      (phase === "speaking" && !bargeInEnabled) ||
-      phase === "connecting"
+      phase === "speaking" &&
+      bargeInEnabled &&
+      micEnabled &&
+      micBootstrappedRef.current
     ) {
-      stopRecognition();
+      startRecognition();
+    } else if (phase === "connecting" || (phase === "speaking" && !bargeInEnabled)) {
+      abortRecognition();
+      echoBaselineRef.current = 0;
+      bargeInHoldSinceRef.current = null;
     }
   }, [phase, micEnabled, recognitionAvailable, bargeInEnabled, scheduleVoiceCapture]); // eslint-disable-line
 
@@ -1433,13 +2000,33 @@ export default function AIVoicePage() {
     });
   }, [textInput, interimTranscript]);
 
+  const handleVoiceGenderChange = useCallback((gender: TutorVoiceGender) => {
+    setVoiceGender(gender);
+    saveTutorVoiceGender(gender);
+    const ws = wsRef.current;
+    if (ws?.readyState === WebSocket.OPEN && wsReadyRef.current) {
+      try {
+        ws.send(
+          JSON.stringify({
+            type: "set_voice",
+            voice_gender: gender,
+            tts_voice: tutorVoiceId(gender),
+          }),
+        );
+      } catch {
+        /* ignore */
+      }
+    }
+  }, []);
+
   const studentName = user?.fullName || "Student";
   const studentInitial = (studentName.split(/\s+/)[0]?.[0] || "S").toUpperCase();
   const isTyping = phase === "thinking" || (Boolean(assistantText) && phase === "speaking");
   const aiWaveActive = phase === "speaking";
   const aiWaveIntensity = aiWaveActive ? 0.72 : 0.2;
   const studentWaveActive =
-    phase === "listening" &&
+    (phase === "listening" ||
+      (bargeInEnabled && (phase === "thinking" || phase === "speaking"))) &&
     micEnabled &&
     (volumeUi > 0.06 || Boolean(interimTranscript.trim()));
   const studentWaveIntensity = Math.max(0.35, 0.35 + volumeUi * 0.65);
@@ -1509,6 +2096,18 @@ export default function AIVoicePage() {
               <span className="text-amber-600 dark:text-amber-400">…</span>
             )}
           </span>
+          <Select value={voiceGender} onValueChange={(v) => handleVoiceGenderChange(v as TutorVoiceGender)}>
+            <SelectTrigger
+              className="h-8 w-[7.5rem] rounded-md border-border bg-muted/50 px-2.5 text-xs font-medium shadow-none focus:ring-1"
+              aria-label="Tutor voice"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end">
+              <SelectItem value="female">Female</SelectItem>
+              <SelectItem value="male">Male</SelectItem>
+            </SelectContent>
+          </Select>
           <Badge
             variant="outline"
             className="font-mono text-xs tabular-nums border-border text-foreground bg-muted/50 px-2.5 py-0.5"
@@ -1566,6 +2165,7 @@ export default function AIVoicePage() {
           entries={transcriptEntries}
           isTyping={isTyping}
           streamingAssistantText={assistantText || undefined}
+          spokenUnitText={spokenUnitText || undefined}
           streamingRelatedImages={voiceRelatedImages}
           streamingMathLesson={streamingMathLesson}
           streamingScienceExperiment={streamingScienceExperiment}
@@ -1577,6 +2177,14 @@ export default function AIVoicePage() {
           }
           accessToken={accessToken}
           onToggleMic={() => {
+            if (
+              bargeInEnabled &&
+              micEnabled &&
+              (phase === "speaking" || phase === "thinking")
+            ) {
+              handleInterrupt();
+              return;
+            }
             setMicEnabled((v) => !v);
             if (micEnabled) {
               stopRecognition();

@@ -31,9 +31,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AiTutorButtonIcon } from "@/components/ai-tutor-button-icon";
-import { useInitialLoading } from "@/hooks/use-initial-loading";
-import { AssignmentsSkeleton } from "@/components/skeletons/student-page-skeletons";
-
 type AssignmentTab = "all" | "pending" | "in_progress" | "graded";
 type AssignmentStatus = "pending" | "in_progress" | "graded";
 
@@ -230,7 +227,6 @@ function OverviewChart() {
 }
 
 export default function AssignmentsPage() {
-  const loading = useInitialLoading();
   const [activeTab, setActiveTab] = useState<AssignmentTab>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("due_date");
@@ -259,10 +255,6 @@ export default function AssignmentsPage() {
     { id: "in_progress", label: `In Progress (${TAB_COUNTS.in_progress})` },
     { id: "graded", label: `Graded (${TAB_COUNTS.graded})` },
   ];
-
-  if (loading) {
-    return <AssignmentsSkeleton />;
-  }
 
   return (
     <div className="dashboard-fit flex min-h-0 flex-1 flex-col overflow-hidden p-4 md:p-5">

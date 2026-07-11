@@ -19,6 +19,7 @@ import SettingsPage from "@/pages/settings";
 import UsersPage from "@/pages/users";
 import SyllabusPage from "@/pages/syllabus";
 import AIVoicePage from "@/pages/ai-voice";
+import { getDashboardPath } from "@/lib/dashboard-routes";
 import { UserRole, type UserRoleType } from "@/types/schema";
 import MasterAdminDashboardModulePage from "@/modules/master-admin/pages/dashboard-page";
 import ManageOrganizationsPage from "@/modules/master-admin/pages/manage-organizations-page";
@@ -37,12 +38,16 @@ import OrganizationDashboardPage from "@/modules/organization/pages/dashboard-pa
 import OrganizationManageSchoolsPage from "@/modules/organization/pages/manage-schools-page";
 import OrganizationManageTutorsPage from "@/modules/organization/pages/manage-tutors-page";
 import OrganizationManageStudentsPage from "@/modules/organization/pages/manage-students-page";
+import OrganizationManageClassesPage from "@/modules/organization/pages/manage-classes-page";
+import OrganizationCredentialsPage from "@/modules/organization/pages/credentials-page";
 import OrganizationReportsPage from "@/modules/organization/pages/reports-page";
 import OrganizationSettingsPage from "@/modules/organization/pages/settings-page";
 import TutorDashboardModulePage from "@/modules/tutor/pages/dashboard-page";
 import TutorAssignedStudentsPage from "@/modules/tutor/pages/assigned-students-page";
+import TutorStudentProfilePage from "@/modules/tutor/pages/student-profile-page";
 import TutorSessionManagementPage from "@/modules/tutor/pages/session-management-page";
-import TutorAIInteractionPage from "@/modules/tutor/pages/ai-interaction-page";
+import TutorLessonPlannerPage from "@/modules/tutor/pages/lesson-planner-page";
+import TutorAIInsightsPage from "@/modules/tutor/pages/ai-insights-page";
 import TutorProgressTrackingPage from "@/modules/tutor/pages/progress-tracking-page";
 import TutorProfileSettingsPage from "@/modules/tutor/pages/profile-settings-page";
 
@@ -52,19 +57,19 @@ function normalizeRole(value: string | undefined | null): string {
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
-  
+
   if (!isAuthenticated) {
     return <Redirect to="/login" />;
   }
-  
+
   return <AppLayout>{children}</AppLayout>;
 }
 
 function PublicRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
   
   if (isAuthenticated) {
-    return <Redirect to="/dashboard" />;
+    return <Redirect to={getDashboardPath(user?.role)} />;
   }
   
   return <>{children}</>;
@@ -81,7 +86,7 @@ function RoleRoute({
   if (!isAuthenticated) return <Redirect to="/login" />;
   const userRole = normalizeRole(user?.role);
   const allowed = roles.map((r) => normalizeRole(r));
-  if (!user || !allowed.includes(userRole)) return <Redirect to="/dashboard" />;
+  if (!user || !allowed.includes(userRole)) return <Redirect to={getDashboardPath(user?.role)} />;
   return <AppLayout>{children}</AppLayout>;
 }
 
@@ -112,9 +117,7 @@ function Router() {
       
       <Route path="/my-learning">
         <ProtectedRoute>
-          <div className="flex min-h-0 flex-1 flex-col">
-            <MyLearningPage />
-          </div>
+          <MyLearningPage />
         </ProtectedRoute>
       </Route>
 
@@ -150,9 +153,7 @@ function Router() {
       
       <Route path="/assignments">
         <ProtectedRoute>
-          <div className="flex min-h-0 flex-1 flex-col">
-            <AssignmentsPage />
-          </div>
+          <AssignmentsPage />
         </ProtectedRoute>
       </Route>
       
@@ -164,9 +165,7 @@ function Router() {
       
       <Route path="/live-classes">
         <ProtectedRoute>
-          <div className="flex min-h-0 flex-1 flex-col">
-            <LiveClassesPage />
-          </div>
+          <LiveClassesPage />
         </ProtectedRoute>
       </Route>
       
@@ -178,9 +177,7 @@ function Router() {
       
       <Route path="/settings">
         <ProtectedRoute>
-          <div className="flex min-h-0 flex-1 flex-col">
-            <SettingsPage />
-          </div>
+          <SettingsPage />
         </ProtectedRoute>
       </Route>
       
@@ -189,10 +186,28 @@ function Router() {
           <OrganizationManageStudentsPage />
         </RoleRoute>
       </Route>
+
+      <Route path="/teachers">
+        <RoleRoute roles={[UserRole.SCHOOL_ADMIN]}>
+          <OrganizationManageTutorsPage />
+        </RoleRoute>
+      </Route>
       
       <Route path="/tutors">
         <RoleRoute roles={[UserRole.SCHOOL_ADMIN]}>
-          <OrganizationManageTutorsPage />
+          <Redirect to="/teachers" />
+        </RoleRoute>
+      </Route>
+
+      <Route path="/classes">
+        <RoleRoute roles={[UserRole.SCHOOL_ADMIN]}>
+          <OrganizationManageClassesPage />
+        </RoleRoute>
+      </Route>
+
+      <Route path="/credentials">
+        <RoleRoute roles={[UserRole.SCHOOL_ADMIN]}>
+          <OrganizationCredentialsPage />
         </RoleRoute>
       </Route>
       
@@ -328,6 +343,11 @@ function Router() {
           <TutorDashboardModulePage />
         </RoleRoute>
       </Route>
+      <Route path="/tutor/students/:slug">
+        <RoleRoute roles={[UserRole.TUTOR]}>
+          <TutorStudentProfilePage />
+        </RoleRoute>
+      </Route>
       <Route path="/tutor/students">
         <RoleRoute roles={[UserRole.TUTOR]}>
           <TutorAssignedStudentsPage />
@@ -338,10 +358,18 @@ function Router() {
           <TutorSessionManagementPage />
         </RoleRoute>
       </Route>
-      <Route path="/tutor/ai-interaction">
+      <Route path="/tutor/lesson-planner">
         <RoleRoute roles={[UserRole.TUTOR]}>
-          <TutorAIInteractionPage />
+          <TutorLessonPlannerPage />
         </RoleRoute>
+      </Route>
+      <Route path="/tutor/ai-insights">
+        <RoleRoute roles={[UserRole.TUTOR]}>
+          <TutorAIInsightsPage />
+        </RoleRoute>
+      </Route>
+      <Route path="/tutor/ai-interaction">
+        <Redirect to="/tutor/ai-insights" />
       </Route>
       <Route path="/tutor/progress">
         <RoleRoute roles={[UserRole.TUTOR]}>

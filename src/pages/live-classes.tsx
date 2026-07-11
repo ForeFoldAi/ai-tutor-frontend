@@ -23,9 +23,6 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AiTutorButtonIcon } from "@/components/ai-tutor-button-icon";
-import { useInitialLoading } from "@/hooks/use-initial-loading";
-import { SessionSkeleton } from "@/components/skeletons/student-page-skeletons";
-
 type SessionFilter = "all" | "today" | "tomorrow" | "week";
 type SessionStatus = "live" | "upcoming" | "completed";
 
@@ -154,7 +151,6 @@ function isThisWeek(dateStr: string) {
 }
 
 export default function LiveClassesPage() {
-  const loading = useInitialLoading();
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<SessionFilter>("all");
   const [chatInput, setChatInput] = useState("");
@@ -177,10 +173,6 @@ export default function LiveClassesPage() {
       return true;
     });
   }, [searchQuery, filter]);
-
-  if (loading) {
-    return <SessionSkeleton />;
-  }
 
   return (
     <div className="dashboard-fit flex min-h-0 flex-1 flex-col overflow-hidden p-4 md:p-5">

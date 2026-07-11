@@ -74,7 +74,7 @@ export function VoiceTranscriptPanel({
 
       <div
         ref={scrollRef}
-        className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain scroll-smooth px-3 py-3 sm:px-4 sm:py-4 space-y-3"
+        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain scroll-smooth px-3 py-3 sm:px-4 sm:py-4 space-y-3"
       >
         {entries.length === 0 && !isTyping ? (
           <p className="text-center text-sm text-slate-500 py-6">
@@ -212,7 +212,7 @@ function TranscriptBubble({
         </div>
         <div
           className={cn(
-            "rounded-2xl px-3 py-2.5 sm:px-4 sm:py-3 border text-sm leading-relaxed w-full min-w-0",
+            "rounded-2xl px-3 py-2.5 sm:px-4 sm:py-3 border text-sm leading-relaxed w-full min-w-0 overflow-hidden",
             isUser
               ? "rounded-tr-md bg-indigo-500/25 border-indigo-400/20 text-slate-100 whitespace-pre-wrap"
               : "rounded-tl-md bg-slate-800/90 border-white/10 text-slate-100",

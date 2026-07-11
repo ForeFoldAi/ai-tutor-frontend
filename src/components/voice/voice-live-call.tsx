@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Bot,
   ChevronDown,
@@ -159,7 +159,7 @@ function MessageBubble({
   const hasRichAssistantContent = Boolean(entry.text || hasImages || entry.mathLesson || entry.scienceExperiment);
 
   return (
-    <div className={cn("flex gap-2.5 items-end", isUser ? "flex-row-reverse" : "flex-row")}>
+    <div className={cn("flex gap-2.5 items-end min-w-0", isUser ? "flex-row-reverse" : "flex-row")}>
       <div
         className={cn(
           "h-8 w-8 rounded-full flex items-center justify-center shrink-0 mb-0.5",
@@ -177,12 +177,12 @@ function MessageBubble({
         className={cn(
           "min-w-0 flex flex-col gap-1",
           isUser
-            ? "items-end max-w-[85%]"
+            ? "items-end max-w-[92%]"
             : cn(
-                "items-start",
+                "items-start w-full max-w-[96%]",
                 hasRichAssistantContent && (hasImages || entry.mathLesson)
-                  ? "max-w-[92%] sm:max-w-[min(92%,40rem)] w-full"
-                  : "max-w-[85%] sm:max-w-[80%]",
+                  ? "sm:max-w-full"
+                  : "",
               ),
         )}
       >
@@ -199,8 +199,8 @@ function MessageBubble({
             isUser
               ? "rounded-br-md bg-primary text-primary-foreground"
               : cn(
-                  "rounded-bl-md border border-primary/25 bg-[hsl(var(--ai-purple-light))] text-foreground",
-                  hasImages || entry.mathLesson ? "w-full" : "",
+                  "rounded-bl-md border border-primary/25 bg-[hsl(var(--ai-purple-light))] text-foreground min-w-0",
+                  hasImages || entry.mathLesson ? "w-full overflow-hidden" : "",
                 ),
           )}
         >
@@ -235,6 +235,7 @@ function MessageBubble({
 
 function StreamingBubble({
   streamingAssistantText,
+  spokenUnitText,
   streamingRelatedImages,
   streamingMathLesson,
   streamingScienceExperiment,
@@ -243,6 +244,7 @@ function StreamingBubble({
   accessToken,
 }: {
   streamingAssistantText?: string;
+  spokenUnitText?: string;
   streamingRelatedImages?: VoiceRelatedImage[];
   streamingMathLesson?: MathLesson | null;
   streamingScienceExperiment?: ScienceExperiment | null;
@@ -251,25 +253,37 @@ function StreamingBubble({
   accessToken?: string | null;
 }) {
   const streamingImages = (streamingRelatedImages ?? []) as RelatedTextbookImage[];
-  const hasStreamingRichContent = Boolean(
-    streamingAssistantText || streamingImages.length > 0 || streamingMathLesson || streamingScienceExperiment,
-  );
+  const full = streamingAssistantText || "";
+  const spoken = (spokenUnitText || "").trim();
+  let highlightNode: ReactNode = null;
+  if (full && spoken && !streamingMathLesson && !streamingScienceExperiment && streamingImages.length === 0) {
+    const idx = full.toLowerCase().lastIndexOf(spoken.toLowerCase());
+    if (idx >= 0) {
+      const before = full.slice(0, idx);
+      const mid = full.slice(idx, idx + spoken.length);
+      const after = full.slice(idx + spoken.length);
+      highlightNode = (
+        <>
+          {before}
+          <mark className="bg-indigo-500/20 text-foreground rounded-sm px-0.5">{mid}</mark>
+          {after}
+        </>
+      );
+    }
+  }
 
   return (
-    <div className="flex gap-2.5 items-end">
+    <div className="flex gap-2.5 items-end min-w-0">
       <div className="h-8 w-8 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shrink-0 mb-0.5">
         <Bot className="h-4 w-4 text-white" />
       </div>
       <div
         className={cn(
-          "min-w-0 flex flex-col gap-1 items-start",
-          hasStreamingRichContent && (streamingImages.length > 0 || streamingMathLesson || streamingScienceExperiment)
-            ? "max-w-[92%] sm:max-w-[min(92%,40rem)] w-full"
-            : "max-w-[85%] sm:max-w-[80%]",
+          "min-w-0 flex flex-col gap-1 items-start w-full max-w-[96%]",
         )}
       >
         <span className="text-[10px] font-medium text-indigo-600 dark:text-indigo-300 px-1">AI Voice</span>
-        <div className="rounded-2xl rounded-bl-md px-3.5 py-2.5 sm:px-4 sm:py-3 border border-primary/25 bg-[hsl(var(--ai-purple-light))] text-sm leading-relaxed shadow-sm w-full min-w-0 text-foreground">
+        <div className="rounded-2xl rounded-bl-md px-3.5 py-2.5 sm:px-4 sm:py-3 border border-primary/25 bg-[hsl(var(--ai-purple-light))] text-sm leading-relaxed shadow-sm w-full min-w-0 overflow-hidden text-foreground">
           {!streamingAssistantText ? (
             <div className="flex items-center gap-2 text-muted-foreground">
               <span className="inline-flex gap-1">
@@ -279,6 +293,8 @@ function StreamingBubble({
               </span>
               <span>Composing reply…</span>
             </div>
+          ) : highlightNode ? (
+            <div className="whitespace-pre-wrap break-words">{highlightNode}</div>
           ) : (
             <AssistantMessageContent
               content={streamingAssistantText}
@@ -313,6 +329,7 @@ export function VoiceLiveCall({
   entries,
   isTyping,
   streamingAssistantText,
+  spokenUnitText,
   streamingRelatedImages,
   streamingMathLesson,
   streamingScienceExperiment,
@@ -347,6 +364,7 @@ export function VoiceLiveCall({
   entries: TranscriptEntry[];
   isTyping: boolean;
   streamingAssistantText?: string;
+  spokenUnitText?: string;
   streamingRelatedImages?: VoiceRelatedImage[];
   streamingMathLesson?: MathLesson | null;
   streamingScienceExperiment?: ScienceExperiment | null;
@@ -417,9 +435,9 @@ export function VoiceLiveCall({
 
       <div
         ref={scrollRef}
-        className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain scroll-smooth px-4 py-4 sm:px-6 lg:px-8 bg-background"
+        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain scroll-smooth px-2 py-3 sm:px-3 bg-background"
       >
-        <div className="max-w-4xl mx-auto w-full space-y-4">
+        <div className="w-full min-w-0 space-y-4">
           {showEmptyState ? (
             <div className="flex flex-col items-center justify-center text-center py-8 sm:py-12 px-4">
               <div
@@ -472,6 +490,7 @@ export function VoiceLiveCall({
           {isTyping ? (
             <StreamingBubble
               streamingAssistantText={streamingAssistantText}
+              spokenUnitText={spokenUnitText}
               streamingRelatedImages={streamingRelatedImages}
               streamingMathLesson={streamingMathLesson}
               streamingScienceExperiment={streamingScienceExperiment}

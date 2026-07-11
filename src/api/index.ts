@@ -1,7 +1,9 @@
 import { useAuthStore } from "@/lib/auth-store";
 import { studentFriendlyApiError } from "@/lib/student-messages";
 
-const API_BASE = (import.meta.env.VITE_API_URL || "http://127.0.0.1:8004").replace(/\/$/, "");
+// Empty VITE_API_URL = same-origin (Vite dev proxy → backend); set full URL only when needed.
+const API_BASE = String(import.meta.env.VITE_API_URL ?? "").trim().replace(/\/$/, "");
+const FETCH_TIMEOUT_MS = 20_000;
 
 function getAuthHeader(): Record<string, string> {
   const token = useAuthStore.getState().token;
@@ -45,14 +47,21 @@ async function refreshAccessToken(): Promise<string | null> {
 
 async function doFetch(path: string, init: RequestInit = {}, tokenOverride?: string): Promise<Response> {
   const authHeader = tokenOverride ? { Authorization: `Bearer ${tokenOverride}` } : getAuthHeader();
-  return fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...authHeader,
-      ...(init.headers || {}),
-    },
-  });
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(`${API_BASE}${path}`, {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeader,
+        ...(init.headers || {}),
+      },
+    });
+  } finally {
+    window.clearTimeout(timer);
+  }
 }
 
 export async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {

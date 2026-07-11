@@ -291,7 +291,15 @@ export function StudentSettingsContent({ excludeTabs = [] }: StudentSettingsCont
   };
 
   if (loading) {
-    return <SettingsContentSkeleton />;
+    return (
+      <>
+        <div className="mb-4 shrink-0 space-y-2">
+          <Skeleton className="h-8 w-36" />
+          <Skeleton className="h-4 w-56" />
+        </div>
+        <SettingsContentSkeleton />
+      </>
+    );
   }
 
   const tabContent = (
@@ -562,7 +570,12 @@ export function StudentSettingsContent({ excludeTabs = [] }: StudentSettingsCont
   );
 
   return (
-    <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[220px_1fr]">
+    <>
+      <div className="mb-4 shrink-0">
+        <h1 className="text-xl font-bold text-foreground sm:text-2xl">Settings</h1>
+        <p className="text-sm text-muted-foreground">Manage your account and preferences</p>
+      </div>
+      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[220px_1fr]">
       <Card className="h-fit shrink-0 shadow-card lg:h-full lg:max-h-none">
         <CardContent className="p-2 sm:p-3">
           <nav className="flex gap-1 overflow-x-auto lg:flex-col lg:overflow-visible">
@@ -598,5 +611,6 @@ export function StudentSettingsContent({ excludeTabs = [] }: StudentSettingsCont
 
       <div className="min-h-0 flex-1 overflow-y-auto">{tabContent}</div>
     </div>
+    </>
   );
 }

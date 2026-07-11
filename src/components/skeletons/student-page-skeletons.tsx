@@ -3,7 +3,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 function PageShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="dashboard-fit min-h-0 flex-1 overflow-x-hidden p-4 md:p-5 lg:p-4">
+    <div className="dashboard-fit overflow-x-hidden p-4 md:p-5 lg:p-4">
       {children}
     </div>
   );
@@ -36,6 +36,19 @@ function StatCardSkeleton() {
         <Skeleton className="h-2 w-full rounded-full" />
       </CardContent>
     </Card>
+  );
+}
+
+export function StudentAppLoadingShell() {
+  return (
+    <PageShell>
+      <HeaderSkeleton />
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <StatCardSkeleton key={i} />
+        ))}
+      </div>
+    </PageShell>
   );
 }
 
@@ -108,7 +121,7 @@ export function DashboardSkeleton() {
 
 export function MyLearningSkeleton() {
   return (
-    <div className="dashboard-fit flex min-h-0 flex-1 flex-col overflow-hidden p-4 md:p-5">
+    <PageShell>
       <HeaderSkeleton />
       <Card className="mb-3 shrink-0 shadow-card">
         <CardContent className="grid grid-cols-2 gap-3 p-3 xl:grid-cols-4">
@@ -159,14 +172,15 @@ export function MyLearningSkeleton() {
           </Card>
         </div>
       </div>
-    </div>
+    </PageShell>
   );
 }
 
 export function AiTutorStudioSkeleton() {
   return (
-    <div className="space-y-5 p-4 md:p-6">
-      <HeaderSkeleton />
+    <PageShell>
+      <div className="flex flex-col gap-5">
+        <HeaderSkeleton />
       <Card className="overflow-hidden shadow-card">
         <CardContent className="p-0">
           <div className="flex flex-col sm:flex-row">
@@ -198,13 +212,14 @@ export function AiTutorStudioSkeleton() {
         </div>
       </div>
       <Skeleton className="h-20 w-full rounded-card" />
-    </div>
+      </div>
+    </PageShell>
   );
 }
 
 export function SessionSkeleton() {
   return (
-    <div className="dashboard-fit flex min-h-0 flex-1 flex-col overflow-hidden p-4 md:p-5">
+    <PageShell>
       <HeaderSkeleton />
       <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-3 lg:gap-4">
         <div className="flex min-h-0 flex-col gap-3 lg:col-span-2">
@@ -244,13 +259,13 @@ export function SessionSkeleton() {
           </Card>
         </div>
       </div>
-    </div>
+    </PageShell>
   );
 }
 
 export function AssignmentsSkeleton() {
   return (
-    <div className="dashboard-fit flex min-h-0 flex-1 flex-col overflow-hidden p-4 md:p-5">
+    <PageShell>
       <HeaderSkeleton />
       <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-3 lg:gap-4">
         <div className="flex min-h-0 flex-col gap-3 lg:col-span-2">
@@ -295,6 +310,6 @@ export function AssignmentsSkeleton() {
           </Card>
         </div>
       </div>
-    </div>
+    </PageShell>
   );
 }

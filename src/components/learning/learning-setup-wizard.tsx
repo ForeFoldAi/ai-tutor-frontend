@@ -21,6 +21,7 @@ import {
   Trophy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { brandImages } from "@/lib/brand-images";
 import type { StudentSubjectApi } from "@/api/types";
 
 export type LearningMethod = "ai-tutor" | "ai-voice" | "pre-recorded";
@@ -419,7 +420,7 @@ export function LearningSetupWizard({ open, onOpenChange, subject }: LearningSet
                         <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-gradient-to-br from-primary/5 to-accent/10">
                           {method.id === "ai-tutor" ? (
                             <img
-                              src="/chatbot.png"
+                              src={brandImages.chatbot}
                               alt=""
                               aria-hidden
                               className="h-full w-full object-contain p-1"
@@ -485,7 +486,7 @@ export function LearningSetupWizard({ open, onOpenChange, subject }: LearningSet
                       </ul>
                     </div>
                     <img
-                      src="/chatbot.png"
+                      src={brandImages.chatbot}
                       alt=""
                       aria-hidden
                       className="hidden h-24 w-24 shrink-0 object-contain sm:block"

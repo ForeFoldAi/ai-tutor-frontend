@@ -28,8 +28,7 @@ import {
 import type { User } from "@/types/schema";
 import { cn } from "@/lib/utils";
 import { AiTutorButtonIcon } from "@/components/ai-tutor-button-icon";
-import { useInitialLoading } from "@/hooks/use-initial-loading";
-import { DashboardSkeleton } from "@/components/skeletons/student-page-skeletons";
+import { brandImages } from "@/lib/brand-images";
 
 interface StudentDashboardProps {
   user: User;
@@ -116,15 +115,10 @@ function SubjectMiniChart({ data, barClass }: { data: number[]; barClass: string
 }
 
 export default function StudentDashboard({ user }: StudentDashboardProps) {
-  const loading = useInitialLoading();
   const firstName = user.fullName?.split(" ")[0] || "Student";
 
-  if (loading) {
-    return <DashboardSkeleton />;
-  }
-
   return (
-    <div className="dashboard-fit min-h-0 flex-1 overflow-x-hidden p-4 md:p-5 lg:p-4">
+    <div className="dashboard-fit overflow-x-hidden overflow-y-auto p-4 md:p-5 lg:p-4">
       {/* Header */}
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between lg:mb-3">
         <div className="min-w-0">
@@ -227,7 +221,7 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
               <div className="grid gap-4 md:grid-cols-[10.5rem_1fr] md:items-center lg:grid-cols-[11.5rem_1fr]">
                 <div className="flex aspect-square w-full max-w-[11.5rem] shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-[#EEF2FF] dark:bg-primary/10">
                   <img
-                    src="/book.png"
+                    src={brandImages.book}
                     alt="Learning illustration"
                     className="h-[92%] w-[92%] object-contain"
                   />
@@ -286,7 +280,7 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
             <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:gap-4 lg:gap-3 lg:p-3">
               <div className="relative h-14 w-24 shrink-0 overflow-hidden rounded-lg sm:h-16 sm:w-28 lg:h-14 lg:w-24">
                 <img
-                  src="/chatbot.png"
+                  src={brandImages.chatbot}
                   alt=""
                   aria-hidden
                   className="h-full w-full object-contain object-center p-1"
@@ -342,7 +336,7 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
                 </div>
                 <div className="flex h-[10.5rem] w-[9rem] shrink-0 items-center justify-center sm:h-44 sm:w-[10.5rem]">
                   <img
-                    src="/book.png"
+                    src={brandImages.book}
                     alt=""
                     aria-hidden
                     className="h-full w-full object-contain"

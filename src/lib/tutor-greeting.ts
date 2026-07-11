@@ -13,25 +13,21 @@ export function buildStartLearningGreeting(opts: {
   chapterNames?: string[];
 }): string {
   const first = opts.firstName || studentFirstName(opts.fullName);
-  const subject = opts.subject.trim() || "your subject";
   const names = (opts.chapterNames || []).map((n) => n.trim()).filter(Boolean);
+  const subject = opts.subject.trim() || "your subject";
 
-  let scope: string;
+  let from: string;
   if (names.length === 1) {
-    scope = `about ${names[0]} in ${subject}`;
+    from = names[0];
   } else if (names.length === 2) {
-    scope = `about ${names[0]} and ${names[1]} in ${subject}`;
+    from = `${names[0]} and ${names[1]}`;
   } else if (names.length > 2) {
-    scope = `about ${names[0]}, ${names[1]}, and more in ${subject}`;
+    from = `${names[0]}, ${names[1]}, and more`;
   } else {
-    scope = `from your ${subject} textbook`;
+    from = subject;
   }
 
-  return (
-    `Hello ${first}! Welcome back. I'm your AI Tutor. ` +
-    `What would you like to learn today? ` +
-    `Feel free to ask any question ${scope}, from your homework, or about topics you're curious about.`
-  );
+  return `Hi ${first}, welcome back. What would you like to learn today from ${from}?`;
 }
 
 /** Remove greet=1 from the URL so refresh does not replay the welcome. */

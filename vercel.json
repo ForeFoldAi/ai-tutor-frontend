@@ -5,8 +5,9 @@
   "installCommand": "npm install",
   "framework": "vite",
   "rewrites": [
+    { "handle": "filesystem" },
     {
-      "source": "/(.*)",
+      "source": "/((?!assets/).*)",
       "destination": "/index.html"
     }
   ]

@@ -126,10 +126,11 @@ function normalizeSubtopicKey(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
-const FIG_CAPTION_LINE_RE = /^\s*Fig\.?\s*\d[\d.]*\s*[.:—–-]?\s*.+/i;
+const FIG_CAPTION_LINE_RE =
+  /^\s*Fig\.?\s*\d+(?:\.\d+)*\s*(?:[.:—–-]\s*)?.+$/i;
 const PAGE_LINE_RE = /^\s*Page\s+\d+\s*$/i;
 const FIG_CAPTION_ANYWHERE_RE =
-  /(?:^|\n)\s*Fig\.?\s*\d+(?:\.\d+)*\s*[.:—–-]\s*[A-Z][^\n]{8,160}/gi;
+  /(?:^|\n)\s*Fig\.?\s*\d+(?:\.\d+)*\s*[.:—–-]\s*[^\n]{3,160}/gi;
 
 /** Remove textbook figure captions the model pasted into prose (figures render as cards). */
 function stripEmbeddedFigureLines(text: string): string {
@@ -255,66 +256,39 @@ function splitSubtopicBlocks(
   return blocks.length > 0 ? blocks : [{ title: "", body: trimmed }];
 }
 
-/** True when we can render per-subtopic sections (tagged images + matching content blocks). */
+/** True when we can render per-subtopic sections (tagged images and/or **bold** blocks in text). */
 export function shouldUseSubtopicSectionLayout(
   content: string,
   images: RelatedTextbookImage[],
 ): boolean {
-  if (!images.some((i) => i.subtopic?.trim())) {
-    return false;
-  }
   const knownTitles = images.map((i) => i.subtopic?.trim() || "").filter(Boolean);
   const blocks = splitSubtopicBlocks(content.trim(), knownTitles);
   return blocks.length >= 2 && blocks.every((b) => b.title.length > 0);
 }
 
-function imageForSubtopic(
-  images: RelatedTextbookImage[],
-  title: string,
-  usedUrls: Set<string>,
-): RelatedTextbookImage | undefined {
-  const key = normalizeSubtopicKey(title);
-  if (!key) return undefined;
-  return images.find((img) => {
-    if (img.url && usedUrls.has(img.url)) {
-      return false;
-    }
-    const st = img.subtopic ? normalizeSubtopicKey(img.subtopic) : "";
-    if (!st) return false;
-    return st === key || st.includes(key) || key.includes(st);
-  });
-}
-
-function MainSectionWithImages({
+function MainSectionBlocks({
   content,
   images,
-  token,
   cursor,
 }: {
   content: string;
   images: RelatedTextbookImage[];
-  token?: string | null;
   cursor?: ReactNode;
 }) {
   const knownTitles = images.map((i) => i.subtopic?.trim() || "").filter(Boolean);
-  const blocks = splitSubtopicBlocks(content, knownTitles);
-  const tagged = images.some((i) => i.subtopic?.trim());
+  const stripped = stripKnownFigureCaptions(content, images);
+  const blocks = splitSubtopicBlocks(stripped, knownTitles);
 
-  if (!tagged || blocks.length < 2) {
+  if (blocks.length < 2 || !blocks.every((b) => b.title.length > 0)) {
     return null;
   }
 
-  const usedFigureUrls = new Set<string>();
   let closingQuestion = "";
 
   const sections = blocks.map((block, idx) => {
     const { body, closing } = splitClosingQuestion(block.body);
     if (closing) {
       closingQuestion = closing;
-    }
-    const img = imageForSubtopic(images, block.title, usedFigureUrls);
-    if (img?.url) {
-      usedFigureUrls.add(img.url);
     }
     const isLast = idx === blocks.length - 1;
     return (
@@ -327,11 +301,6 @@ function MainSectionWithImages({
           {renderTutorText(body)}
           {isLast && !closingQuestion ? cursor : null}
         </div>
-        {img ? (
-          <div className="mt-3">
-            <TextbookFigureCard img={img} idx={idx} token={token} count={1} />
-          </div>
-        ) : null}
       </section>
     );
   });
@@ -361,23 +330,20 @@ export function textbookImageSrc(relativeUrl: string, accessToken?: string | nul
   return u;
 }
 
-/** Horizontal layout classes based on how many figures to show. */
+/** Horizontal layout: 3+ figures scroll inside the row; page stays fixed width. */
 function imageGalleryLayoutClass(count: number): string {
   if (count <= 1) {
     return "grid grid-cols-1 w-full max-w-md";
   }
   if (count === 2) {
-    return "grid grid-cols-1 sm:grid-cols-2 gap-3 w-full";
+    return "grid grid-cols-2 gap-3 w-full max-w-full min-w-0";
   }
-  if (count === 3) {
-    return "grid grid-cols-1 sm:grid-cols-3 gap-3 w-full";
-  }
-  return "flex flex-row gap-3 w-full overflow-x-auto pb-1 snap-x snap-mandatory scrollbar-thin";
+  return "flex flex-row flex-nowrap gap-3 w-full max-w-full min-w-0 overflow-x-auto overflow-y-hidden overscroll-x-contain pb-1 snap-x snap-mandatory scrollbar-thin";
 }
 
 function figureCardWidthClass(count: number): string {
-  if (count <= 3) return "min-w-0 w-full";
-  return "min-w-[72%] sm:min-w-[48%] md:min-w-[220px] max-w-[280px] shrink-0 snap-start";
+  if (count <= 2) return "min-w-0 w-full";
+  return "w-[200px] min-w-[180px] max-w-[220px] shrink-0 snap-start";
 }
 
 function TextbookFigureCard({
@@ -506,7 +472,10 @@ function TextbookImageGallery({
   if (images.length === 0) return null;
 
   return (
-    <div className={cn("mt-4 pt-3 border-t border-primary/15 w-full min-w-0", className)} data-testid="textbook-image-block">
+    <div
+      className={cn("mt-4 pt-3 border-t border-primary/15 w-full min-w-0 max-w-full overflow-hidden", className)}
+      data-testid="textbook-image-block"
+    >
       <div className={imageGalleryLayoutClass(images.length)}>
         {images.map((img, idx) => (
           <TextbookFigureCard key={`${img.url}-${idx}`} img={img} idx={idx} token={token} count={images.length} />
@@ -558,31 +527,30 @@ export function AssistantMessageContent({
   ) : null;
 
   const useSubtopicSections = shouldUseSubtopicSectionLayout(cleanContent, images);
+  const uniqueImages = images.filter((img, idx) => {
+    if (!img.url) return true;
+    return images.findIndex((o) => o.url === img.url) === idx;
+  });
 
   if (useSubtopicSections) {
     return (
       <div className="flex flex-col w-full min-w-0">
-        <MainSectionWithImages
+        <MainSectionBlocks
           content={cleanContent.trim()}
           images={images}
-          token={token}
           cursor={cursor}
         />
         {resolvedLesson && !isStreaming ? <MathLessonPanel lesson={resolvedLesson} /> : null}
         {resolvedExperiment && !isStreaming ? (
           <ScienceExperimentPanel experiment={resolvedExperiment} />
         ) : null}
+        {showImages ? <TextbookImageGallery images={uniqueImages} token={token} /> : null}
         {!showImages && imagesRetrieving ? (
           <TextbookImagesRetrieving hint={imagesRetrievingHint} />
         ) : null}
       </div>
     );
   }
-
-  const uniqueImages = images.filter((img, idx) => {
-    if (!img.url) return true;
-    return images.findIndex((o) => o.url === img.url) === idx;
-  });
 
   const prose = stripKnownFigureCaptions(cleanContent.trim(), images);
 

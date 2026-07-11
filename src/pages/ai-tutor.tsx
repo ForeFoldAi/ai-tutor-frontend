@@ -88,10 +88,6 @@ const VOICE_URL = import.meta.env.VITE_VOICE_URL || API_URL;
 
 // Upload PDF file
 const uploadPDF = async (file: File): Promise<void> => {
-  if (!API_URL) {
-    throw new Error(MSG.configUnavailable);
-  }
-
   const formData = new FormData();
   formData.append("file", file);
 
@@ -135,10 +131,6 @@ function useChapterContext(): ChapterContext | null {
 }
 
 const sendChatMessage = async (query: string): Promise<string> => {
-  if (!API_URL) {
-    throw new Error(MSG.configUnavailable);
-  }
-
   const response = await fetch(`${API_URL}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -158,6 +150,7 @@ const sendChapterChatMessage = async (
   query: string,
   ctx: ChapterContext,
   conversationHistory?: Array<{ role: string; content: string }>,
+  options?: { imagesOnly?: boolean },
 ): Promise<{
   answer: string;
   relatedImages: RelatedTextbookImage[];
@@ -180,6 +173,7 @@ const sendChapterChatMessage = async (
       chapter: ctx.chapterNames[0] || "",
       chapter_names: ctx.chapterNames,
       conversation_history: conversationHistory ?? [],
+      images_only: options?.imagesOnly ?? false,
     }),
   });
   return {
@@ -206,6 +200,7 @@ async function streamChapterChatMessage(
   handlers: {
     onToken: (chunk: string) => void;
     onImages: (images: RelatedTextbookImage[]) => void;
+    onCleanAnswer?: (content: string) => void;
     onMathLesson?: (lesson: MathLesson, cleanAnswer: string) => void;
     onScienceExperiment?: (experiment: ScienceExperiment, cleanAnswer: string) => void;
   },
@@ -261,6 +256,9 @@ async function streamChapterChatMessage(
       handlers.onToken(evt.content);
     } else if (evt.type === "related_images" && Array.isArray(evt.images)) {
       handlers.onImages(evt.images);
+    } else if (evt.type === "clean_answer" && evt.content) {
+      full = evt.content;
+      handlers.onCleanAnswer?.(evt.content);
     } else if (evt.type === "math_lesson" && evt.lesson) {
       handlers.onMathLesson?.(evt.lesson, evt.clean_answer ?? full);
     } else if (evt.type === "science_experiment" && evt.experiment) {
@@ -361,11 +359,6 @@ export default function AITutorPage() {
     
     if (file.type !== "application/pdf") {
       setUploadError(MSG.uploadPdfOnly);
-      return;
-    }
-
-    if (!API_URL) {
-      setUploadError(MSG.configUnavailable);
       return;
     }
 
@@ -497,6 +490,10 @@ export default function AITutorPage() {
               relatedImages = images;
               patchAssistant(fullContent, images);
             },
+            onCleanAnswer: (clean) => {
+              fullContent = clean;
+              patchAssistant(clean, relatedImages, mathLesson, scienceExperiment);
+            },
             onMathLesson: (lesson, cleanAnswer) => {
               mathLesson = lesson;
               fullContent = cleanAnswer;
@@ -512,30 +509,41 @@ export default function AITutorPage() {
         );
         if (relatedImages.length === 0 && fullContent.trim()) {
           try {
-            const fallback = await sendChapterChatMessage(content, chapterCtx, history);
-            if (fallback.relatedImages.length > 0 || fallback.mathLesson || fallback.scienceExperiment) {
-              relatedImages = fallback.relatedImages;
-              fullContent = fallback.answer || fullContent;
-              mathLesson = fallback.mathLesson ?? mathLesson;
-              scienceExperiment = fallback.scienceExperiment ?? scienceExperiment;
+            const fallback = await sendChapterChatMessage(content, chapterCtx, history, {
+              imagesOnly: true,
+            });
+            const gotImages = fallback.relatedImages.length > 0;
+            const gotMath = Boolean(fallback.mathLesson);
+            const gotScience = Boolean(fallback.scienceExperiment);
+            if (gotImages || gotMath || gotScience) {
+              if (gotImages) {
+                relatedImages = fallback.relatedImages;
+              }
+              // Image fallback must not replace a streamed answer with a second full LLM response.
+              if (!fullContent.trim() && fallback.answer) {
+                fullContent = fallback.answer;
+              }
+              if (gotMath) {
+                mathLesson = fallback.mathLesson ?? mathLesson;
+                if (fallback.answer) {
+                  fullContent = fallback.answer;
+                }
+              }
+              if (gotScience) {
+                scienceExperiment = fallback.scienceExperiment ?? scienceExperiment;
+                if (fallback.answer) {
+                  fullContent = fallback.answer;
+                }
+              }
               patchAssistant(fullContent, relatedImages, mathLesson, scienceExperiment);
             }
           } catch {
             /* stream answer is still shown */
           }
         }
-      } else if (API_URL) {
+      } else {
         fullContent = await sendChatMessage(content);
         patchAssistant(fullContent);
-      } else {
-        fullContent = `That's a great question! Let me explain this concept step by step.\n\nBased on your question about "${content.slice(0, 50)}...", here's a detailed explanation:\n\nThis topic involves several key concepts that work together. First, let's understand the fundamental principles. Then we can explore how these principles apply in different scenarios.\n\nKey points to remember:\n• Understanding the basics is crucial\n• Practice helps reinforce learning\n• Real-world applications make concepts clearer\n\nWould you like me to elaborate on any specific aspect of this topic?`;
-        const words = fullContent.split(" ");
-        for (let i = 0; i < words.length; i++) {
-          await new Promise((resolve) => setTimeout(resolve, 20));
-          const partial = words.slice(0, i + 1).join(" ");
-          patchAssistant(partial);
-        }
-        fullContent = words.join(" ");
       }
 
       setConversations((prev) =>
@@ -613,10 +621,6 @@ export default function AITutorPage() {
   // Stream MP3 from /chat-voice; optionally play while buffering for cache replay.
   const fetchVoiceForMessage = async (message: Message, opts?: { play?: boolean }) => {
     if (!message.content.trim()) return;
-    if (!VOICE_URL) {
-      setVoiceError(MSG.voiceUnavailable);
-      return;
-    }
 
     stopChatVoicePlayback();
     const controller = new AbortController();
@@ -653,16 +657,16 @@ export default function AITutorPage() {
         bindVoiceElement(player.element);
       }
 
-      const chunks: Uint8Array[] = [];
+      const chunks: ArrayBuffer[] = [];
       const reader = response.body.getReader();
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         if (controller.signal.aborted) break;
-        chunks.push(value);
+        const ab = value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
+        chunks.push(ab);
         if (shouldPlay && player) {
-          const ab = value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
           player.enqueue(ab);
         }
       }
@@ -923,13 +927,13 @@ export default function AITutorPage() {
             </div>
           </div>
         ) : (
-          <ScrollArea className="flex-1 p-3 sm:p-4">
-            <div className="max-w-3xl mx-auto space-y-4 sm:space-y-6">
+          <ScrollArea className="flex-1 px-2 py-3 sm:px-3">
+            <div className="w-full min-w-0 space-y-4 sm:space-y-6">
               {activeConversation.messages.map((message) => (
                 <div
                   key={message.id}
                   className={cn(
-                    "flex gap-2 sm:gap-3",
+                    "flex gap-2 sm:gap-3 min-w-0",
                     message.role === "user" ? "justify-end" : "justify-start"
                   )}
                 >
@@ -944,12 +948,12 @@ export default function AITutorPage() {
                     className={cn(
                       "rounded-2xl px-3 py-2 sm:px-4 sm:py-3 min-w-0",
                       message.role === "user"
-                        ? "max-w-[85%] sm:max-w-[80%] bg-primary text-primary-foreground"
+                        ? "max-w-[92%] bg-primary text-primary-foreground"
                         : cn(
-                            "border border-primary/25 bg-[hsl(var(--ai-purple-light))] text-foreground shadow-sm",
+                            "border border-primary/25 bg-[hsl(var(--ai-purple-light))] text-foreground shadow-sm w-full max-w-[96%] min-w-0 overflow-hidden",
                             (message.relatedImages?.length ?? 0) > 0 || message.mathLesson
-                              ? "max-w-[92%] sm:max-w-[min(92%,40rem)] w-full"
-                              : "max-w-[85%] sm:max-w-[80%]",
+                              ? "sm:max-w-full"
+                              : "",
                           ),
                     )}
                     data-testid={`message-${message.id}`}
@@ -1052,13 +1056,13 @@ export default function AITutorPage() {
           </ScrollArea>
         )}
 
-        <div className="border-t bg-background p-3 sm:p-4">
+        <div className="border-t bg-background px-2 py-3 sm:px-3">
           <form
             onSubmit={(e) => {
               e.preventDefault();
               sendMessage(input);
             }}
-            className="max-w-3xl mx-auto space-y-2"
+            className="w-full space-y-2"
           >
             {/* Uploaded file display */}
             {uploadedFile && (
@@ -1099,7 +1103,7 @@ export default function AITutorPage() {
                 size="icon"
                 disabled={isUploading || isLoading}
                 className="flex-shrink-0"
-                title={API_URL ? "Upload PDF" : "Upload isn't available right now"}
+                title="Upload PDF"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();

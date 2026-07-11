@@ -1,38 +1,32 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { Mail, Lock, User, GraduationCap, Plus } from "lucide-react";
-import { UserTable } from "@/modules/master-admin/components/user-table";
+import { Search } from "lucide-react";
 import { useTutorData } from "@/modules/tutor/hooks/use-tutor-data";
 import { DataState } from "@/modules/shared/components/data-state";
 import { createOrganizationStudent } from "@/api/organization";
 import type { StudentClassEnrollment } from "@/api/types";
 import { useAuthStore } from "@/lib/auth-store";
 import { useToast } from "@/hooks/use-toast";
+import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+  AddStudentDialog,
+  type OnboardStudentFormValues,
+} from "@/modules/tutor/components/students/add-student-dialog";
+import { ImportStudentsDialog } from "@/modules/tutor/components/students/import-students-dialog";
+import { StudentsFilters } from "@/modules/tutor/components/students/students-filters";
+import { StudentsTable } from "@/modules/tutor/components/students/students-table";
+import { StudentsPagination } from "@/modules/tutor/components/students/students-pagination";
+import type { StudentFilters } from "@/modules/tutor/types/student-profile";
+import { filterStudents, mergeTutorStudents } from "@/modules/tutor/utils/student-helpers";
 
-const onboardStudentSchema = z.object({
-  full_name: z.string().min(2, "Name must be at least 2 characters."),
-  email: z.string().email("Enter a valid email."),
-  password: z.string().min(8, "At least 8 characters."),
-  teaching_board: z.string().optional(),
-  grade: z.string().min(1, "Enter class / grade."),
-  section: z.string().min(1, "Enter section."),
-});
-
-type OnboardStudentFormValues = z.infer<typeof onboardStudentSchema>;
+const DEFAULT_FILTERS: StudentFilters = {
+  grade: "all",
+  subject: "all",
+  riskLevel: "all",
+  search: "",
+};
 
 function errorMessage(err: unknown) {
   if (!(err instanceof Error)) return "Could not create student.";
@@ -45,18 +39,25 @@ export default function TutorAssignedStudentsPage() {
   const user = useAuthStore((s) => s.user);
   const { studentsQuery } = useTutorData();
   const [onboardOpen, setOnboardOpen] = useState(false);
-  const students = studentsQuery.data || [];
-  const form = useForm<OnboardStudentFormValues>({
-    resolver: zodResolver(onboardStudentSchema),
-    defaultValues: {
-      full_name: "",
-      email: "",
-      password: "",
-      teaching_board: "",
-      grade: "",
-      section: "",
-    },
-  });
+  const [importOpen, setImportOpen] = useState(false);
+  const [filters, setFilters] = useState<StudentFilters>(DEFAULT_FILTERS);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  const allStudents = useMemo(
+    () => mergeTutorStudents(studentsQuery.data ?? []),
+    [studentsQuery.data],
+  );
+
+  const filteredStudents = useMemo(
+    () => filterStudents(allStudents, filters),
+    [allStudents, filters],
+  );
+
+  const paginatedStudents = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filteredStudents.slice(start, start + pageSize);
+  }, [filteredStudents, page, pageSize]);
 
   const onboardMutation = useMutation({
     mutationFn: (values: OnboardStudentFormValues) => {
@@ -77,158 +78,89 @@ export default function TutorAssignedStudentsPage() {
       });
     },
     onSuccess: () => {
-      form.reset();
       setOnboardOpen(false);
       void qc.invalidateQueries({ queryKey: ["tutor", "students"] });
       void qc.invalidateQueries({ queryKey: ["tutor", "progress"] });
       toast({
-        title: "Student onboarded",
+        title: "Student added",
         description: "Student is created and auto-assigned by class/section.",
       });
     },
     onError: (e) => {
       toast({
-        title: "Onboarding failed",
+        title: "Could not add student",
         description: errorMessage(e),
         variant: "destructive",
       });
     },
   });
 
+  const handleFilterChange = (patch: Partial<StudentFilters>) => {
+    setFilters((current) => ({ ...current, ...patch }));
+    setPage(1);
+  };
+
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">Assigned Students</h1>
-        <Dialog open={onboardOpen} onOpenChange={setOnboardOpen}>
-          <DialogTrigger asChild>
-            <Button className="gap-2">
-              <Plus className="h-4 w-4" />
-              Onboard student
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <GraduationCap className="h-5 w-5" />
-                Onboard Student
-              </DialogTitle>
-              <DialogDescription>
-                Student must match your tagged class and section.
-              </DialogDescription>
-            </DialogHeader>
-            <Form {...form}>
-              <form
-                className="grid gap-4 md:grid-cols-2 pt-2"
-                onSubmit={form.handleSubmit((v) => onboardMutation.mutate(v))}
-              >
-              <FormField
-                control={form.control}
-                name="full_name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Student full name</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input className="pl-9" {...field} />
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input type="email" className="pl-9" {...field} />
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Initial password</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                        <Input type="password" className="pl-9" {...field} />
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="teaching_board"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Board / curriculum (optional)</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g. CBSE" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="grade"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Class / grade</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g. 9" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="section"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Section</FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g. A" className="uppercase" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <div className="md:col-span-2 flex justify-end gap-2">
-                <Button type="button" variant="outline" onClick={() => setOnboardOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={onboardMutation.isPending}>
-                  {onboardMutation.isPending ? "Creating..." : "Create student"}
-                </Button>
-              </div>
-              </form>
-            </Form>
-          </DialogContent>
-        </Dialog>
+    <div className="dashboard-fit flex min-h-0 flex-1 flex-col gap-2 overflow-hidden p-3 md:p-4">
+      <div className="flex shrink-0 flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-blue-900 dark:text-blue-100">Students</h1>
+          <p className="text-sm text-muted-foreground">Manage and monitor your students</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <ImportStudentsDialog open={importOpen} onOpenChange={setImportOpen} />
+          <AddStudentDialog
+            open={onboardOpen}
+            onOpenChange={setOnboardOpen}
+            onSubmit={(values) => onboardMutation.mutate(values)}
+            isPending={onboardMutation.isPending}
+          />
+        </div>
       </div>
+
+      <div className="flex shrink-0 flex-wrap items-end gap-2 rounded-xl border border-border/70 bg-muted/20 p-3">
+        <div className="relative min-w-[180px] flex-1 space-y-1 sm:min-w-[220px]">
+          <Label className="text-xs text-muted-foreground">Search</Label>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Search students..."
+              value={filters.search}
+              onChange={(event) => handleFilterChange({ search: event.target.value })}
+              className="h-9 !border !border-slate-300 bg-background pl-9 hover:!border-slate-400 focus-visible:!border-primary"
+            />
+          </div>
+        </div>
+        <StudentsFilters
+          filters={filters}
+          onChange={handleFilterChange}
+          onClear={() => {
+            setFilters(DEFAULT_FILTERS);
+            setPage(1);
+          }}
+        />
+      </div>
+
       <DataState
         loading={studentsQuery.isLoading}
         error={studentsQuery.error ? String(studentsQuery.error) : null}
-        empty={students.length === 0}
-        emptyText="No assigned students found."
+        empty={filteredStudents.length === 0}
+        emptyText="No students match your filters."
         onRetry={() => void studentsQuery.refetch()}
       >
-        <UserTable title="Students" users={students} />
+        <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-xl border border-border/70 bg-card p-2 shadow-sm md:p-3">
+          <StudentsTable students={paginatedStudents} />
+          <StudentsPagination
+            page={page}
+            pageSize={pageSize}
+            total={filteredStudents.length}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setPage(1);
+            }}
+          />
+        </div>
       </DataState>
     </div>
   );
