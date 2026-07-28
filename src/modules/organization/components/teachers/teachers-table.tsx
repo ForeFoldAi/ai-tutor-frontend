@@ -1,4 +1,4 @@
-import { Eye, Pencil } from "lucide-react";
+import { Eye } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,6 @@ import { teacherInitials } from "@/modules/organization/utils/teacher-helpers";
 interface TeachersTableProps {
   teachers: TeacherRow[];
   onView: (teacher: TeacherRow) => void;
-  onEdit: (teacher: TeacherRow) => void;
 }
 
 const STATUS_STYLES = {
@@ -24,63 +23,85 @@ const STATUS_STYLES = {
   Inactive: "border-red-200 bg-red-50 text-red-600",
 };
 
-export function TeachersTable({ teachers, onView, onEdit }: TeachersTableProps) {
+const headClass = "h-9 px-2 text-xs font-semibold text-foreground sm:px-3 sm:text-sm";
+const cellClass = "px-2 py-2 text-xs sm:px-3 sm:text-sm";
+
+function GradeSubjectsCell({ teacher }: { teacher: TeacherRow }) {
+  const rows =
+    teacher.assignments.length > 0
+      ? teacher.assignments
+      : [{ grade: teacher.grades || "—", subjects: teacher.subject || "—" }];
+
   return (
-    <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-border/70 bg-card">
-      <Table className="min-w-[900px]">
+    <div className="min-w-[12rem] space-y-1.5">
+      {rows.map((row, i) => (
+        <div
+          key={`${teacher.id}-${row.grade}-${i}`}
+          className="grid grid-cols-[minmax(7rem,1fr)_minmax(6rem,1.2fr)] gap-x-3 gap-y-0.5"
+        >
+          <span className="whitespace-nowrap text-foreground">{row.grade}</span>
+          <span className="min-w-0 break-words text-muted-foreground">{row.subjects}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function TeachersTable({ teachers, onView }: TeachersTableProps) {
+  return (
+    <div className="overflow-x-auto">
+      <Table className="min-w-[820px] text-xs sm:min-w-[900px] sm:text-sm">
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead className="w-[52px]" />
-            <TableHead className="font-semibold text-foreground">Teacher Name</TableHead>
-            <TableHead className="hidden font-semibold text-foreground md:table-cell">User ID</TableHead>
-            <TableHead className="font-semibold text-foreground">Subjects</TableHead>
-            <TableHead className="hidden font-semibold text-foreground sm:table-cell">Grades</TableHead>
-            <TableHead className="hidden font-semibold text-foreground lg:table-cell">Assigned Students</TableHead>
-            <TableHead className="font-semibold text-foreground">Status</TableHead>
-            <TableHead className="hidden font-semibold text-foreground xl:table-cell">Last Login</TableHead>
-            <TableHead className="text-right font-semibold text-foreground">Actions</TableHead>
+            <TableHead className={`${headClass} w-[44px]`} />
+            <TableHead className={headClass}>Teacher Name</TableHead>
+            <TableHead className={`${headClass} text-left`}>User ID</TableHead>
+            <TableHead className={headClass}>
+              <div className="grid grid-cols-[minmax(7rem,1fr)_minmax(6rem,1.2fr)] gap-x-3">
+                <span>Grade</span>
+                <span>Subjects</span>
+              </div>
+            </TableHead>
+            <TableHead className={headClass}>Assigned Students</TableHead>
+            <TableHead className={headClass}>Status</TableHead>
+            <TableHead className={`${headClass} text-right`}>Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {teachers.map((teacher) => (
             <TableRow key={teacher.id}>
-              <TableCell>
-                <Avatar className="h-9 w-9">
-                  <AvatarFallback className={teacher.avatarColor}>
+              <TableCell className={`${cellClass} align-middle`}>
+                <Avatar className="h-8 w-8">
+                  <AvatarFallback className={`text-xs ${teacher.avatarColor}`}>
                     {teacherInitials(teacher.fullName)}
                   </AvatarFallback>
                 </Avatar>
               </TableCell>
-              <TableCell className="font-semibold text-blue-900 dark:text-blue-100">
+              <TableCell className={`${cellClass} align-middle whitespace-nowrap font-semibold text-blue-900 dark:text-blue-100`}>
                 {teacher.fullName}
               </TableCell>
-              <TableCell className="hidden text-muted-foreground md:table-cell">{teacher.userId}</TableCell>
-              <TableCell>{teacher.subject}</TableCell>
-              <TableCell className="hidden sm:table-cell">{teacher.grades}</TableCell>
-              <TableCell className="hidden lg:table-cell">{teacher.assignedStudents}</TableCell>
-              <TableCell>
-                <Badge variant="outline" className={STATUS_STYLES[teacher.status]}>
+              <TableCell className={`${cellClass} align-middle text-left whitespace-nowrap text-muted-foreground`}>
+                {teacher.userId}
+              </TableCell>
+              <TableCell className={`${cellClass} align-middle`}>
+                <GradeSubjectsCell teacher={teacher} />
+              </TableCell>
+              <TableCell className={`${cellClass} align-middle whitespace-nowrap`}>{teacher.assignedStudents}</TableCell>
+              <TableCell className={`${cellClass} align-middle`}>
+                <Badge variant="outline" className={`px-2 py-0 text-xs ${STATUS_STYLES[teacher.status]}`}>
                   {teacher.status}
                 </Badge>
               </TableCell>
-              <TableCell className="hidden text-muted-foreground xl:table-cell">{teacher.lastLogin}</TableCell>
-              <TableCell>
-                <div className="flex justify-end gap-1">
+              <TableCell className={`${cellClass} align-middle`}>
+                <div className="flex justify-end">
                   <Button
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8 text-primary hover:bg-primary/10"
+                    aria-label={`View ${teacher.fullName}`}
                     onClick={() => onView(teacher)}
                   >
                     <Eye className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-primary hover:bg-primary/10"
-                    onClick={() => onEdit(teacher)}
-                  >
-                    <Pencil className="h-4 w-4" />
                   </Button>
                 </div>
               </TableCell>

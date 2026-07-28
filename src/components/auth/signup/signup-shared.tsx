@@ -1,9 +1,11 @@
-import { useState, type ComponentProps } from "react";
-import { Check, Copy, Eye, EyeOff } from "lucide-react";
+import { useState, type ComponentProps, type ReactNode } from "react";
+import { Check, Copy, Eye, EyeOff, RefreshCw } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SelectTrigger } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { SignupAccountType } from "./signup-shell";
 import { SIGNUP_THEMES } from "./signup-shell";
@@ -22,7 +24,7 @@ export function FormSection({
 }) {
   const theme = SIGNUP_THEMES[accountType];
   return (
-    <section className="rounded-xl border border-slate-200 bg-slate-50/50 p-5">
+    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-[0_12px_40px_-8px_rgba(15,23,42,0.22)]">
       <h2 className={cn("mb-4 text-sm font-semibold uppercase tracking-wide", theme.accent)}>{title}</h2>
       <div className="space-y-4">{children}</div>
     </section>
@@ -252,6 +254,35 @@ export function MethodCard({
   );
 }
 
+export function SignupSuccessFrame({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex min-h-full flex-1 w-full items-center justify-center py-8 sm:py-10">
+      {children}
+    </div>
+  );
+}
+
+const SUCCESS_ACCENT_BAR: Record<SignupAccountType, string> = {
+  student: "bg-primary",
+  teacher: "bg-emerald-600",
+  school: "bg-blue-600",
+};
+
+export function SignupSuccessCard({
+  accountType,
+  children,
+}: {
+  accountType: SignupAccountType;
+  children: ReactNode;
+}) {
+  return (
+    <div className="w-full max-w-lg overflow-hidden rounded-2xl border-2 border-slate-300 bg-white shadow-[0_28px_64px_-16px_rgba(15,23,42,0.45)]">
+      <div className={cn("h-2 w-full", SUCCESS_ACCENT_BAR[accountType])} />
+      <div className="p-6 text-center sm:p-8">{children}</div>
+    </div>
+  );
+}
+
 export function SuccessPanel({
   name,
   userId,
@@ -277,49 +308,51 @@ export function SuccessPanel({
   };
 
   return (
-    <div className="mx-auto max-w-lg text-center">
-      <img src="/login-right.png" alt="" aria-hidden className="mx-auto h-24 w-auto object-contain" />
-      <h2 className="mt-4 text-xl font-bold text-foreground">Account Created Successfully!</h2>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Welcome to AI Tutor, <span className="font-semibold text-foreground">{name}</span>! Your account has been
-        created successfully.
-      </p>
+    <SignupSuccessFrame>
+      <SignupSuccessCard accountType={accountType}>
+        <img src="/login-right.png" alt="" aria-hidden className="mx-auto h-24 w-auto object-contain" />
+        <h2 className="mt-4 text-xl font-bold text-foreground">Account Created Successfully!</h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Welcome to AI Tutor, <span className="font-semibold text-foreground">{name}</span>! Your account has been
+          created successfully.
+        </p>
 
-      <div className="mt-5 flex items-center justify-between rounded-lg border border-border bg-muted/40 px-4 py-3">
-        <div className="text-left">
-          <p className="text-xs text-muted-foreground">Your User ID</p>
-          <p className="font-semibold text-foreground">{userId}</p>
+        <div className="mt-5 flex items-center justify-between rounded-lg border border-border bg-muted/40 px-4 py-3">
+          <div className="text-left">
+            <p className="text-xs text-muted-foreground">Your User ID</p>
+            <p className="font-semibold text-foreground">{userId}</p>
+          </div>
+          <button
+            type="button"
+            onClick={copyId}
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card hover:bg-muted"
+            aria-label="Copy user ID"
+          >
+            {copied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+          </button>
         </div>
+
+        <ul className="mt-5 space-y-2 text-left">
+          {features.map((f) => (
+            <li key={f} className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Check className="h-4 w-4 shrink-0 text-emerald-600" />
+              {f}
+            </li>
+          ))}
+        </ul>
+
         <button
           type="button"
-          onClick={copyId}
-          className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card hover:bg-muted"
-          aria-label="Copy user ID"
+          onClick={onDashboard}
+          className={cn(
+            "mt-6 inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white",
+            theme.button
+          )}
         >
-          {copied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+          {dashboardLabel}
         </button>
-      </div>
-
-      <ul className="mt-5 space-y-2 text-left">
-        {features.map((f) => (
-          <li key={f} className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Check className="h-4 w-4 shrink-0 text-emerald-600" />
-            {f}
-          </li>
-        ))}
-      </ul>
-
-      <button
-        type="button"
-        onClick={onDashboard}
-        className={cn(
-          "mt-6 inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white",
-          theme.button
-        )}
-      >
-        {dashboardLabel}
-      </button>
-    </div>
+      </SignupSuccessCard>
+    </SignupSuccessFrame>
   );
 }
 
@@ -334,6 +367,88 @@ export function FieldLabel({ children, required }: { children: React.ReactNode; 
 
 export function SignupTextarea({ className, ...props }: ComponentProps<typeof Textarea>) {
   return <Textarea className={cn(signupFieldClass, className)} {...props} />;
+}
+
+export function SignupSelectSkeleton() {
+  return <Skeleton className="h-10 w-full rounded-md" />;
+}
+
+export function SignupPillsSkeleton({ count = 4 }: { count?: number }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {Array.from({ length: count }).map((_, i) => (
+        <Skeleton key={i} className="h-8 w-24 rounded-full" />
+      ))}
+    </div>
+  );
+}
+
+export function SignupCheckboxGridSkeleton({ count = 4 }: { count?: number }) {
+  return (
+    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+      {Array.from({ length: count }).map((_, i) => (
+        <Skeleton key={i} className="h-10 w-full rounded-lg" />
+      ))}
+    </div>
+  );
+}
+
+export function SignupMethodCardsSkeleton() {
+  return (
+    <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+      {Array.from({ length: 3 }).map((_, i) => (
+        <Skeleton key={i} className="h-28 w-full rounded-xl" />
+      ))}
+    </div>
+  );
+}
+
+export function SignupModeButtonsSkeleton() {
+  return (
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+      {Array.from({ length: 3 }).map((_, i) => (
+        <Skeleton key={i} className="h-10 w-full rounded-lg" />
+      ))}
+    </div>
+  );
+}
+
+type OptionsSlotVariant = "select" | "pills" | "checkboxes" | "methods" | "modes";
+
+export function OptionsSlot({
+  loading,
+  error,
+  onRetry,
+  variant = "select",
+  children,
+}: {
+  loading: boolean;
+  error: string | null;
+  onRetry: () => void;
+  variant?: OptionsSlotVariant;
+  children: ReactNode;
+}) {
+  if (loading) {
+    if (variant === "pills") return <SignupPillsSkeleton />;
+    if (variant === "checkboxes") return <SignupCheckboxGridSkeleton />;
+    if (variant === "methods") return <SignupMethodCardsSkeleton />;
+    if (variant === "modes") return <SignupModeButtonsSkeleton />;
+    return <SignupSelectSkeleton />;
+  }
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-dashed border-slate-300 bg-white px-3 py-2.5">
+        <p className="text-sm text-muted-foreground">{error}</p>
+        <Button type="button" variant="ghost" size="sm" className="mt-1 h-8 gap-1.5 px-0 text-primary" onClick={onRetry}>
+          <RefreshCw className="h-3.5 w-3.5" />
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
 }
 
 export { Textarea };

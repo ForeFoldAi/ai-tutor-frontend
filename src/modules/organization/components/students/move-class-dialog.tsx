@@ -1,5 +1,8 @@
-import { useMemo, useState } from "react";
-import { ArrowRightLeft } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { ArrowRightLeft, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { listClasses } from "@/api/classes";
+import { listStudents } from "@/api/students";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -10,7 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -18,58 +21,140 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { DEMO_CLASS_OVERVIEW } from "@/modules/organization/data/demo-classes-admin";
-import type { SchoolStudentRow } from "@/modules/organization/types/org-student-profile";
+import { mapStudentRecordToRow } from "@/modules/organization/utils/org-student-helpers";
+
+const PAGE_SIZE = 25;
 
 interface MoveClassDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  students: SchoolStudentRow[];
+  grades?: string[];
+  sections?: string[];
+  pending?: boolean;
+  onMove: (payload: { studentIds: number[]; classId: number }) => void;
 }
 
-function classLabel(grade: string, section: string) {
-  return `Grade ${grade} · Section ${section}`;
+function classLabel(grade: string, section: string, curriculum?: string) {
+  const base = `Grade ${grade} · Section ${section}`;
+  return curriculum ? `${base} · ${curriculum}` : base;
 }
 
-export function MoveClassDialog({ open, onOpenChange, students }: MoveClassDialogProps) {
-  const { toast } = useToast();
+function useDebounced(value: string, ms = 300) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const id = window.setTimeout(() => setDebounced(value), ms);
+    return () => window.clearTimeout(id);
+  }, [value, ms]);
+  return debounced;
+}
+
+function PageControls({
+  page,
+  total,
+  pageSize,
+  onPageChange,
+}: {
+  page: number;
+  total: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+}) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  if (total === 0) return null;
+  return (
+    <div className="flex items-center justify-between gap-2 pt-1 text-[11px] text-muted-foreground">
+      <span>
+        {Math.min((page - 1) * pageSize + 1, total)}–{Math.min(page * pageSize, total)} of {total}
+      </span>
+      <div className="flex items-center gap-1">
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="h-6 w-6"
+          disabled={page <= 1}
+          onClick={() => onPageChange(page - 1)}
+        >
+          <ChevronLeft className="h-3 w-3" />
+        </Button>
+        <span>
+          {page}/{totalPages}
+        </span>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="h-6 w-6"
+          disabled={page >= totalPages}
+          onClick={() => onPageChange(page + 1)}
+        >
+          <ChevronRight className="h-3 w-3" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+export function MoveClassDialog({
+  open,
+  onOpenChange,
+  grades = [],
+  sections = [],
+  pending,
+  onMove,
+}: MoveClassDialogProps) {
   const [sourceGrade, setSourceGrade] = useState("all");
   const [sourceSection, setSourceSection] = useState("all");
+  const [studentSearch, setStudentSearch] = useState("");
+  const [classSearch, setClassSearch] = useState("");
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
   const [targetClassId, setTargetClassId] = useState<string | null>(null);
+  const [studentPage, setStudentPage] = useState(1);
+  const [classPage, setClassPage] = useState(1);
 
-  const classes = useMemo(() => {
-    const fromDemo = DEMO_CLASS_OVERVIEW.map((c) => ({
-      id: c.id,
-      grade: c.grade,
-      section: c.section,
-      label: classLabel(c.grade, c.section),
-    }));
-    const seen = new Set(fromDemo.map((c) => c.id));
-    for (const student of students) {
-      const id = `${student.grade}-${student.section.toLowerCase()}`;
-      if (!seen.has(id) && student.grade !== "—") {
-        seen.add(id);
-        fromDemo.push({
-          id,
-          grade: student.grade,
-          section: student.section,
-          label: classLabel(student.grade, student.section),
-        });
-      }
-    }
-    return fromDemo.sort((a, b) => a.grade.localeCompare(b.grade) || a.section.localeCompare(b.section));
-  }, [students]);
+  const debouncedStudentSearch = useDebounced(studentSearch);
+  const debouncedClassSearch = useDebounced(classSearch);
 
-  const sourceStudents = useMemo(() => {
-    return students.filter((student) => {
-      const matchesGrade = sourceGrade === "all" || student.grade === sourceGrade;
-      const matchesSection = sourceSection === "all" || student.section === sourceSection;
-      return matchesGrade && matchesSection;
-    });
-  }, [students, sourceGrade, sourceSection]);
+  useEffect(() => {
+    setStudentPage(1);
+  }, [debouncedStudentSearch, sourceGrade, sourceSection]);
+
+  useEffect(() => {
+    setClassPage(1);
+  }, [debouncedClassSearch]);
+
+  const studentsQuery = useQuery({
+    queryKey: ["students", "move-dialog", debouncedStudentSearch, sourceGrade, sourceSection, studentPage],
+    queryFn: () =>
+      listStudents({
+        q: debouncedStudentSearch || undefined,
+        grade: sourceGrade,
+        section: sourceSection,
+        limit: PAGE_SIZE,
+        offset: (studentPage - 1) * PAGE_SIZE,
+      }),
+    enabled: open,
+  });
+
+  const classesQuery = useQuery({
+    queryKey: ["classes", "move-dialog", debouncedClassSearch, classPage],
+    queryFn: () =>
+      listClasses({
+        q: debouncedClassSearch || undefined,
+        limit: PAGE_SIZE,
+        offset: (classPage - 1) * PAGE_SIZE,
+      }),
+    enabled: open,
+  });
+
+  const students = (studentsQuery.data?.items ?? []).map(mapStudentRecordToRow);
+  const studentTotal = studentsQuery.data?.meta.total ?? 0;
+  const classes = (classesQuery.data?.items ?? []).map((c) => ({
+    id: String(c.id),
+    label: classLabel(c.grade, c.section, c.curriculum),
+  }));
+  const classTotal = classesQuery.data?.meta.total ?? 0;
 
   const toggleStudent = (id: string) => {
     setSelectedStudentIds((prev) => {
@@ -80,18 +165,25 @@ export function MoveClassDialog({ open, onOpenChange, students }: MoveClassDialo
     });
   };
 
-  const handleMove = () => {
-    const target = classes.find((c) => c.id === targetClassId);
-    if (!target || selectedStudentIds.size === 0) return;
-    toast({
-      title: "Students moved",
-      description: `${selectedStudentIds.size} student(s) moved to ${target.label}.`,
+  const togglePageStudents = (checked: boolean) => {
+    setSelectedStudentIds((prev) => {
+      const next = new Set(prev);
+      for (const student of students) {
+        if (checked) next.add(student.id);
+        else next.delete(student.id);
+      }
+      return next;
     });
-    setSelectedStudentIds(new Set());
-    setTargetClassId(null);
-    setSourceGrade("all");
-    setSourceSection("all");
-    onOpenChange(false);
+  };
+
+  const pageAllSelected = students.length > 0 && students.every((s) => selectedStudentIds.has(s.id));
+
+  const handleMove = () => {
+    if (!targetClassId || selectedStudentIds.size === 0) return;
+    onMove({
+      studentIds: [...selectedStudentIds].map(Number),
+      classId: Number(targetClassId),
+    });
   };
 
   const resetOnClose = (next: boolean) => {
@@ -100,116 +192,167 @@ export function MoveClassDialog({ open, onOpenChange, students }: MoveClassDialo
       setTargetClassId(null);
       setSourceGrade("all");
       setSourceSection("all");
+      setStudentSearch("");
+      setClassSearch("");
+      setStudentPage(1);
+      setClassPage(1);
     }
     onOpenChange(next);
   };
 
   return (
     <Dialog open={open} onOpenChange={resetOnClose}>
-      <DialogContent className="flex max-h-[90vh] max-w-4xl flex-col gap-0 overflow-hidden p-0">
-        <DialogHeader className="border-b border-border px-6 py-5">
-          <DialogTitle className="flex items-center gap-2">
-            <ArrowRightLeft className="h-5 w-5 text-primary" />
+      <DialogContent className="flex !h-[92vh] !max-h-[92vh] w-[min(1100px,96vw)] !max-w-[1100px] flex-col gap-0 overflow-hidden !p-0">
+        <DialogHeader className="shrink-0 space-y-0 border-b border-border px-4 py-2.5">
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <ArrowRightLeft className="h-4 w-4 text-primary" />
             Move Class
           </DialogTitle>
-          <DialogDescription>
-            Filter students by class on the left, then select a target class on the right.
+          <DialogDescription className="sr-only">
+            Search and page through students and target classes. Selection is kept across pages.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid min-h-0 flex-1 gap-0 md:grid-cols-2">
-          <section className="flex min-h-[280px] flex-col border-b border-border p-4 md:border-b-0 md:border-r">
-            <h3 className="text-sm font-semibold text-foreground">Select Students</h3>
-            <p className="mt-1 text-xs text-muted-foreground">Filter by current class, then select students.</p>
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Grade</Label>
+        <div className="grid min-h-0 flex-1 gap-0 overflow-hidden md:grid-cols-2">
+          <section className="flex min-h-0 flex-col border-b border-border px-3 py-2 md:border-b-0 md:border-r">
+            <div className="flex shrink-0 items-center justify-between gap-2">
+              <h3 className="text-xs font-semibold text-foreground">Select Students</h3>
+              {selectedStudentIds.size > 0 ? (
+                <span className="text-xs text-muted-foreground">{selectedStudentIds.size} selected</span>
+              ) : null}
+            </div>
+            <div className="mt-1.5 shrink-0 space-y-1.5">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Search students..."
+                  value={studentSearch}
+                  onChange={(e) => setStudentSearch(e.target.value)}
+                  className="h-8 bg-background pl-8 text-sm"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
                 <Select value={sourceGrade} onValueChange={setSourceGrade}>
-                  <SelectTrigger className="h-9 bg-background">
+                  <SelectTrigger className="h-8 bg-background text-xs">
                     <SelectValue placeholder="All Grades" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Grades</SelectItem>
-                    <SelectItem value="6">Grade 6</SelectItem>
-                    <SelectItem value="7">Grade 7</SelectItem>
-                    <SelectItem value="8">Grade 8</SelectItem>
+                    {grades.map((g) => (
+                      <SelectItem key={g} value={g}>
+                        Grade {g}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Section</Label>
                 <Select value={sourceSection} onValueChange={setSourceSection}>
-                  <SelectTrigger className="h-9 bg-background">
+                  <SelectTrigger className="h-8 bg-background text-xs">
                     <SelectValue placeholder="All Sections" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Sections</SelectItem>
-                    <SelectItem value="A">Section A</SelectItem>
-                    <SelectItem value="B">Section B</SelectItem>
-                    <SelectItem value="C">Section C</SelectItem>
+                    {sections.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        Section {s}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
+              {students.length > 0 ? (
+                <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+                  <Checkbox checked={pageAllSelected} onCheckedChange={(v) => togglePageStudents(v === true)} />
+                  Select all on this page
+                </label>
+              ) : null}
             </div>
-            <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-              {sourceStudents.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No students in this class.</p>
+            <div className="mt-1.5 min-h-0 flex-1 space-y-0.5 overflow-y-auto pr-0.5">
+              {studentsQuery.isLoading ? (
+                <p className="text-sm text-muted-foreground">Loading students…</p>
+              ) : students.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No students match.</p>
               ) : (
-                sourceStudents.map((student) => (
+                students.map((student) => (
                   <label
                     key={student.id}
-                    className="flex cursor-pointer items-start gap-3 rounded-lg border border-border px-3 py-2 hover:bg-muted/30"
+                    className="flex h-7 cursor-pointer items-center gap-2 rounded-md border border-border px-2 hover:bg-muted/30"
                   >
                     <Checkbox
                       checked={selectedStudentIds.has(student.id)}
                       onCheckedChange={() => toggleStudent(student.id)}
-                      className="mt-0.5"
+                      className="h-3.5 w-3.5"
                     />
-                    <div className="min-w-0">
-                      <p className="font-medium text-foreground">{student.fullName}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {classLabel(student.grade, student.section)}
-                      </p>
-                    </div>
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+                      {student.fullName}
+                    </span>
+                    <span className="shrink-0 truncate text-xs text-muted-foreground">
+                      {student.userId} · {student.grade}-{student.section}
+                    </span>
                   </label>
                 ))
               )}
             </div>
+            <div className="shrink-0">
+              <PageControls
+                page={studentPage}
+                total={studentTotal}
+                pageSize={PAGE_SIZE}
+                onPageChange={setStudentPage}
+              />
+            </div>
           </section>
 
-          <section className="flex min-h-[280px] flex-col p-4">
-            <h3 className="text-sm font-semibold text-foreground">Target Class</h3>
-            <p className="mt-1 text-xs text-muted-foreground">Select the class to move students into.</p>
-            <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-              {classes.map((cls) => (
-                <button
-                  key={cls.id}
-                  type="button"
-                  onClick={() => setTargetClassId(cls.id)}
-                  className={cn(
-                    "flex w-full flex-col rounded-lg border px-3 py-2.5 text-left transition-colors",
-                    targetClassId === cls.id
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-primary/40 hover:bg-muted/30",
-                  )}
-                >
-                  <span className="font-medium text-foreground">{cls.label}</span>
-                </button>
-              ))}
+          <section className="flex min-h-0 flex-col px-3 py-2">
+            <h3 className="shrink-0 text-xs font-semibold text-foreground">Target Class</h3>
+            <div className="relative mt-1.5 shrink-0">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search classes..."
+                value={classSearch}
+                onChange={(e) => setClassSearch(e.target.value)}
+                className="h-8 bg-background pl-8 text-sm"
+              />
+            </div>
+            <div className="mt-1.5 min-h-0 flex-1 space-y-0.5 overflow-y-auto pr-0.5">
+              {classesQuery.isLoading ? (
+                <p className="text-sm text-muted-foreground">Loading classes…</p>
+              ) : classes.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No classes match.</p>
+              ) : (
+                classes.map((cls) => (
+                  <button
+                    key={cls.id}
+                    type="button"
+                    onClick={() => setTargetClassId(cls.id)}
+                    className={cn(
+                      "flex h-7 w-full items-center rounded-md border px-2 text-left text-sm transition-colors",
+                      targetClassId === cls.id
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-primary/40 hover:bg-muted/30",
+                    )}
+                  >
+                    <span className="truncate font-medium text-foreground">{cls.label}</span>
+                  </button>
+                ))
+              )}
+            </div>
+            <div className="shrink-0">
+              <PageControls page={classPage} total={classTotal} pageSize={PAGE_SIZE} onPageChange={setClassPage} />
             </div>
           </section>
         </div>
 
-        <DialogFooter className="border-t border-border px-6 py-4">
-          <Button type="button" variant="outline" onClick={() => resetOnClose(false)}>
+        <DialogFooter className="shrink-0 border-t border-border px-4 py-2.5">
+          <Button type="button" variant="outline" size="sm" onClick={() => resetOnClose(false)}>
             Cancel
           </Button>
           <Button
             type="button"
-            disabled={!targetClassId || selectedStudentIds.size === 0}
+            size="sm"
+            disabled={!targetClassId || selectedStudentIds.size === 0 || pending}
             onClick={handleMove}
           >
-            Move Students ({selectedStudentIds.size})
+            {pending ? "Moving…" : `Move Students (${selectedStudentIds.size})`}
           </Button>
         </DialogFooter>
       </DialogContent>

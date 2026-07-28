@@ -7,7 +7,7 @@ const MY_SUBJECTS_KEY = ["my-subjects"] as const;
 export function useMySubjects() {
   return useQuery({
     queryKey: MY_SUBJECTS_KEY,
-    queryFn: getMySubjects,
+    queryFn: () => getMySubjects(),
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,
   });

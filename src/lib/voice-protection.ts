@@ -31,6 +31,7 @@ export async function checkBargeIn(
     transcript?: string;
     recentAiSpeech?: string;
     studentKey?: string;
+    voiceSessionId?: string;
     token?: string | null;
   },
 ): Promise<BargeCheckResult> {
@@ -40,6 +41,7 @@ export async function checkBargeIn(
   if (opts.transcript) form.append("transcript", opts.transcript);
   if (opts.recentAiSpeech) form.append("recent_ai_speech", opts.recentAiSpeech);
   if (opts.studentKey) form.append("student_key", opts.studentKey);
+  if (opts.voiceSessionId) form.append("voice_session_id", opts.voiceSessionId);
 
   const res = await fetch(`${root}/voice/barge-check`, {
     method: "POST",
@@ -71,6 +73,28 @@ export async function enrollSpeaker(
     return { ok: false, error: await res.text() };
   }
   return (await res.json()) as { ok: boolean; prompt?: string };
+}
+
+export async function endVoiceSession(
+  voiceSessionId: string,
+  baseUrl: string,
+  token?: string | null,
+): Promise<void> {
+  if (!voiceSessionId.trim()) return;
+  const root = baseUrl.replace(/\/$/, "");
+  const form = new FormData();
+  form.append("voice_session_id", voiceSessionId.trim());
+  const endpoint = token ? `${root}/auth/voice-session-end` : `${root}/voice-session-end`;
+  try {
+    await fetch(endpoint, {
+      method: "POST",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: form,
+      keepalive: true,
+    });
+  } catch {
+    /* session cleanup best-effort */
+  }
 }
 
 /** In-memory protection metrics for the session (client-side). */

@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { BarChart3, Bot, Shield } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuthLightTheme } from "@/lib/theme-provider";
 import { AuthBrandMark } from "@/components/auth/auth-brand-mark";
 
 export const AUTH_FEATURES = [
@@ -72,6 +73,8 @@ interface AuthLayoutProps {
 }
 
 export function AuthLayout({ children, maxWidth = "max-w-[420px]", scrollable = false }: AuthLayoutProps) {
+  useAuthLightTheme();
+
   useEffect(() => {
     document.documentElement.classList.add("overflow-hidden");
     document.body.classList.add("overflow-hidden");

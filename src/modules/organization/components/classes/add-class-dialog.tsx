@@ -20,7 +20,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { DEMO_CURRICULUMS } from "@/modules/organization/data/demo-classes-admin";
 
 const classRowSchema = z.object({
   grade: z.string().min(1, "Grade required"),
@@ -50,15 +49,23 @@ const addClassesSchema = z
 export type AddClassRowValues = z.infer<typeof classRowSchema>;
 export type AddClassesFormValues = z.infer<typeof addClassesSchema>;
 
-const emptyRow = (): AddClassRowValues => ({ grade: "", section: "", curriculum: "" });
+const emptyRow = (curriculum = ""): AddClassRowValues => ({ grade: "", section: "", curriculum });
 
 interface AddClassDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  curricula: string[];
   onSubmit: (values: AddClassesFormValues) => void;
+  isSubmitting?: boolean;
 }
 
-export function AddClassDialog({ open, onOpenChange, onSubmit }: AddClassDialogProps) {
+export function AddClassDialog({
+  open,
+  onOpenChange,
+  curricula,
+  onSubmit,
+  isSubmitting,
+}: AddClassDialogProps) {
   const form = useForm<AddClassesFormValues>({
     resolver: zodResolver(addClassesSchema),
     defaultValues: { classes: [emptyRow()] },
@@ -149,16 +156,16 @@ export function AddClassDialog({ open, onOpenChange, onSubmit }: AddClassDialogP
                     name={`classes.${index}.curriculum`}
                     render={({ field: f }) => (
                       <FormItem>
-                        <Select value={f.value} onValueChange={f.onChange}>
+                        <Select value={f.value || undefined} onValueChange={f.onChange}>
                           <FormControl>
                             <SelectTrigger className="h-10 bg-background">
-                              <SelectValue placeholder="Select curriculum" />
+                              <SelectValue placeholder="Select Curriculum" />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {DEMO_CURRICULUMS.map((curriculum) => (
-                              <SelectItem key={curriculum.id} value={curriculum.name}>
-                                {curriculum.name}
+                            {curricula.map((curriculum) => (
+                              <SelectItem key={curriculum} value={curriculum}>
+                                {curriculum}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -195,8 +202,8 @@ export function AddClassDialog({ open, onOpenChange, onSubmit }: AddClassDialogP
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
-              <Button type="submit">
-                Add {fields.length} class{fields.length === 1 ? "" : "es"}
+              <Button type="submit" disabled={isSubmitting || curricula.length === 0}>
+                {isSubmitting ? "Saving…" : `Add ${fields.length} class${fields.length === 1 ? "" : "es"}`}
               </Button>
             </div>
           </form>

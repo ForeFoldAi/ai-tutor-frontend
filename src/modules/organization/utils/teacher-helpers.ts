@@ -1,4 +1,4 @@
-import type { ApiUser } from "@/api/types";
+import type { ApiUser, TeacherRecord } from "@/api/types";
 import type { TeacherFilters, TeacherRow } from "@/modules/organization/types/teacher-profile";
 
 const AVATAR_COLORS = [
@@ -9,49 +9,8 @@ const AVATAR_COLORS = [
   "bg-rose-100 text-rose-700",
 ];
 
-const SUBJECTS = ["Mathematics", "Science", "English", "Social Studies", "Computer Science"];
-
-export const DEMO_TEACHERS: TeacherRow[] = buildDemoTeachers(85);
-
-function buildDemoTeachers(count: number): TeacherRow[] {
-  const firstNames = ["Anita", "Ravi", "Sneha", "Kiran", "Meera", "Arjun", "Divya", "Rohan", "Neha", "Vikram"];
-  const lastNames = ["Verma", "Kumar", "Iyer", "Patel", "Singh", "Sharma", "Reddy", "Nair", "Gupta", "Desai"];
-  const subjects = ["Mathematics", "Science", "English", "Social Studies", "Computer Science"];
-  const gradeRanges = ["6-8", "6-10", "7-9", "8-10", "6-9"];
-
-  return Array.from({ length: count }, (_, index) => {
-    const first = firstNames[index % firstNames.length];
-    const last = lastNames[Math.floor(index / firstNames.length) % lastNames.length];
-    const fullName = `${first} ${last}`;
-    const userId = `${first}.${last}`.toLowerCase();
-    const day = Math.max(1, 28 - (index % 20));
-    return {
-      id: `demo-${index + 1}`,
-      fullName,
-      userId,
-      email: `${userId}@school.edu`,
-      subject: subjects[index % subjects.length],
-      grades: gradeRanges[index % gradeRanges.length],
-      assignedStudents: 24 + (index % 35),
-      status: index % 9 === 0 ? "Inactive" : "Active",
-      lastLogin: `May ${day}, 2026`,
-      avatarColor: AVATAR_COLORS[index % AVATAR_COLORS.length],
-    } satisfies TeacherRow;
-  });
-}
-
-function gradesLabel(tutor: ApiUser) {
-  const grades =
-    tutor.teaching_classes
-      ?.map((item) => Number.parseInt(item.grade, 10))
-      .filter((value) => !Number.isNaN(value)) ?? [];
-  if (grades.length === 0) return "—";
-  const min = Math.min(...grades);
-  const max = Math.max(...grades);
-  return min === max ? String(min) : `${min}-${max}`;
-}
-
-function formatLastLogin(iso: string) {
+function formatLastLogin(iso: string | null) {
+  if (!iso) return "—";
   try {
     return new Date(iso).toLocaleDateString(undefined, {
       month: "short",
@@ -63,71 +22,73 @@ function formatLastLogin(iso: string) {
   }
 }
 
-function userIdFromEmail(email: string) {
-  return email.split("@")[0] ?? email;
-}
-
-function assignedStudentsEstimate(id: string) {
-  let hash = 0;
-  for (let i = 0; i < id.length; i += 1) hash += id.charCodeAt(i);
-  return 24 + (hash % 40);
-}
-
-export function mapApiUserToTeacherRow(tutor: ApiUser, index: number): TeacherRow {
-  return {
-    id: tutor.id,
+export function mapApiUsersToTeacherRows(apiTutors: ApiUser[]): TeacherRow[] {
+  return apiTutors.map((tutor, index) => ({
+    id: String(tutor.id),
     fullName: tutor.full_name,
-    userId: userIdFromEmail(tutor.email),
+    userId: tutor.email.split("@", 1)[0] ?? tutor.email,
     email: tutor.email,
-    subject: tutor.teaching_board?.trim() || SUBJECTS[index % SUBJECTS.length],
-    grades: gradesLabel(tutor),
-    assignedStudents: assignedStudentsEstimate(tutor.id),
+    phone: tutor.phone ?? undefined,
+    // teaching_board is curriculum/board — not subject (subjects live on teaching_subjects).
+    subject: "—",
+    grades: "—",
+    assignments: [],
+    assignedStudents: 0,
     status: tutor.is_active ? "Active" : "Inactive",
     lastLogin: formatLastLogin(tutor.updated_at),
     avatarColor: AVATAR_COLORS[index % AVATAR_COLORS.length],
-    source: tutor,
-  };
+  }));
 }
 
-export function mergeTeachers(apiTutors: ApiUser[]): TeacherRow[] {
-  if (apiTutors.length === 0) return DEMO_TEACHERS;
-  return apiTutors.map(mapApiUserToTeacherRow);
+function assignmentsFromTeacher(teacher: TeacherRecord): { grade: string; subjects: string }[] {
+  const fromApi = teacher.assignments?.filter((a) => a.grade || a.subjects);
+  if (fromApi && fromApi.length > 0) {
+    return fromApi.map((a) => ({
+      grade: a.grade?.trim() || "—",
+      subjects: a.subjects?.trim() || "—",
+    }));
+  }
+  // Fallback when list payload has only flat labels (older API).
+  const subject = teacher.subject?.trim() || "—";
+  const grades = (teacher.grades ?? "")
+    .split(",")
+    .map((g) => g.trim())
+    .filter(Boolean);
+  if (grades.length === 0) {
+    return subject !== "—" ? [{ grade: "—", subjects: subject }] : [];
+  }
+  return grades.map((grade) => ({ grade, subjects: subject }));
 }
 
-export function teacherRowFromDetails(
-  row: { full_name: string; phone: string; email: string },
-  index: number,
-): TeacherRow {
-  const email = row.email.trim();
+export function mapTeacherToRow(teacher: TeacherRecord, index: number): TeacherRow {
   return {
-    id: `local-${Date.now()}-${index}`,
-    fullName: row.full_name.trim(),
-    userId: userIdFromEmail(email),
-    email,
-    phone: row.phone.trim(),
-    subject: "—",
-    grades: "—",
-    assignedStudents: 0,
-    status: "Active",
-    lastLogin: "—",
+    id: String(teacher.id),
+    fullName: teacher.full_name,
+    userId: teacher.user_id,
+    email: teacher.email,
+    phone: teacher.phone ?? undefined,
+    subject: teacher.subject?.trim() || "—",
+    grades: teacher.grades?.trim() || "—",
+    assignments: assignmentsFromTeacher(teacher),
+    assignedStudents: teacher.assigned_students ?? 0,
+    status: teacher.is_active ? "Active" : "Inactive",
+    lastLogin: formatLastLogin(teacher.last_login),
     avatarColor: AVATAR_COLORS[index % AVATAR_COLORS.length],
+    source: teacher,
   };
 }
 
-export function filterTeachers(teachers: TeacherRow[], filters: TeacherFilters) {
-  const search = filters.search.trim().toLowerCase();
-  return teachers.filter((teacher) => {
-    const matchesSearch =
-      !search ||
-      teacher.fullName.toLowerCase().includes(search) ||
-      teacher.userId.toLowerCase().includes(search) ||
-      teacher.email?.toLowerCase().includes(search) ||
-      teacher.phone?.toLowerCase().includes(search) ||
-      teacher.subject.toLowerCase().includes(search);
-    const matchesSubject = filters.subject === "all" || teacher.subject === filters.subject;
-    const matchesStatus = filters.status === "all" || teacher.status === filters.status;
-    return matchesSearch && matchesSubject && matchesStatus;
-  });
+export function teacherFiltersToApi(filters: TeacherFilters) {
+  return {
+    q: filters.search.trim() || undefined,
+    subject: filters.subject !== "all" ? filters.subject : undefined,
+    status:
+      filters.status === "Active"
+        ? ("active" as const)
+        : filters.status === "Inactive"
+          ? ("inactive" as const)
+          : undefined,
+  };
 }
 
 export function teacherInitials(name: string) {

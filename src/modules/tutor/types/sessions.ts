@@ -1,31 +1,33 @@
-export type SessionMode = "video" | "ai-guided" | "hybrid";
-
 export type SessionStatus = "live" | "upcoming" | "scheduled" | "completed";
 
 export interface SessionDisplayItem {
   id: string;
   title: string;
   subject: string;
+  chapterId?: string;
+  chapter: string;
   grade: string;
   section: string;
+  curriculum: string;
   startsAt: string;
   durationMinutes: number;
-  studentCount: number;
   status: SessionStatus;
-  mode?: SessionMode;
-  studentIds?: string[];
+  meetingLink?: string;
   notes?: string;
 }
 
 export interface CreateSessionFormValues {
   title: string;
   subject: string;
-  studentIds: string[];
+  chapterId: string;
+  chapter: string;
+  classKey: string;
   grade: string;
+  section: string;
+  curriculum: string;
   date: string;
   startTime: string;
   durationMinutes: number;
-  mode: SessionMode;
-  generateAiLessonKit: boolean;
+  meetingLink?: string;
   notes?: string;
 }

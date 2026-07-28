@@ -4,6 +4,7 @@ import type { ApiUser } from "@/api/types";
 import { useMasterAdminOverview } from "@/modules/master-admin/hooks/use-master-admin-data";
 import { UserTable } from "@/modules/master-admin/components/user-table";
 import { DataState } from "@/modules/shared/components/data-state";
+import { invalidateManyAndBroadcast } from "@/lib/query-broadcast";
 
 export default function ManageStudentsPage() {
   const { usersQuery } = useMasterAdminOverview();
@@ -11,7 +12,8 @@ export default function ManageStudentsPage() {
   const students = (usersQuery.data || []).filter((u) => u.role === "STUDENT");
   const toggleMutation = useMutation({
     mutationFn: (user: ApiUser) => patchUserStatus(user.id, !user.is_active),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["master-admin", "users"] }),
+    onSuccess: () =>
+      void invalidateManyAndBroadcast(qc, ["users", "students", "dashboard"]),
   });
 
   return (

@@ -3,7 +3,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 function PageShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="dashboard-fit overflow-x-hidden p-4 md:p-5 lg:p-4">
+    <div className="dashboard-fit overflow-x-hidden p-3 md:p-4">
       {children}
     </div>
   );
@@ -11,17 +11,17 @@ function PageShell({ children }: { children: React.ReactNode }) {
 
 function HeaderSkeleton({ withIcon = false }: { withIcon?: boolean }) {
   return (
-    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between lg:mb-3">
+    <div className="mb-3 flex shrink-0 flex-col gap-2">
       <div className="flex min-w-0 items-center gap-3">
-        {withIcon && <Skeleton className="h-12 w-12 shrink-0 rounded-xl sm:h-14 sm:w-14" />}
-        <div className="space-y-2">
-          <Skeleton className="h-7 w-48 sm:h-8 sm:w-56" />
-          <Skeleton className="h-4 w-64 max-w-full" />
+        {withIcon && <Skeleton className="h-10 w-10 shrink-0 rounded-xl sm:h-12 sm:w-12" />}
+        <div className="space-y-1.5">
+          <Skeleton className="h-6 w-40 sm:h-7 sm:w-48" />
+          <Skeleton className="h-4 w-56 max-w-full" />
         </div>
       </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <Skeleton className="h-9 w-full rounded-md sm:w-32" />
-        <Skeleton className="h-9 w-28 rounded-md" />
+      <div className="flex w-full flex-wrap items-center gap-2">
+        <Skeleton className="h-8 w-full max-w-xs rounded-md" />
+        <Skeleton className="h-8 w-28 rounded-md" />
       </div>
     </div>
   );
@@ -30,7 +30,7 @@ function HeaderSkeleton({ withIcon = false }: { withIcon?: boolean }) {
 function StatCardSkeleton() {
   return (
     <Card className="shadow-card">
-      <CardContent className="space-y-3 p-4 lg:p-3">
+      <CardContent className="space-y-2 p-3 sm:p-4">
         <Skeleton className="h-4 w-28" />
         <Skeleton className="h-8 w-20" />
         <Skeleton className="h-2 w-full rounded-full" />
@@ -43,7 +43,7 @@ export function StudentAppLoadingShell() {
   return (
     <PageShell>
       <HeaderSkeleton />
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
           <StatCardSkeleton key={i} />
         ))}
@@ -56,7 +56,7 @@ export function DashboardSkeleton() {
   return (
     <PageShell>
       <HeaderSkeleton />
-      <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4 lg:mb-3 lg:gap-2.5">
+      <div className="mb-3 grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
           <StatCardSkeleton key={i} />
         ))}

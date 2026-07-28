@@ -58,3 +58,6 @@ export const BARGE_IN_DUCK_VOLUME = 0.42;
 
 /** Require server barge-check (VAD/speaker) before interrupting tutor audio */
 export const BARGE_CHECK_REQUIRED = envBool("VITE_BARGE_CHECK_REQUIRED", true);
+
+/** Duck first; full interrupt only after server confirms (ChatGPT-style) */
+export const BARGE_CONFIRMED = envBool("VITE_BARGE_CONFIRMED", true);

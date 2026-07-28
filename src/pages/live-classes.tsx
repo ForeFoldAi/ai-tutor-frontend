@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link } from "wouter";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,112 +9,44 @@ import {
   BookOpen,
   BarChart3,
   Calculator,
-  ChevronDown,
-  ChevronRight,
   Clock,
   FlaskConical,
   Globe,
-  MessageSquare,
-  MoreVertical,
+  Loader2,
+  Monitor,
   Search,
-  Send,
   Users,
   Video,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { AiTutorButtonIcon } from "@/components/ai-tutor-button-icon";
-type SessionFilter = "all" | "today" | "tomorrow" | "week";
-type SessionStatus = "live" | "upcoming" | "completed";
+import { AskAiTutorButton } from "@/components/ask-ai-tutor-button";
+import {
+  fetchStudentLiveSessions,
+  joinStudentLiveSession,
+  type LiveSessionApi,
+} from "@/api/tutor";
+import { useToast } from "@/hooks/use-toast";
 
-interface LiveSession {
-  id: number;
-  title: string;
-  subject: string;
-  tutor: string;
-  scheduledAt: string;
-  duration: number;
-  students: number;
-  grade: string;
-  status: SessionStatus;
-  icon: typeof Calculator;
-  iconBg: string;
+type SessionFilter = "all" | "today" | "tomorrow" | "week";
+
+const SUBJECT_STYLE: Record<string, { icon: typeof Calculator; iconBg: string }> = {
+  Mathematics: { icon: Calculator, iconBg: "bg-subject-math" },
+  Math: { icon: Calculator, iconBg: "bg-subject-math" },
+  Science: { icon: FlaskConical, iconBg: "bg-subject-science" },
+  Physics: { icon: FlaskConical, iconBg: "bg-subject-science" },
+  Chemistry: { icon: FlaskConical, iconBg: "bg-subject-science" },
+  English: { icon: Globe, iconBg: "bg-subject-english" },
+  Computer: { icon: Monitor, iconBg: "bg-subject-cs" },
+  "Computer Science": { icon: Monitor, iconBg: "bg-subject-cs" },
+};
+
+const FALLBACK_STYLE = { icon: BookOpen, iconBg: "bg-primary" };
+
+function subjectStyle(name: string) {
+  return SUBJECT_STYLE[name] ?? FALLBACK_STYLE;
 }
 
-const SESSIONS: LiveSession[] = [
-  {
-    id: 1,
-    title: "Advanced Calculus – Integration",
-    subject: "Mathematics",
-    tutor: "Dr. Smith",
-    scheduledAt: "2026-06-27T16:00:00",
-    duration: 60,
-    students: 24,
-    grade: "Grade 9",
-    status: "live",
-    icon: Calculator,
-    iconBg: "bg-subject-math",
-  },
-  {
-    id: 2,
-    title: "Physics Lab – Optics",
-    subject: "Physics",
-    tutor: "Prof. Johnson",
-    scheduledAt: "2026-06-27T16:30:00",
-    duration: 60,
-    students: 18,
-    grade: "Grade 9",
-    status: "upcoming",
-    icon: FlaskConical,
-    iconBg: "bg-subject-science",
-  },
-  {
-    id: 3,
-    title: "Organic Chemistry Basics",
-    subject: "Chemistry",
-    tutor: "Dr. Lee",
-    scheduledAt: "2026-06-28T10:00:00",
-    duration: 60,
-    students: 20,
-    grade: "Grade 9",
-    status: "upcoming",
-    icon: FlaskConical,
-    iconBg: "bg-subject-english",
-  },
-  {
-    id: 4,
-    title: "Essay Writing Workshop",
-    subject: "English",
-    tutor: "Ms. Davis",
-    scheduledAt: "2026-06-27T11:00:00",
-    duration: 45,
-    students: 32,
-    grade: "Grade 9",
-    status: "upcoming",
-    icon: Globe,
-    iconBg: "bg-subject-english",
-  },
-];
-
-const SCHEDULE = [
-  { time: "04:00 PM", title: "Advanced Calculus – Integration", tutor: "Dr. Smith", live: true },
-  { time: "05:30 PM", title: "Physics Lab – Optics", tutor: "Prof. Johnson", live: false },
-  { time: "07:00 PM", title: "Essay Writing Workshop", tutor: "Ms. Davis", live: false },
-];
-
-const CHAT_MESSAGES = [
-  { user: "Alice", message: "Great explanation!", time: "2 min ago", color: "bg-subject-math" },
-  { user: "Bob", message: "Can you repeat that last part?", time: "1 min ago", color: "bg-subject-science" },
-  { user: "Carol", message: "Thanks for the example!", time: "Just now", color: "bg-subject-english" },
-];
-
-const FILTER_TABS: { id: SessionFilter; label: string; count: number }[] = [
-  { id: "all", label: "All", count: 4 },
-  { id: "today", label: "Today", count: 2 },
-  { id: "tomorrow", label: "Tomorrow", count: 1 },
-  { id: "week", label: "This Week", count: 4 },
-];
-
-function formatSessionTime(dateStr: string) {
+function formatSessionTime(dateStr: string, durationMinutes: number) {
   const d = new Date(dateStr);
   const today = new Date();
   const isToday = d.toDateString() === today.toDateString();
@@ -123,7 +55,7 @@ function formatSessionTime(dateStr: string) {
   const isTomorrow = d.toDateString() === tomorrow.toDateString();
 
   const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  const end = new Date(d.getTime() + 60 * 60 * 1000);
+  const end = new Date(d.getTime() + durationMinutes * 60_000);
   const endTime = end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
   if (isToday) return `Today ${time} – ${endTime}`;
@@ -150,73 +82,166 @@ function isThisWeek(dateStr: string) {
   return d >= now && d <= weekEnd;
 }
 
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+function endsInLabel(session: LiveSessionApi) {
+  const end =
+    new Date(session.starts_at).getTime() + session.duration_minutes * 60_000;
+  const mins = Math.max(0, Math.round((end - Date.now()) / 60_000));
+  const nowLabel = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return `${nowLabel} · Ends in ${mins} min`;
+}
+
+/** Chapter name + topic (title) for student-facing session cards. */
+function sessionChapterTopic(session: LiveSessionApi) {
+  const chapter = session.chapter?.trim() || null;
+  const topic = session.title?.trim() || null;
+  return { chapter, topic };
+}
+
+const STUDENT_SESSIONS_KEY = ["student", "live-sessions"] as const;
+
 export default function LiveClassesPage() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
   const [searchQuery, setSearchQuery] = useState("");
   const [filter, setFilter] = useState<SessionFilter>("all");
-  const [chatInput, setChatInput] = useState("");
+  const [joiningId, setJoiningId] = useState<number | null>(null);
 
-  const liveSession = SESSIONS.find((s) => s.status === "live") ?? null;
+  const { data: sessions = [], isLoading, isError } = useQuery({
+    queryKey: STUDENT_SESSIONS_KEY,
+    queryFn: fetchStudentLiveSessions,
+    refetchInterval: 60_000,
+  });
+
+  const joinMutation = useMutation({
+    mutationFn: (sessionId: number) => joinStudentLiveSession(sessionId),
+    onSuccess: (res) => {
+      void qc.invalidateQueries({ queryKey: STUDENT_SESSIONS_KEY });
+      toast({
+        title: "Joined — marked present",
+        description: "You’re on the attendance list for this live session.",
+      });
+      window.open(res.meeting_link, "_blank", "noopener,noreferrer");
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Could not join session",
+        description: err.message || "Ask your tutor to add a meeting link.",
+        variant: "destructive",
+      });
+    },
+    onSettled: () => setJoiningId(null),
+  });
+
+  const handleJoin = (session: LiveSessionApi) => {
+    if (session.status !== "live") {
+      toast({
+        title: "Session not live yet",
+        description: "You can join once the class starts.",
+      });
+      return;
+    }
+    setJoiningId(session.id);
+    if (session.meeting_link && session.joined) {
+      window.open(session.meeting_link, "_blank", "noopener,noreferrer");
+      setJoiningId(null);
+      return;
+    }
+    joinMutation.mutate(session.id);
+  };
+
+  const liveSession = sessions.find((s) => s.status === "live") ?? null;
+
+  const filterTabs = useMemo(() => {
+    const upcoming = sessions.filter((s) => s.status !== "completed");
+    return [
+      { id: "all" as const, label: "All", count: upcoming.filter((s) => s.status === "upcoming").length },
+      { id: "today" as const, label: "Today", count: upcoming.filter((s) => isToday(s.starts_at)).length },
+      {
+        id: "tomorrow" as const,
+        label: "Tomorrow",
+        count: upcoming.filter((s) => isTomorrow(s.starts_at)).length,
+      },
+      {
+        id: "week" as const,
+        label: "This Week",
+        count: upcoming.filter((s) => isThisWeek(s.starts_at)).length,
+      },
+    ];
+  }, [sessions]);
 
   const filteredSessions = useMemo(() => {
-    return SESSIONS.filter((session) => {
+    return sessions.filter((session) => {
       if (session.status === "live") return false;
+      if (session.status === "completed") return false;
       const matchesSearch =
         session.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         session.subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        session.tutor.toLowerCase().includes(searchQuery.toLowerCase());
+        (session.chapter || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+        session.tutor_name.toLowerCase().includes(searchQuery.toLowerCase());
       if (!matchesSearch) return false;
 
       if (filter === "all") return session.status === "upcoming";
-      if (filter === "today") return isToday(session.scheduledAt);
-      if (filter === "tomorrow") return isTomorrow(session.scheduledAt);
-      if (filter === "week") return isThisWeek(session.scheduledAt);
+      if (filter === "today") return isToday(session.starts_at);
+      if (filter === "tomorrow") return isTomorrow(session.starts_at);
+      if (filter === "week") return isThisWeek(session.starts_at);
       return true;
     });
-  }, [searchQuery, filter]);
+  }, [sessions, searchQuery, filter]);
+
+  const todaySchedule = useMemo(() => {
+    return sessions
+      .filter((s) => isToday(s.starts_at) && s.status !== "completed")
+      .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
+  }, [sessions]);
 
   return (
-    <div className="dashboard-fit flex min-h-0 flex-1 flex-col overflow-hidden p-4 md:p-5">
-      {/* Header */}
-      <div className="mb-3 flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-xl font-bold text-foreground sm:text-2xl">Session</h1>
-          <p className="text-sm text-muted-foreground">
-            Join live classes and interact with your tutor and classmates
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <div className="relative w-full sm:w-52">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search sessions..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-9 pl-9"
-            />
+    <div className="dashboard-fit flex min-h-0 flex-1 flex-col gap-2 overflow-hidden p-3 md:p-4">
+      <div className="flex min-w-0 shrink-0 flex-col gap-2">
+        <div className="flex min-w-0 items-start justify-between gap-2 sm:gap-3 lg:items-center lg:gap-4">
+          <div className="min-w-0 flex-1 space-y-0.5">
+            <h1 className="truncate text-xl font-bold text-foreground sm:text-2xl">Session</h1>
+            <p className="text-sm text-muted-foreground">
+              Join live classes scheduled by your tutor
+            </p>
           </div>
-          <Button asChild className="h-9 shrink-0 gap-2 bg-gradient-brand px-4">
-            <Link href="/ai-tutor?greet=1">
-              <AiTutorButtonIcon />
-              <span className="hidden sm:inline">Ask AI Tutor</span>
-            </Link>
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            <div className="relative hidden lg:block lg:w-64 xl:w-72">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search sessions..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-9 pl-9"
+              />
+            </div>
+            <AskAiTutorButton className="h-8 shrink-0 px-3 sm:h-9 sm:px-4" />
+          </div>
+        </div>
+        <div className="relative min-w-0 w-full lg:hidden">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search sessions..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-8 min-w-0 pl-8 text-sm"
+          />
         </div>
       </div>
 
-      {/* Main grid */}
       <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-3 lg:gap-4">
-        {/* Left column */}
         <div className="flex min-h-0 flex-col gap-3 overflow-y-auto lg:col-span-2 lg:overflow-hidden">
-          {/* Live session hero */}
           {liveSession && (
             <Card className="shrink-0 overflow-hidden border-0 shadow-card">
               <div className="relative bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-4 sm:p-5">
-                <div className="pointer-events-none absolute inset-0 opacity-10">
-                  <div className="absolute left-4 top-4 text-4xl text-white">∫</div>
-                  <div className="absolute right-8 top-6 text-3xl text-white">π</div>
-                  <div className="absolute bottom-6 left-1/3 text-2xl text-white">Σ</div>
-                </div>
-
                 <div className="relative flex items-start justify-between gap-2">
                   <Badge className="bg-red-500 hover:bg-red-500">
                     <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-white" />
@@ -224,18 +249,30 @@ export default function LiveClassesPage() {
                   </Badge>
                   <Badge variant="secondary" className="bg-white/10 text-white hover:bg-white/10">
                     <Clock className="mr-1 h-3 w-3" />
-                    12:45 · Ends in 42 min
+                    {endsInLabel(liveSession)}
                   </Badge>
                 </div>
 
                 <div className="relative mt-4 flex flex-col items-center text-center text-white">
                   <Avatar className="mb-3 h-16 w-16 border-2 border-white/20">
                     <AvatarFallback className="bg-primary text-lg text-primary-foreground">
-                      DS
+                      {initials(liveSession.tutor_name)}
                     </AvatarFallback>
                   </Avatar>
-                  <h2 className="text-lg font-bold sm:text-xl">{liveSession.title}</h2>
-                  <p className="mt-1 text-sm text-white/80">{liveSession.tutor}</p>
+                  {(() => {
+                    const { chapter, topic } = sessionChapterTopic(liveSession);
+                    return (
+                      <>
+                        <h2 className="text-lg font-bold sm:text-xl">
+                          {chapter || topic || "Live session"}
+                        </h2>
+                        {chapter && topic ? (
+                          <p className="mt-1 text-sm text-white/90">{topic}</p>
+                        ) : null}
+                      </>
+                    );
+                  })()}
+                  <p className="mt-1 text-sm text-white/80">{liveSession.tutor_name}</p>
 
                   <div className="mt-3 flex flex-wrap items-center justify-center gap-3 text-xs text-white/70 sm:text-sm">
                     <span className="flex items-center gap-1">
@@ -244,18 +281,28 @@ export default function LiveClassesPage() {
                     </span>
                     <span className="flex items-center gap-1">
                       <Users className="h-3.5 w-3.5" />
-                      {liveSession.students} attending
+                      {liveSession.attendees} attending
                     </span>
                     <span className="flex items-center gap-1">
                       <BarChart3 className="h-3.5 w-3.5" />
-                      {liveSession.grade}
+                      Grade {liveSession.grade}
+                      {liveSession.section ? `-${liveSession.section}` : ""}
                     </span>
                   </div>
                 </div>
 
                 <div className="relative mt-4 flex justify-center">
-                  <Button size="sm" className="h-8 bg-gradient-brand px-6">
-                    <Video className="mr-1.5 h-3.5 w-3.5" />
+                  <Button
+                    size="sm"
+                    className="h-8 bg-gradient-brand px-6"
+                    disabled={joiningId === liveSession.id}
+                    onClick={() => handleJoin(liveSession)}
+                  >
+                    {joiningId === liveSession.id ? (
+                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Video className="mr-1.5 h-3.5 w-3.5" />
+                    )}
                     Join Class
                   </Button>
                 </div>
@@ -263,13 +310,14 @@ export default function LiveClassesPage() {
             </Card>
           )}
 
-          {/* Upcoming sessions */}
           <Card className="flex min-h-0 flex-1 flex-col shadow-card">
             <CardContent className="flex min-h-0 flex-1 flex-col p-3 sm:p-4">
               <div className="mb-2 flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <h2 className="text-sm font-semibold text-foreground sm:text-base">Upcoming Sessions</h2>
+                <h2 className="text-sm font-semibold text-foreground sm:text-base">
+                  Upcoming Sessions
+                </h2>
                 <div className="flex flex-wrap gap-1.5">
-                  {FILTER_TABS.map((tab) => (
+                  {filterTabs.map((tab) => (
                     <button
                       key={tab.id}
                       type="button"
@@ -288,172 +336,132 @@ export default function LiveClassesPage() {
               </div>
 
               <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
-                {filteredSessions.map((session) => (
-                  <div
-                    key={session.id}
-                    className="flex items-center gap-2.5 rounded-xl border border-border/60 p-2.5 sm:gap-3"
-                    data-testid={`session-card-${session.id}`}
-                  >
-                    <div
-                      className={cn(
-                        "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white",
-                        session.iconBg
-                      )}
-                    >
-                      <session.icon className="h-4 w-4" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-foreground">{session.title}</p>
-                      <p className="truncate text-xs text-muted-foreground">{session.tutor}</p>
-                      <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                        <Clock className="h-3 w-3 shrink-0" />
-                        {formatSessionTime(session.scheduledAt)}
-                      </p>
-                    </div>
-                    <Badge variant="secondary" className="hidden shrink-0 text-xs sm:inline-flex">
-                      {session.duration} min
-                    </Badge>
-                    <Button variant="outline" size="sm" className="h-8 shrink-0 px-3 text-xs">
-                      Join
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0">
-                      <MoreVertical className="h-4 w-4 text-muted-foreground" />
-                    </Button>
-                  </div>
-                ))}
+                {isLoading ? (
+                  <p className="py-6 text-center text-sm text-muted-foreground">Loading sessions…</p>
+                ) : isError ? (
+                  <p className="py-6 text-center text-sm text-muted-foreground">
+                    Could not load sessions. Try again later.
+                  </p>
+                ) : filteredSessions.length === 0 ? (
+                  <p className="py-6 text-center text-sm text-muted-foreground">
+                    {sessions.length === 0
+                      ? "No sessions scheduled for your class yet."
+                      : "No sessions match your search or filter."}
+                  </p>
+                ) : (
+                  filteredSessions.map((session) => {
+                    const style = subjectStyle(session.subject);
+                    const Icon = style.icon;
+                    const { chapter, topic } = sessionChapterTopic(session);
+                    return (
+                      <div
+                        key={session.id}
+                        className="flex items-center gap-2.5 rounded-xl border border-border/60 p-2.5 sm:gap-3"
+                      >
+                        <div
+                          className={cn(
+                            "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white",
+                            style.iconBg
+                          )}
+                        >
+                          <Icon className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-foreground">
+                            {chapter || topic || "Session"}
+                          </p>
+                          {chapter && topic ? (
+                            <p className="truncate text-xs text-foreground/80">{topic}</p>
+                          ) : null}
+                          <p className="truncate text-xs text-muted-foreground">
+                            {session.tutor_name}
+                            {session.subject ? ` · ${session.subject}` : ""}
+                          </p>
+                          <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                            <Clock className="h-3 w-3 shrink-0" />
+                            {formatSessionTime(session.starts_at, session.duration_minutes)}
+                          </p>
+                        </div>
+                        <Badge variant="secondary" className="hidden shrink-0 text-xs sm:inline-flex">
+                          {session.duration_minutes} min
+                        </Badge>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 shrink-0 px-3 text-xs"
+                          disabled
+                          title="Available when the session goes live"
+                        >
+                          Upcoming
+                        </Button>
+                      </div>
+                    );
+                  })
+                )}
               </div>
-
-              <button
-                type="button"
-                className="mt-2 flex shrink-0 items-center justify-center gap-1 py-1 text-xs font-medium text-primary hover:underline"
-              >
-                View All Sessions
-                <ChevronDown className="h-3.5 w-3.5" />
-              </button>
             </CardContent>
           </Card>
         </div>
 
-        {/* Right sidebar */}
-        <div className="flex min-h-0 flex-col gap-3 overflow-y-auto lg:overflow-hidden">
-          {/* Today's schedule */}
-          <Card className="shrink-0 shadow-card">
+        <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
+          <Card className="shadow-card">
             <CardContent className="p-3 sm:p-4">
-              <div className="mb-2 flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-foreground">Today&apos;s Schedule</h2>
-                <button type="button" className="text-xs font-medium text-primary hover:underline">
-                  View Calendar
-                </button>
-              </div>
-              <ul className="space-y-2">
-                {SCHEDULE.map((item) => (
-                  <li
-                    key={item.title}
-                    className="flex items-center gap-2 rounded-lg border border-border/60 px-2.5 py-2"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-medium text-muted-foreground">{item.time}</span>
-                        {item.live && (
-                          <Badge className="h-4 bg-success/10 px-1.5 text-[10px] text-success hover:bg-success/10">
-                            LIVE
-                          </Badge>
-                        )}
-                      </div>
-                      <p className="truncate text-xs font-medium text-foreground sm:text-sm">{item.title}</p>
-                      <p className="text-xs text-muted-foreground">{item.tutor}</p>
-                    </div>
-                    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-
-          {/* Live chat */}
-          <Card className="flex min-h-0 flex-1 flex-col shadow-card">
-            <CardContent className="flex min-h-0 flex-1 flex-col p-3 sm:p-4">
-              <div className="mb-2 flex shrink-0 items-center justify-between">
-                <h2 className="text-sm font-semibold text-foreground">Live Chat</h2>
-                <button type="button" className="text-xs font-medium text-primary hover:underline">
-                  View All
-                </button>
-              </div>
-
-              {liveSession ? (
-                <>
-                  <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
-                    {CHAT_MESSAGES.map((msg) => (
-                      <div key={msg.user} className="flex items-start gap-2">
-                        <Avatar className="h-7 w-7 shrink-0">
-                          <AvatarFallback className={cn("text-xs text-white", msg.color)}>
-                            {msg.user.charAt(0)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-medium">{msg.user}</span>
-                            <span className="text-[10px] text-muted-foreground">{msg.time}</span>
-                          </div>
-                          <p className="text-xs text-muted-foreground">{msg.message}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="mt-2 flex shrink-0 gap-2 border-t border-border/60 pt-2">
-                    <Input
-                      placeholder="Type a message..."
-                      value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      className="h-8 text-xs"
-                    />
-                    <Button size="icon" className="h-8 w-8 shrink-0 bg-gradient-brand">
-                      <Send className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </>
+              <h2 className="mb-3 text-sm font-semibold text-foreground sm:text-base">
+                Today&apos;s Schedule
+              </h2>
+              {todaySchedule.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No sessions today.</p>
               ) : (
-                <div className="flex flex-1 flex-col items-center justify-center py-4 text-center">
-                  <MessageSquare className="mb-2 h-8 w-8 text-muted-foreground/40" />
-                  <p className="text-xs text-muted-foreground">Join a live session to chat</p>
-                </div>
+                <ul className="space-y-2">
+                  {todaySchedule.map((s) => (
+                    <li
+                      key={s.id}
+                      className="flex items-start gap-2 rounded-lg border border-border/60 px-2.5 py-2"
+                    >
+                      <span className="w-16 shrink-0 text-xs font-medium text-muted-foreground">
+                        {new Date(s.starts_at).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        {(() => {
+                          const { chapter, topic } = sessionChapterTopic(s);
+                          return (
+                            <>
+                              <p className="truncate text-xs font-semibold text-foreground">
+                                {chapter || topic || "Session"}
+                              </p>
+                              {chapter && topic ? (
+                                <p className="truncate text-xs text-muted-foreground">{topic}</p>
+                              ) : (
+                                <p className="text-xs text-muted-foreground">{s.tutor_name}</p>
+                              )}
+                            </>
+                          );
+                        })()}
+                      </div>
+                      {s.status === "live" && (
+                        <Badge className="shrink-0 bg-red-500 text-[10px] hover:bg-red-500">LIVE</Badge>
+                      )}
+                    </li>
+                  ))}
+                </ul>
               )}
             </CardContent>
           </Card>
 
-          {/* Attendance */}
-          <Card className="shrink-0 shadow-card">
-            <CardContent className="p-3 sm:p-4">
-              <div className="mb-2 flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-foreground">Attendance</h2>
-                <button type="button" className="text-xs font-medium text-primary hover:underline">
-                  View All
-                </button>
-              </div>
-              {liveSession ? (
-                <div>
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Students Attending</span>
-                    <Badge variant="secondary">{liveSession.students}</Badge>
-                  </div>
-                  <div className="flex -space-x-2">
-                    {["R", "A", "B", "C", "D", "E"].map((initial) => (
-                      <Avatar key={initial} className="h-8 w-8 border-2 border-background">
-                        <AvatarFallback className="bg-primary text-xs text-primary-foreground">
-                          {initial}
-                        </AvatarFallback>
-                      </Avatar>
-                    ))}
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-background bg-muted text-xs font-medium">
-                      +18
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <p className="py-2 text-center text-xs text-muted-foreground">No active session</p>
-              )}
-            </CardContent>
-          </Card>
+          {liveSession && liveSession.attendees > 0 && (
+            <Card className="shadow-card">
+              <CardContent className="p-3 sm:p-4">
+                <h2 className="mb-2 text-sm font-semibold text-foreground">Attendance</h2>
+                <p className="text-xs text-muted-foreground">
+                  {liveSession.attendees} student{liveSession.attendees === 1 ? "" : "s"} joined
+                  this live session.
+                </p>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </div>

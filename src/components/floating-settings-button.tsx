@@ -10,7 +10,7 @@ export function FloatingSettingsButton() {
     <Button
       asChild
       size="icon"
-      className="fixed bottom-6 right-6 z-50 h-12 w-12 rounded-full border-0 bg-gradient-brand text-white shadow-lg hover:brightness-110"
+      className="fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] right-4 z-50 h-12 w-12 rounded-full border-0 bg-gradient-brand text-white shadow-lg hover:brightness-110 lg:bottom-6 lg:right-6"
       data-testid="button-floating-settings"
     >
       {onSettingsPage ? (

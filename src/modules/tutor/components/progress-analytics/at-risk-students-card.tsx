@@ -27,14 +27,10 @@ function initials(name: string) {
     .toUpperCase();
 }
 
-function studentSlug(name: string) {
-  return name.toLowerCase().replace(/\s+/g, "-");
-}
-
 function AtRiskStudentRow({ student }: { student: AtRiskStudent }) {
   return (
     <Link
-      href={`/tutor/students/${studentSlug(student.name)}`}
+      href={`/tutor/students/${student.id}`}
       className="flex items-center justify-between gap-3 rounded-lg px-1 py-1 transition-colors hover:bg-muted/30"
     >
       <div className="flex min-w-0 items-center gap-3">
@@ -73,9 +69,11 @@ export function AtRiskStudentsCard({ students, allStudents }: AtRiskStudentsCard
           <CardDescription>Students who need immediate attention</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 pb-5">
-          {students.map((student) => (
-            <AtRiskStudentRow key={student.id} student={student} />
-          ))}
+          {students.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No students need attention right now.</p>
+          ) : (
+            students.map((student) => <AtRiskStudentRow key={student.id} student={student} />)
+          )}
         </CardContent>
       </Card>
 

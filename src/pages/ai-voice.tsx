@@ -17,7 +17,9 @@ import {
   saveVoiceSession,
 } from "@/lib/voice-session-storage";
 import { chapterSelectionPath } from "@/lib/tutor-chapter-nav";
+import { useStudySession } from "@/hooks/use-study-session";
 import { useAuthStore } from "@/lib/auth-store";
+import { buildWsUrl, getHttpApiBase, getVoiceHttpBase } from "@/lib/api-base";
 import { Mp3StreamPlayer } from "@/lib/mp3-stream-player";
 import { VoiceLiveCall } from "@/components/voice/voice-live-call";
 import type { TranscriptEntry, VoiceRelatedImage, VoicePhase } from "@/components/voice/voice-types";
@@ -32,12 +34,15 @@ import {
   fetchServerSttAvailable,
   shouldUseServerStt,
   transcribeWithServer,
+  useWhisperVoiceCapture,
+  blobToBase64,
 } from "@/lib/voice-server-stt";
 import {
   BARGE_IN_ARM_DELAY_MS,
   BARGE_IN_DUCK_VOLUME,
   BARGE_IN_HOLD_MS,
   BARGE_CHECK_REQUIRED,
+  BARGE_CONFIRMED,
   INTERRUPT_COOLDOWN_MS,
   INTERRUPT_RESUME_LISTEN_MS,
   POST_PLAYBACK_ECHO_MS,
@@ -55,6 +60,7 @@ import { detectInterruptIntent } from "@/lib/voice-interrupt-intent";
 import {
   checkBargeIn,
   createClientProtectionMetrics,
+  endVoiceSession,
 } from "@/lib/voice-protection";
 import { logVoiceStreamMetrics } from "@/lib/voice-stream-diagnostics";
 import { logVoicePlayerStats } from "@/lib/voice-audio-diagnostics";
@@ -150,8 +156,8 @@ function setTutorPlaybackVolume(
 export default function AIVoicePage() {
   const [, setLocation] = useLocation();
   const { token: accessToken, user } = useAuthStore();
-  const API_URL = import.meta.env.VITE_API_URL || "";
-  const VOICE_URL = import.meta.env.VITE_VOICE_URL || "";
+  const API_URL = getHttpApiBase();
+  const VOICE_URL = getVoiceHttpBase();
   const bargeInEnabled = import.meta.env.VITE_VOICE_BARGE_IN !== "false";
 
   const chapterCtx = useMemo(() => {
@@ -171,6 +177,19 @@ export default function AIVoicePage() {
     };
   }, []);
 
+  const primaryChapterId = chapterCtx?.chapterIds[0]
+    ? Number(chapterCtx.chapterIds[0])
+    : null;
+
+  useStudySession({
+    enabled: Boolean(chapterCtx?.subject),
+    subjectName: chapterCtx?.subject,
+    chapterId: primaryChapterId != null && !Number.isNaN(primaryChapterId) ? primaryChapterId : null,
+    chapterName: chapterCtx?.chapterNames[0] ?? null,
+    mode: "ai_voice",
+    agentMode: "free",
+  });
+
   const normalizedVoiceUrl = useMemo(() => {
     const url = (VOICE_URL || API_URL).trim();
     return url.endsWith("/") ? url.slice(0, -1) : url;
@@ -180,6 +199,7 @@ export default function AIVoicePage() {
 
   const serverSttPreferred = useMemo(() => shouldUseServerStt(subjectLabel), [subjectLabel]);
   const [serverSttActive, setServerSttActive] = useState(false);
+  const whisperPrimary = useWhisperVoiceCapture(serverSttActive);
 
   const voiceSessionKey = useMemo(() => {
     if (!chapterCtx) return "voice-general";
@@ -214,7 +234,7 @@ export default function AIVoicePage() {
   const [streamingMathLesson, setStreamingMathLesson] = useState<MathLesson | null>(null);
   const [streamingScienceExperiment, setStreamingScienceExperiment] = useState<ScienceExperiment | null>(null);
   const [spokenUnitText, setSpokenUnitText] = useState<string | null>(null);
-  const [spokenUnitIndex, setSpokenUnitIndex] = useState(-1);
+  const [, setSpokenUnitIndex] = useState(-1);
 
   const volumeRef = useRef(0);
   const [volumeUi, setVolumeUi] = useState(0);
@@ -263,7 +283,7 @@ export default function AIVoicePage() {
       opts?: { requireMic?: boolean; skipPhaseCheck?: boolean; skipPlaybackCheck?: boolean },
     ) => Promise<void>
   >(() => Promise.resolve());
-  const handleInterruptRef = useRef<() => void>(() => {});
+  const handleInterruptRef = useRef<(opts?: { skipBargeCapture?: boolean }) => void>(() => {});
   const scheduleVoiceCaptureRef = useRef<() => void>(() => {});
   const bootstrapVoiceInputRef = useRef<() => void>(() => {});
   const textInputOpenRef = useRef(false);
@@ -290,11 +310,22 @@ export default function AIVoicePage() {
   const tickBargeInMonitorRef = useRef<(level: number) => void>(() => {});
   const bargeInEnabledRef = useRef(bargeInEnabled);
   const protectionMetricsRef = useRef(createClientProtectionMetrics());
+  const voiceSessionIdRef = useRef(
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `voice-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
+  const listeningUtteranceActiveRef = useRef(false);
+  const lastUtteranceBlobRef = useRef<Blob | null>(null);
+  const whisperPrimaryRef = useRef(whisperPrimary);
+  const finalizeUtteranceRef = useRef<(blob: Blob, mode: "listen" | "barge") => void>(() => {});
 
   useEffect(() => { interimTranscriptRef.current = interimTranscript; }, [interimTranscript]);
 
   useEffect(() => { chapterCtxRef.current = chapterCtx; }, [chapterCtx]);
   useEffect(() => { bargeInEnabledRef.current = bargeInEnabled; }, [bargeInEnabled]);
+  useEffect(() => { whisperPrimaryRef.current = whisperPrimary; }, [whisperPrimary]);
+
   useEffect(() => { userRef.current = user; }, [user]);
 
   useEffect(() => { phaseRef.current = phase; }, [phase]);
@@ -589,11 +620,22 @@ export default function AIVoicePage() {
     const ws = wsRef.current;
     if (ws?.readyState === WebSocket.OPEN) {
       try {
+        ws.send(
+          JSON.stringify({
+            type: "session_end",
+            voice_session_id: voiceSessionIdRef.current,
+          }),
+        );
+      } catch {
+        /* ignore */
+      }
+      try {
         ws.send(JSON.stringify({ type: "stop" }));
       } catch {
         /* ignore */
       }
     }
+    void endVoiceSession(voiceSessionIdRef.current, normalizedVoiceUrl, getAccessToken() || null);
     disconnectVoiceSocket();
 
     abortRef.current?.abort();
@@ -622,7 +664,7 @@ export default function AIVoicePage() {
       }
     }
     micListenAllowedRef.current = false;
-  }, [disconnectVoiceSocket]);
+  }, [disconnectVoiceSocket, normalizedVoiceUrl]);
 
   const connectWS = useCallback(() => {
     if (reconnectTimerRef.current) {
@@ -633,11 +675,8 @@ export default function AIVoicePage() {
 
     const myGen = ++wsActiveRef.current;
     const ctx = chapterCtxRef.current;
-    const wsBase = normalizedVoiceUrl.startsWith("https://")
-      ? normalizedVoiceUrl.replace("https://", "wss://")
-      : normalizedVoiceUrl.replace("http://", "ws://");
     const token = getAccessToken();
-    const fullUrl = token ? `${wsBase}/ws/voice?token=${encodeURIComponent(token)}` : `${wsBase}/ws/voice`;
+    const fullUrl = buildWsUrl(normalizedVoiceUrl, "/ws/voice", token ? { token } : undefined);
 
     const ws = new WebSocket(fullUrl);
     ws.binaryType = "arraybuffer";
@@ -676,6 +715,7 @@ export default function AIVoicePage() {
           greet: sendGreet,
           voice_gender: voiceGenderRef.current,
           tts_voice: tutorVoiceId(voiceGenderRef.current),
+          voice_session_id: voiceSessionIdRef.current,
         }),
       );
       if (!sendGreet) {
@@ -935,6 +975,11 @@ export default function AIVoicePage() {
     return Boolean(w.SpeechRecognition || w.webkitSpeechRecognition);
   }, []);
 
+  useEffect(() => {
+    if (!whisperPrimary || !recognitionAvailable) return;
+    abortRecognitionRef.current();
+  }, [whisperPrimary, recognitionAvailable]);
+
   const serverSttActiveRef = useRef(serverSttActive);
   useEffect(() => { serverSttActiveRef.current = serverSttActive; }, [serverSttActive]);
 
@@ -967,7 +1012,8 @@ export default function AIVoicePage() {
   }, [phase, micEnabled, recognitionAvailable]);
 
   useEffect(() => {
-    if (phase !== "listening" || !micEnabled || !recognitionAvailable) return;
+    if (phase !== "listening" || !micEnabled) return;
+    if (!recognitionAvailable && !serverSttActive) return;
     const id = window.setInterval(() => {
       if (
         !micBootstrappedRef.current ||
@@ -983,35 +1029,63 @@ export default function AIVoicePage() {
       }
     }, 2500);
     return () => window.clearInterval(id);
-  }, [phase, micEnabled, recognitionAvailable]);
+  }, [phase, micEnabled, recognitionAvailable, serverSttActive]);
 
-  // Whisper + pre-roll only after barge-in interrupt (browser STT handles normal listening).
+  // Server Whisper — primary listening + post-interrupt capture (cross-device).
   useEffect(() => {
     if (!serverSttActive || !micEnabled) return;
+    const LISTEN_SILENCE_MS = 950;
     const BARGE_SILENCE_MS = 950;
     const MAX_UTTERANCE_MS = 11_000;
+    const SPEECH_LEVEL = 0.045;
+
+    const beginListenCapture = () => {
+      const mic = serverSttRecorderRef.current;
+      if (!mic || mic.isCapturingUtterance()) return;
+      mic.ensureRunning();
+      mic.beginUtteranceCapture();
+      listeningUtteranceActiveRef.current = true;
+      utteranceStartedAtRef.current = Date.now();
+      speechActiveRef.current = true;
+      silenceSinceRef.current = null;
+    };
 
     const tick = window.setInterval(() => {
-      if (
-        shuttingDownRef.current ||
-        serverSttProcessingRef.current ||
-        textInputOpenRef.current ||
-        !bargeUtteranceActiveRef.current
-      ) {
+      if (shuttingDownRef.current || serverSttProcessingRef.current || textInputOpenRef.current) {
         return;
       }
       const mic = serverSttRecorderRef.current;
-      if (!mic || !micBootstrappedRef.current || !mic.isCapturingUtterance()) return;
+      if (!mic || !micBootstrappedRef.current) return;
+
+      const phaseNow = phaseRef.current;
+      const whisperOn = whisperPrimaryRef.current;
+      const isBarge = bargeUtteranceActiveRef.current;
+      const isListen =
+        whisperOn &&
+        (phaseNow === "listening" || phaseNow === "idle") &&
+        canAcceptSttNowRef.current() &&
+        !isTutorAudible(mp3PlayerRef.current, fallbackMp3Ref.current);
+
+      if (!isBarge && !isListen) return;
 
       mic.ensureRunning();
 
+      if (isListen && !mic.isCapturingUtterance() && volumeRef.current > SPEECH_LEVEL) {
+        beginListenCapture();
+        setInterimTranscript("Listening…");
+        return;
+      }
+
+      if (!mic.isCapturingUtterance()) return;
+
       const level = volumeRef.current;
-      const speaking = level > 0.045;
+      const speaking = level > SPEECH_LEVEL;
+      const silenceMs = isBarge ? BARGE_SILENCE_MS : LISTEN_SILENCE_MS;
 
       if (speaking) {
         speechActiveRef.current = true;
         silenceSinceRef.current = null;
-        setInterimTranscript("Listening…");
+        if (isListen || isBarge) setInterimTranscript("Listening…");
         return;
       }
 
@@ -1020,13 +1094,14 @@ export default function AIVoicePage() {
         silenceSinceRef.current = null;
         const blob = mic.endUtteranceCapture();
         bargeUtteranceActiveRef.current = false;
+        listeningUtteranceActiveRef.current = false;
         if (blob.size < 300) {
           bargeEchoGuardRef.current = "";
           scheduleVoiceCaptureRef.current();
           return;
         }
         serverSttProcessingRef.current = true;
-        void finalizeBargeUtterance(blob);
+        void finalizeUtterance(blob, isBarge ? "barge" : "listen");
         return;
       }
 
@@ -1035,12 +1110,13 @@ export default function AIVoicePage() {
         silenceSinceRef.current = Date.now();
         return;
       }
-      if (Date.now() - silenceSinceRef.current < BARGE_SILENCE_MS) return;
+      if (Date.now() - silenceSinceRef.current < silenceMs) return;
 
       speechActiveRef.current = false;
       silenceSinceRef.current = null;
       const blob = mic.endUtteranceCapture();
       bargeUtteranceActiveRef.current = false;
+      listeningUtteranceActiveRef.current = false;
       if (blob.size < 300) {
         bargeEchoGuardRef.current = "";
         scheduleVoiceCaptureRef.current();
@@ -1048,12 +1124,12 @@ export default function AIVoicePage() {
       }
 
       serverSttProcessingRef.current = true;
-      void finalizeBargeUtterance(blob);
+      void finalizeUtterance(blob, isBarge ? "barge" : "listen");
     }, 120);
 
-    async function finalizeBargeUtterance(blob: Blob) {
-      const echoGuard = bargeEchoGuardRef.current.trim();
-      bargeEchoGuardRef.current = "";
+    async function finalizeUtterance(blob: Blob, mode: "listen" | "barge") {
+      const echoGuard = mode === "barge" ? bargeEchoGuardRef.current.trim() : "";
+      if (mode === "barge") bargeEchoGuardRef.current = "";
       try {
         setInterimTranscript("Understanding…");
         const result = await transcribeWithServer(blob, normalizedVoiceUrl, {
@@ -1061,24 +1137,31 @@ export default function AIVoicePage() {
           token: getAccessToken() || null,
           language: "en",
           rejectIfSimilarTo: echoGuard,
+          voiceSessionId: voiceSessionIdRef.current,
         });
         const cleaned = postprocessVoiceTranscript(result.transcript, subjectLabel);
+        const rejectSource = mode === "barge" ? "whisper-barge" : "whisper-listen";
         if (
           !cleaned ||
           cleaned.length < 2 ||
           result.rejected ||
-          !canAcceptSttNowRef.current() ||
-          rejectTranscriptCandidateRef.current(cleaned, "whisper-barge")
+          (mode === "listen" && !canAcceptSttNowRef.current()) ||
+          rejectTranscriptCandidateRef.current(cleaned, rejectSource)
         ) {
           scheduleVoiceCaptureRef.current();
           return;
         }
-        if (phaseRef.current === "listening" || phaseRef.current === "thinking") {
-          void handleUserTurnRef.current(cleaned, ++turnIdRef.current, {
-            requireMic: true,
-            skipPlaybackCheck: true,
-          });
+        lastUtteranceBlobRef.current = blob;
+        if (mode === "barge") {
+          if (phaseRef.current === "listening" || phaseRef.current === "thinking") {
+            void handleUserTurnRef.current(cleaned, ++turnIdRef.current, {
+              requireMic: true,
+              skipPlaybackCheck: true,
+            });
+          }
+          return;
         }
+        void handleUserTurnRef.current(cleaned, ++turnIdRef.current, { requireMic: true });
       } catch {
         scheduleVoiceCaptureRef.current();
       } finally {
@@ -1086,6 +1169,8 @@ export default function AIVoicePage() {
         setInterimTranscript("");
       }
     }
+
+    finalizeUtteranceRef.current = finalizeUtterance;
 
     return () => window.clearInterval(tick);
   }, [serverSttActive, micEnabled, normalizedVoiceUrl, subjectLabel]);
@@ -1142,15 +1227,28 @@ export default function AIVoicePage() {
       mic && mic.isCapturingUtterance() ? mic.endUtteranceCapture() : null;
     bargeUtteranceActiveRef.current = false;
 
-    // Stop tutor audio immediately — don't wait for server VAD round-trip.
-    handleInterruptRef.current();
+    const studentKey = String(
+      (userRef.current as { id?: string; email?: string; username?: string } | null)?.id ||
+        (userRef.current as { email?: string } | null)?.email ||
+        (userRef.current as { username?: string } | null)?.username ||
+        "anonymous",
+    );
+
+    const applyBargeMetrics = (result: Awaited<ReturnType<typeof checkBargeIn>>) => {
+      protectionMetricsRef.current.set("speech_probability", result.speech_probability ?? 0);
+      protectionMetricsRef.current.set("speech_duration_ms", result.speech_duration_ms ?? 0);
+      protectionMetricsRef.current.set("speaker_similarity", result.speaker_similarity ?? 0);
+      protectionMetricsRef.current.set("echo_similarity_score", result.echo_similarity_score ?? 0);
+    };
 
     if (
+      !BARGE_CONFIRMED ||
       !VOICE_PROTECTION_ENABLED ||
       !BARGE_CHECK_REQUIRED ||
       !snapshot ||
       snapshot.size < 200
     ) {
+      handleInterruptRef.current();
       return;
     }
 
@@ -1160,47 +1258,29 @@ export default function AIVoicePage() {
         const result = await checkBargeIn(snapshot, normalizedVoiceUrl, {
           transcript: interimTranscriptRef.current || "",
           recentAiSpeech: recentAiSpeechRef.current,
-          studentKey:
-            String(
-              (userRef.current as { id?: string; email?: string; username?: string } | null)?.id ||
-                (userRef.current as { email?: string } | null)?.email ||
-                (userRef.current as { username?: string } | null)?.username ||
-                "anonymous",
-            ),
+          studentKey,
+          voiceSessionId: voiceSessionIdRef.current,
           token: getAccessToken() || null,
         });
-
-        protectionMetricsRef.current.set(
-          "speech_probability",
-          result.speech_probability ?? 0,
-        );
-        protectionMetricsRef.current.set(
-          "speech_duration_ms",
-          result.speech_duration_ms ?? 0,
-        );
-        protectionMetricsRef.current.set(
-          "speaker_similarity",
-          result.speaker_similarity ?? 0,
-        );
-        protectionMetricsRef.current.set(
-          "echo_similarity_score",
-          result.echo_similarity_score ?? 0,
-        );
+        applyBargeMetrics(result);
 
         if (!result.allow_interrupt) {
           protectionMetricsRef.current.bump("interrupt_rejected_count");
-          console.debug("[INTERRUPT_POSTCHECK]", result);
+          console.debug("[INTERRUPT_REJECTED]", result);
           return;
         }
 
-        console.debug("[INTERRUPT_POSTCHECK_ACCEPTED]", {
+        console.debug("[INTERRUPT_ACCEPTED]", {
           latency_ms: performance.now() - t0,
           reason: result.reason,
           intent: result.intent,
         });
         protectionMetricsRef.current.bump("interrupt_accepted_count");
+        handleInterruptRef.current({ skipBargeCapture: true });
+        serverSttProcessingRef.current = true;
+        finalizeUtteranceRef.current(snapshot, "barge");
       } catch (err) {
-        console.debug("[INTERRUPT_POSTCHECK]", { reason: "barge_check_error", err });
+        console.debug("[INTERRUPT_CHECK]", { reason: "barge_check_error", err });
       }
     })();
   };
@@ -1250,9 +1330,20 @@ export default function AIVoicePage() {
 
   const scheduleVoiceCapture = useCallback(() => {
     if (shuttingDownRef.current) return;
-    if (!recognitionAvailable) return;
     if (!micEnabledRef.current || !micBootstrappedRef.current) return;
     if (!voiceCaptureAllowed()) return;
+
+    const whisperOn = whisperPrimaryRef.current;
+    if (
+      whisperOn &&
+      (phaseRef.current === "listening" || phaseRef.current === "idle") &&
+      !isAiSpeakingNow()
+    ) {
+      serverSttRecorderRef.current?.ensureRunning();
+      return;
+    }
+
+    if (!recognitionAvailable) return;
 
     if (isAiSpeakingNow()) {
       if (bargeInEnabledRef.current && phaseRef.current === "speaking") {
@@ -1333,6 +1424,7 @@ export default function AIVoicePage() {
             echoCancellation: true,
             noiseSuppression: true,
             autoGainControl: true,
+            channelCount: { ideal: 1 },
           },
         });
         try {
@@ -1406,7 +1498,7 @@ export default function AIVoicePage() {
     fallbackMp3Ref.current = null;
   };
 
-  const handleInterrupt = useCallback(() => {
+  const handleInterrupt = useCallback((opts?: { skipBargeCapture?: boolean }) => {
     if (interruptingRef.current) return;
     interruptingRef.current = true;
 
@@ -1432,9 +1524,9 @@ export default function AIVoicePage() {
     setPhase("listening");
     setInterimTranscript("");
     if (micEnabledRef.current) {
-      if (serverSttActiveRef.current) {
+      if (serverSttActiveRef.current && !opts?.skipBargeCapture) {
         beginBargeUtteranceCapture();
-      } else {
+      } else if (!serverSttActiveRef.current) {
         window.setTimeout(() => scheduleVoiceCaptureRef.current(), INTERRUPT_RESUME_LISTEN_MS);
       }
     }
@@ -1500,7 +1592,21 @@ export default function AIVoicePage() {
       try {
         void unlockAudioPlayback();
         resetMp3Player();
-        ws.send(JSON.stringify({ type: "question", text: trimmed }));
+        const payload: Record<string, unknown> = {
+          type: "question",
+          text: trimmed,
+          voice_session_id: voiceSessionIdRef.current,
+        };
+        const utterBlob = lastUtteranceBlobRef.current;
+        if (utterBlob && utterBlob.size > 200) {
+          try {
+            payload.utterance_audio_b64 = await blobToBase64(utterBlob);
+          } catch {
+            /* optional session voice bootstrap */
+          }
+        }
+        lastUtteranceBlobRef.current = null;
+        ws.send(JSON.stringify(payload));
         return;
       } catch {
         /* fall through to HTTP */
@@ -1802,6 +1908,7 @@ export default function AIVoicePage() {
       }
 
       if (phaseRef.current !== "listening") return;
+      if (whisperPrimaryRef.current) return;
       if (!canAcceptSttNowRef.current()) return;
 
       const dictatingToTextField = textInputOpenRef.current;
@@ -2224,7 +2331,7 @@ export default function AIVoicePage() {
         />
       </main>
 
-      {!recognitionAvailable && (
+      {!recognitionAvailable && !serverSttActive && (
         <div className="fixed bottom-4 left-4 right-4 lg:left-auto lg:right-4 lg:max-w-sm rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-100 z-50">
           {MSG.speechUnsupported}
         </div>

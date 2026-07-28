@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { fetchMasterAdminReports, getAdminUsers, getOrganizations } from "@/api/masterAdmin";
+import { fetchMasterAdminReports, getAdminUsers, getMasterAdminSchools } from "@/api/masterAdmin";
 
 export function useMasterAdminOverview() {
   const usersQuery = useQuery({
@@ -7,9 +7,9 @@ export function useMasterAdminOverview() {
     queryFn: getAdminUsers,
   });
 
-  const orgsQuery = useQuery({
-    queryKey: ["master-admin", "organizations"],
-    queryFn: getOrganizations,
+  const schoolsQuery = useQuery({
+    queryKey: ["master-admin", "schools"],
+    queryFn: getMasterAdminSchools,
   });
 
   const reportsQuery = useQuery({
@@ -17,5 +17,5 @@ export function useMasterAdminOverview() {
     queryFn: fetchMasterAdminReports,
   });
 
-  return { usersQuery, orgsQuery, reportsQuery };
+  return { usersQuery, schoolsQuery, reportsQuery };
 }

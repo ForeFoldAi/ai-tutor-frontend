@@ -20,8 +20,6 @@ export default function DashboardPage() {
       return <OrganizationDashboardPage />;
     case UserRole.MASTER_ADMIN:
       return <MasterAdminDashboardPage />;
-    case UserRole.ORG_ADMIN:
-      return <OrganizationDashboardPage />;
     default:
       return <StudentDashboard user={user} />;
   }

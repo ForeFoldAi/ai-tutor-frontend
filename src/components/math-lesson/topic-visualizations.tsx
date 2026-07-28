@@ -5,7 +5,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, XAxis, YAxis } from "recharts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
 import type { VisualizationSpec } from "@/types/math-lesson";
 import { defaultSliderValues } from "./formula-utils";
 import { ELEMENTARY_RENDERERS } from "./elementary-visualizations";
@@ -262,7 +261,10 @@ export function GeometryBasicsViz({ spec }: TopicVizProps) {
           </>
         ) : null}
         <line x1={A.x} y1={A.y} x2={B.x} y2={B.y} stroke="#3B82F6" strokeWidth={3} />
-        {[["A", A], ["B", B]].map(([id, p]) => (
+        {([
+          ["A", A] as const,
+          ["B", B] as const,
+        ]).map(([id, p]) => (
           <g key={id}>
             <circle
               cx={p.x}
@@ -767,7 +769,7 @@ export function CircleTangentViz({ spec, values, onChange }: TopicVizProps) {
 }
 
 /** Compass & ruler guided construction */
-export function GeometryConstructionViz({ spec, onReset }: TopicVizProps) {
+export function GeometryConstructionViz({ onReset }: TopicVizProps) {
   const [step, setStep] = useState(0);
   const A = { x: 60, y: 100 };
   const B = { x: 180, y: 100 };

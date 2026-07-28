@@ -1,32 +1,29 @@
-import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useRoute } from "wouter";
-import { useTutorData } from "@/modules/tutor/hooks/use-tutor-data";
+import { getTutorStudentProfileByRef } from "@/api/tutor";
 import { DataState } from "@/modules/shared/components/data-state";
 import { StudentProfileView } from "@/modules/tutor/components/students/student-profile-view";
-import { getStudentProfile, mergeTutorStudents } from "@/modules/tutor/utils/student-helpers";
+import { mapTutorStudentProfile } from "@/modules/tutor/utils/student-helpers";
 
 export default function TutorStudentProfilePage() {
-  const [, params] = useRoute("/tutor/students/:slug");
-  const slug = params?.slug ?? "";
-  const { studentsQuery } = useTutorData();
+  const [, params] = useRoute("/tutor/students/:studentId");
+  const studentId = params?.studentId ?? "";
 
-  const students = useMemo(
-    () => mergeTutorStudents(studentsQuery.data ?? []),
-    [studentsQuery.data],
-  );
+  const profileQuery = useQuery({
+    queryKey: ["tutor", "students", "profile", studentId],
+    queryFn: () => getTutorStudentProfileByRef(studentId),
+    enabled: Boolean(studentId),
+  });
 
-  const profile = useMemo(
-    () => (slug ? getStudentProfile(students, slug) : null),
-    [students, slug],
-  );
+  const profile = profileQuery.data ? mapTutorStudentProfile(profileQuery.data) : null;
 
   return (
     <DataState
-      loading={studentsQuery.isLoading}
-      error={studentsQuery.error ? String(studentsQuery.error) : null}
-      empty={!profile}
+      loading={profileQuery.isLoading}
+      error={profileQuery.error ? String(profileQuery.error) : null}
+      empty={!profile && !profileQuery.isLoading}
       emptyText="Student profile not found."
-      onRetry={() => void studentsQuery.refetch()}
+      onRetry={() => void profileQuery.refetch()}
     >
       {profile ? <StudentProfileView student={profile} /> : null}
     </DataState>

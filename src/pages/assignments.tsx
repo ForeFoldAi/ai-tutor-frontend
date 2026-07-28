@@ -1,546 +1,455 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { useQuery } from "@tanstack/react-query";
+import { listStudentAssignments, type StudentAssignmentListItem } from "@/api/assignments";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Calculator,
-  Calendar,
-  Check,
-  ChevronRight,
-  Clock,
-  ExternalLink,
-  FileText,
-  Filter,
-  FlaskConical,
-  Globe,
-  MessageSquare,
-  MoreVertical,
-  PencilLine,
-  Search,
-  Upload,
-} from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { DataState } from "@/modules/shared/components/data-state";
 import { cn } from "@/lib/utils";
-import { AiTutorButtonIcon } from "@/components/ai-tutor-button-icon";
+import {
+  Calendar,
+  CheckCircle2,
+  Clock,
+  FileText,
+  Lightbulb,
+  Search,
+} from "lucide-react";
+import { AskAiTutorButton } from "@/components/ask-ai-tutor-button";
+import { brandImages } from "@/lib/brand-images";
+
 type AssignmentTab = "all" | "pending" | "in_progress" | "graded";
-type AssignmentStatus = "pending" | "in_progress" | "graded";
 
-interface Assignment {
-  id: number;
-  title: string;
-  subject: string;
-  teacher: string;
-  dueDate: string;
-  submittedDate?: string;
-  duration: number;
-  questions: number;
-  status: AssignmentStatus;
-  progress?: number;
-  score?: number;
-  grade?: string;
-  icon: typeof Calculator;
-  iconBg: string;
+const TABS: { id: AssignmentTab; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "pending", label: "Pending" },
+  { id: "in_progress", label: "In Progress" },
+  { id: "graded", label: "Graded" },
+];
+
+const STATUS_BADGE: Record<string, string> = {
+  pending: "bg-amber-50 text-amber-800",
+  in_progress: "bg-blue-50 text-blue-800",
+  submitted: "bg-slate-100 text-slate-800",
+  graded: "bg-emerald-50 text-emerald-800",
+  overdue: "bg-rose-50 text-rose-800",
+};
+
+/** Match overview mock: orange / blue / lavender-purple for graded. */
+const OVERVIEW_COLORS = {
+  pending: "#F5A623",
+  in_progress: "#4A90E2",
+  graded: "#9B8CFF",
+} as const;
+
+const TIPS_FOR_SUCCESS = [
+  "Start pending quizzes early so you have time to review tricky questions.",
+  "Read each question carefully and check your answers before submitting.",
+  "Use AI Tutor to practice weak topics before you open a graded quiz.",
+] as const;
+
+function formatDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  } catch {
+    return iso;
+  }
 }
 
-const ASSIGNMENTS: Assignment[] = [
-  {
-    id: 1,
-    title: "Algebra Problem Set – Chapter 5",
-    subject: "Mathematics",
-    teacher: "Dr. Smith",
-    dueDate: "2026-03-15",
-    duration: 45,
-    questions: 20,
-    status: "pending",
-    icon: Calculator,
-    iconBg: "bg-amber-500",
-  },
-  {
-    id: 2,
-    title: "Lab Report – Photosynthesis",
-    subject: "Science",
-    teacher: "Prof. Johnson",
-    dueDate: "2026-03-18",
-    duration: 60,
-    questions: 5,
-    status: "pending",
-    icon: FlaskConical,
-    iconBg: "bg-subject-science",
-  },
-  {
-    id: 3,
-    title: "Essay Writing – Literature Review",
-    subject: "English",
-    teacher: "Ms. Davis",
-    dueDate: "2026-03-20",
-    duration: 90,
-    questions: 3,
-    status: "in_progress",
-    progress: 60,
-    icon: Globe,
-    iconBg: "bg-subject-english",
-  },
-  {
-    id: 4,
-    title: "Programming Exercise – Arrays",
-    subject: "Computer Science",
-    teacher: "Dr. Chen",
-    dueDate: "2026-03-10",
-    submittedDate: "2026-03-09",
-    duration: 45,
-    questions: 10,
-    status: "graded",
-    score: 85,
-    grade: "A",
-    icon: PencilLine,
-    iconBg: "bg-subject-cs",
-  },
-  {
-    id: 5,
-    title: "History Test – World War II",
-    subject: "History",
-    teacher: "Prof. Williams",
-    dueDate: "2026-03-05",
-    submittedDate: "2026-03-04",
-    duration: 60,
-    questions: 25,
-    status: "graded",
-    score: 92,
-    grade: "A+",
-    icon: FileText,
-    iconBg: "bg-subject-social",
-  },
-];
+function matchesTab(item: StudentAssignmentListItem, tab: AssignmentTab): boolean {
+  if (tab === "all") return true;
+  if (tab === "pending") return item.status === "pending" || item.status === "overdue";
+  if (tab === "in_progress") return item.status === "in_progress";
+  if (tab === "graded") return item.status === "graded" || item.status === "submitted";
+  return true;
+}
 
-const DEADLINES = [
-  { title: "Algebra Problem Set", subject: "Mathematics", due: "Mar 15, 2026", icon: Calculator, color: "bg-amber-500" },
-  { title: "Lab Report", subject: "Science", due: "Mar 18, 2026", icon: FlaskConical, color: "bg-subject-science" },
-  { title: "Essay Writing", subject: "English", due: "Mar 20, 2026", icon: Globe, color: "bg-subject-english" },
-];
+function statusLabel(status: string): string {
+  if (status === "in_progress") return "In Progress";
+  return status.charAt(0).toUpperCase() + status.slice(1).replace("_", " ");
+}
 
-const TIPS = [
-  "Start early and plan your time",
-  "Read instructions carefully",
-  "Ask AI Tutor if you're stuck",
-  "Review before submitting",
-];
+function isPendingStatus(status: string) {
+  return status === "pending" || status === "overdue";
+}
 
-const STATUS_BADGE: Record<AssignmentStatus, string> = {
-  pending: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400",
-  in_progress: "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400",
-  graded: "bg-success/10 text-success",
-};
+function isGradedStatus(status: string) {
+  return status === "graded" || status === "submitted";
+}
 
-const TAB_COUNTS = {
-  all: ASSIGNMENTS.length,
-  pending: ASSIGNMENTS.filter((a) => a.status === "pending").length,
-  in_progress: ASSIGNMENTS.filter((a) => a.status === "in_progress").length,
-  graded: ASSIGNMENTS.filter((a) => a.status === "graded").length,
-};
+function AssignmentOverviewDonut({
+  pending,
+  inProgress,
+  graded,
+  total,
+}: {
+  pending: number;
+  inProgress: number;
+  graded: number;
+  total: number;
+}) {
+  const size = 128;
+  const stroke = 18;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const safeTotal = total > 0 ? total : 1;
 
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
+  const segments = [
+    { key: "pending", value: pending, color: OVERVIEW_COLORS.pending },
+    { key: "in_progress", value: inProgress, color: OVERVIEW_COLORS.in_progress },
+    { key: "graded", value: graded, color: OVERVIEW_COLORS.graded },
+  ];
+
+  let offset = 0;
+  const arcs = segments.map((seg) => {
+    const length = (seg.value / safeTotal) * circumference;
+    const arc = { ...seg, length, dashOffset: -offset };
+    offset += length;
+    return arc;
   });
-}
-
-function OverviewChart() {
-  const pending = TAB_COUNTS.pending;
-  const inProgress = TAB_COUNTS.in_progress;
-  const graded = TAB_COUNTS.graded;
-  const total = TAB_COUNTS.all;
-  const circumference = 2 * Math.PI * 36;
-  const pendingLen = (pending / total) * circumference;
-  const inProgressLen = (inProgress / total) * circumference;
-  const gradedLen = (graded / total) * circumference;
 
   return (
-    <div className="flex items-center gap-4">
-      <div className="relative h-24 w-24 shrink-0">
-        <svg width={96} height={96} className="-rotate-90">
-          <circle cx={48} cy={48} r={36} fill="none" stroke="currentColor" strokeWidth={10} className="text-muted/30" />
-          <circle
-            cx={48}
-            cy={48}
-            r={36}
-            fill="none"
-            stroke="#F59E0B"
-            strokeWidth={10}
-            strokeDasharray={`${pendingLen} ${circumference}`}
-            strokeLinecap="round"
-          />
-          <circle
-            cx={48}
-            cy={48}
-            r={36}
-            fill="none"
-            stroke="#3B82F6"
-            strokeWidth={10}
-            strokeDasharray={`${inProgressLen} ${circumference}`}
-            strokeDashoffset={-pendingLen}
-            strokeLinecap="round"
-          />
-          <circle
-            cx={48}
-            cy={48}
-            r={36}
-            fill="none"
-            stroke="#22C55E"
-            strokeWidth={10}
-            strokeDasharray={`${gradedLen} ${circumference}`}
-            strokeDashoffset={-(pendingLen + inProgressLen)}
-            strokeLinecap="round"
-          />
-        </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-lg font-bold text-foreground">{total}</span>
-          <span className="text-[10px] text-muted-foreground">Total</span>
-        </div>
-      </div>
-      <div className="space-y-1.5 text-xs">
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full bg-amber-500" />
-          <span className="text-muted-foreground">{pending} Pending</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full bg-blue-500" />
-          <span className="text-muted-foreground">{inProgress} In Progress</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full bg-success" />
-          <span className="text-muted-foreground">{graded} Graded</span>
-        </div>
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={stroke}
+          className="text-muted/25"
+        />
+        {total > 0
+          ? arcs.map((arc) =>
+              arc.value > 0 ? (
+                <circle
+                  key={arc.key}
+                  cx={size / 2}
+                  cy={size / 2}
+                  r={radius}
+                  fill="none"
+                  stroke={arc.color}
+                  strokeWidth={stroke}
+                  strokeDasharray={`${arc.length} ${circumference - arc.length}`}
+                  strokeDashoffset={arc.dashOffset}
+                  strokeLinecap="butt"
+                />
+              ) : null
+            )
+          : null}
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-2xl font-bold leading-none text-foreground">{total}</span>
+        <span className="mt-0.5 text-xs text-muted-foreground">Total</span>
       </div>
     </div>
   );
 }
 
 export default function AssignmentsPage() {
-  const [activeTab, setActiveTab] = useState<AssignmentTab>("all");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [sortBy, setSortBy] = useState("due_date");
+  const [tab, setTab] = useState<AssignmentTab>("all");
+  const [search, setSearch] = useState("");
 
-  const filteredAssignments = useMemo(() => {
-    let list = ASSIGNMENTS.filter((a) => {
-      const matchesTab = activeTab === "all" || a.status === activeTab;
-      const matchesSearch =
-        a.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        a.subject.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        a.teacher.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesTab && matchesSearch;
-    });
+  const listQuery = useQuery({
+    queryKey: ["student", "assignments"],
+    queryFn: listStudentAssignments,
+  });
 
-    if (sortBy === "due_date") {
-      list = [...list].sort(
-        (a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
-      );
+  const items = listQuery.data?.items ?? [];
+
+  const overview = useMemo(() => {
+    let pending = 0;
+    let inProgress = 0;
+    let graded = 0;
+    for (const item of items) {
+      if (isPendingStatus(item.status)) pending += 1;
+      else if (item.status === "in_progress") inProgress += 1;
+      else if (isGradedStatus(item.status)) graded += 1;
     }
-    return list;
-  }, [activeTab, searchQuery, sortBy]);
+    return {
+      pending,
+      inProgress,
+      graded,
+      total: pending + inProgress + graded,
+    };
+  }, [items]);
 
-  const tabs: { id: AssignmentTab; label: string }[] = [
-    { id: "all", label: "All Assignments" },
-    { id: "pending", label: `Pending (${TAB_COUNTS.pending})` },
-    { id: "in_progress", label: `In Progress (${TAB_COUNTS.in_progress})` },
-    { id: "graded", label: `Graded (${TAB_COUNTS.graded})` },
-  ];
+  const topPendingAndInProgress = useMemo(() => {
+    return items
+      .filter(
+        (item) =>
+          isPendingStatus(item.status) || item.status === "in_progress"
+      )
+      .sort((a, b) => {
+        const statusRank = (s: string) =>
+          s === "in_progress" ? 0 : isPendingStatus(s) ? 1 : 2;
+        const byStatus = statusRank(a.status) - statusRank(b.status);
+        if (byStatus !== 0) return byStatus;
+        return new Date(a.deadline).getTime() - new Date(b.deadline).getTime();
+      })
+      .slice(0, 3);
+  }, [items]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return items.filter((item) => {
+      if (!matchesTab(item, tab)) return false;
+      if (!q) return true;
+      return (
+        item.title.toLowerCase().includes(q) ||
+        item.subject.toLowerCase().includes(q) ||
+        item.teacher_name.toLowerCase().includes(q) ||
+        item.artifact_type.toLowerCase().includes(q)
+      );
+    });
+  }, [items, tab, search]);
 
   return (
-    <div className="dashboard-fit flex min-h-0 flex-1 flex-col overflow-hidden p-4 md:p-5">
-      {/* Header */}
-      <div className="mb-3 flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-xl font-bold text-foreground sm:text-2xl">Assignments</h1>
+    <div className="dashboard-fit flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto p-3 md:p-4 lg:overflow-hidden">
+      <div className="flex shrink-0 flex-col gap-2">
+        <div className="min-w-0 space-y-0.5">
+          <h1 className="text-xl font-bold text-blue-900 dark:text-blue-100 sm:text-2xl">
+            Assignments
+          </h1>
           <p className="text-sm text-muted-foreground">
-            View, complete and track your assignments
+            Complete worksheets, quizzes, and homework from your teachers.
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <div className="relative w-full sm:w-52">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Search assignments..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-9 pl-9"
-            />
-          </div>
-          <Button asChild className="h-9 shrink-0 gap-2 bg-gradient-brand px-4">
-            <Link href="/ai-tutor?greet=1">
-              <AiTutorButtonIcon />
-              <span className="hidden sm:inline">Ask AI Tutor</span>
-            </Link>
-          </Button>
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground sm:left-3 sm:h-4 sm:w-4" />
+          <Input
+            placeholder="Search assignments..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-8 border border-border/70 bg-background pl-8 text-sm shadow-sm sm:h-9 sm:pl-9"
+          />
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {TABS.map((t) => (
+            <Button
+              key={t.id}
+              size="sm"
+              variant={tab === t.id ? "default" : "outline"}
+              className="h-8 px-2.5 text-xs sm:px-3 sm:text-sm"
+              onClick={() => setTab(t.id)}
+            >
+              {t.label}
+            </Button>
+          ))}
         </div>
       </div>
 
-      {/* Main grid */}
-      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-3 lg:gap-4">
-        {/* Left column */}
-        <div className="flex min-h-0 flex-col gap-3 lg:col-span-2">
-          {/* Tabs + sort */}
-          <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex gap-1 overflow-x-auto border-b border-border/60 pb-0">
-              {tabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => setActiveTab(tab.id)}
-                  data-testid={`tab-${tab.id.replace("_", "-")}`}
-                  className={cn(
-                    "shrink-0 border-b-2 px-3 py-2 text-xs font-medium transition-colors sm:text-sm",
-                    activeTab === tab.id
-                      ? "border-primary text-primary"
-                      : "border-transparent text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <Select value={sortBy} onValueChange={setSortBy}>
-                <SelectTrigger className="h-8 w-[140px] text-xs">
-                  <SelectValue placeholder="Sort by" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="due_date">Due Date</SelectItem>
-                  <SelectItem value="title">Title</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button variant="outline" size="icon" className="h-8 w-8 shrink-0">
-                <Filter className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          </div>
-
-          {/* Assignment list */}
-          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
-            {filteredAssignments.length === 0 ? (
-              <Card className="shadow-card">
-                <CardContent className="flex flex-col items-center py-10 text-center">
-                  <FileText className="mb-3 h-10 w-10 text-muted-foreground/40" />
-                  <p className="text-sm text-muted-foreground">No assignments found.</p>
-                </CardContent>
-              </Card>
-            ) : (
-              filteredAssignments.map((assignment) => (
-                <Card
-                  key={assignment.id}
-                  className="shadow-card"
-                  data-testid={`assignment-card-${assignment.id}`}
-                >
-                  <CardContent className="flex items-start gap-3 p-3 sm:p-4">
-                    <div
-                      className={cn(
-                        "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white",
-                        assignment.iconBg
-                      )}
-                    >
-                      <assignment.icon className="h-5 w-5" />
-                    </div>
-
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-foreground">{assignment.title}</p>
+      <div className="grid min-w-0 gap-3 lg:min-h-0 lg:flex-1 lg:grid-cols-3 lg:gap-4 lg:overflow-hidden">
+        <div className="order-1 flex min-w-0 flex-col lg:col-span-2 lg:min-h-0">
+          <DataState
+            loading={listQuery.isLoading}
+            error={listQuery.error ? String(listQuery.error) : null}
+            empty={!listQuery.isLoading && filtered.length === 0}
+            emptyText="No assignments found."
+            onRetry={() => void listQuery.refetch()}
+          >
+            <div className="space-y-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pb-4">
+              {filtered.map((assignment) => {
+                const done =
+                  assignment.status === "graded" || assignment.status === "submitted";
+                return (
+                  <Card key={assignment.id} className="border-border/70 shadow-sm">
+                    <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <div className="rounded-lg bg-primary/10 p-2.5 text-primary">
+                          <FileText className="h-5 w-5" />
+                        </div>
+                        <div className="min-w-0 space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-sm font-semibold text-foreground">
+                              {assignment.title}
+                            </p>
+                            <Badge
+                              className={cn(
+                                "border-0 text-[10px] capitalize",
+                                STATUS_BADGE[assignment.status]
+                              )}
+                            >
+                              {statusLabel(assignment.status)}
+                            </Badge>
+                          </div>
                           <p className="text-xs text-muted-foreground">
-                            {assignment.subject} · {assignment.teacher}
+                            {assignment.subject} · {assignment.teacher_name} ·{" "}
+                            {assignment.artifact_type}
                           </p>
+                          <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                            <span className="inline-flex items-center gap-1">
+                              <Calendar className="h-3.5 w-3.5" />
+                              Due {formatDate(assignment.deadline)}
+                            </span>
+                            <span className="inline-flex items-center gap-1">
+                              <Clock className="h-3.5 w-3.5" />
+                              {assignment.question_count} question
+                              {assignment.question_count === 1 ? "" : "s"}
+                            </span>
+                            {done &&
+                            assignment.artifact_type === "quiz" &&
+                            assignment.score != null &&
+                            assignment.max_score != null ? (
+                              <span>
+                                Score {assignment.score}/{assignment.max_score}
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
-                        <Badge className={cn("shrink-0 border-0 text-[10px]", STATUS_BADGE[assignment.status])}>
-                          {assignment.status === "in_progress"
-                            ? "In Progress"
-                            : assignment.status.charAt(0).toUpperCase() + assignment.status.slice(1)}
-                        </Badge>
                       </div>
-
-                      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
-                          {assignment.status === "graded" && assignment.submittedDate
-                            ? `Submitted ${formatDate(assignment.submittedDate)}`
-                            : `Due ${formatDate(assignment.dueDate)}`}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Clock className="h-3 w-3" />
-                          {assignment.duration} min
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <FileText className="h-3 w-3" />
-                          {assignment.questions} questions
-                        </span>
-                      </div>
-
-                      {assignment.status === "in_progress" && assignment.progress !== undefined && (
-                        <div className="mt-2 flex items-center gap-2">
-                          <Progress value={assignment.progress} className="h-1.5 flex-1" />
-                          <span className="text-xs font-medium text-foreground">
-                            {assignment.progress}%
-                          </span>
-                        </div>
-                      )}
-
-                      {assignment.status === "graded" && assignment.score !== undefined && (
-                        <p className="mt-1.5 text-xs font-semibold text-success">
-                          {assignment.score}% · Grade {assignment.grade}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="flex shrink-0 items-center gap-1">
-                      {assignment.status === "graded" ? (
-                        <Button variant="outline" size="sm" className="h-8 text-xs">
-                          View Results
-                          <ChevronRight className="ml-1 h-3.5 w-3.5" />
-                        </Button>
-                      ) : (
-                        <Button
-                          size="sm"
-                          className="h-8 bg-gradient-brand text-xs"
-                          data-testid={`button-start-${assignment.id}`}
-                        >
-                          {assignment.status === "in_progress" ? "Continue" : "Start"}
-                          <ChevronRight className="ml-1 h-3.5 w-3.5" />
-                        </Button>
-                      )}
-                      <Button variant="ghost" size="icon" className="h-8 w-8">
-                        <MoreVertical className="h-4 w-4 text-muted-foreground" />
+                      <Button asChild size="sm" className="shrink-0">
+                        <Link href={`/assignments/${assignment.id}`}>
+                          {done
+                            ? "View Results"
+                            : assignment.status === "in_progress"
+                              ? "Continue"
+                              : "Start"}
+                        </Link>
                       </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))
-            )}
-          </div>
-
-          {/* AI help banner */}
-          <Card className="shrink-0 overflow-hidden border-0 bg-gradient-to-r from-primary/10 via-accent/10 to-brand-secondary/10 shadow-card">
-            <CardContent className="flex items-center gap-3 p-3">
-              <img src="/login-right.png" alt="" aria-hidden className="h-12 w-12 shrink-0 object-contain" />
-              <p className="min-w-0 flex-1 text-sm font-semibold text-foreground">
-                Need help with an assignment?
-              </p>
-              <Button asChild size="sm" className="shrink-0 bg-gradient-brand">
-                <Link href="/ai-tutor?greet=1" className="inline-flex items-center gap-1.5">
-                  <AiTutorButtonIcon className="h-5 w-5" />
-                  Ask AI Tutor
-                  <ExternalLink className="h-3.5 w-3.5" />
-                </Link>
-              </Button>
-            </CardContent>
-          </Card>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          </DataState>
         </div>
 
-        {/* Right sidebar */}
-        <div className="flex min-h-0 flex-col gap-3 overflow-y-auto lg:overflow-hidden">
-          <Card className="shrink-0 shadow-card">
-            <CardContent className="p-3 sm:p-4">
-              <h2 className="mb-3 text-sm font-semibold text-foreground">Overview</h2>
-              <OverviewChart />
-            </CardContent>
-          </Card>
-
-          <Card className="shrink-0 shadow-card">
-            <CardContent className="p-3 sm:p-4">
-              <div className="mb-2 flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-foreground">Upcoming Deadlines</h2>
-                <button type="button" className="text-xs font-medium text-primary hover:underline">
-                  View All
-                </button>
-              </div>
-              <ul className="space-y-2">
-                {DEADLINES.map((item) => (
-                  <li
-                    key={item.title}
-                    className="flex items-center gap-2.5 rounded-lg border border-border/60 px-2.5 py-2"
-                  >
-                    <div
-                      className={cn(
-                        "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white",
-                        item.color
-                      )}
-                    >
-                      <item.icon className="h-3.5 w-3.5" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs font-medium text-foreground">{item.title}</p>
-                      <p className="text-xs text-muted-foreground">{item.subject}</p>
-                    </div>
-                    <span className="shrink-0 text-xs font-medium text-destructive">{item.due}</span>
+        <aside className="order-2 flex min-w-0 flex-col gap-3 lg:min-h-0 lg:overflow-y-auto lg:pb-4">
+          <Card className="shadow-card">
+            <CardContent className="p-4">
+              <h2 className="mb-4 text-base font-bold text-foreground">Overview</h2>
+              <div className="flex items-center gap-4">
+                <AssignmentOverviewDonut
+                  pending={overview.pending}
+                  inProgress={overview.inProgress}
+                  graded={overview.graded}
+                  total={overview.total}
+                />
+                <ul className="space-y-2.5 text-sm text-foreground">
+                  <li className="flex items-center gap-2">
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: OVERVIEW_COLORS.pending }}
+                    />
+                    <span>
+                      {overview.pending} Pending
+                    </span>
                   </li>
-                ))}
-              </ul>
+                  <li className="flex items-center gap-2">
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: OVERVIEW_COLORS.in_progress }}
+                    />
+                    <span>
+                      {overview.inProgress} In Progress
+                    </span>
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-full"
+                      style={{ backgroundColor: OVERVIEW_COLORS.graded }}
+                    />
+                    <span>
+                      {overview.graded} Graded
+                    </span>
+                  </li>
+                </ul>
+              </div>
             </CardContent>
           </Card>
 
-          <Card className="shrink-0 shadow-card">
-            <CardContent className="p-3 sm:p-4">
-              <h2 className="mb-2 text-sm font-semibold text-foreground">Tips for Success</h2>
-              <div className="flex gap-3">
-                <ul className="min-w-0 flex-1 space-y-1.5">
-                  {TIPS.map((tip) => (
-                    <li key={tip} className="flex items-start gap-2 text-xs text-muted-foreground">
-                      <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
-                      {tip}
+          <Card className="shadow-card">
+            <CardContent className="p-4">
+              <h2 className="mb-3 text-sm font-semibold text-foreground sm:text-base">
+                Top Pending &amp; In Progress
+              </h2>
+              {topPendingAndInProgress.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No pending or in-progress assignments.
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {topPendingAndInProgress.map((item, index) => (
+                    <li key={item.id}>
+                      <Link href={`/assignments/${item.id}`}>
+                        <div className="flex items-start gap-2.5 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5 transition-colors hover:border-primary/30">
+                          <span
+                            className={cn(
+                              "flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold",
+                              item.status === "in_progress"
+                                ? "bg-blue-100 text-blue-800"
+                                : "bg-amber-100 text-amber-800"
+                            )}
+                          >
+                            {index + 1}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium text-foreground">
+                              {item.title}
+                            </p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {statusLabel(item.status)} · {item.subject} · Due{" "}
+                              {formatDate(item.deadline)}
+                            </p>
+                          </div>
+                        </div>
+                      </Link>
                     </li>
                   ))}
                 </ul>
-                <img
-                  src="/login-right.png"
-                  alt=""
-                  aria-hidden
-                  className="hidden h-16 w-16 shrink-0 object-contain sm:block"
-                />
-              </div>
+              )}
             </CardContent>
           </Card>
 
-          <Card className="shrink-0 shadow-card">
-            <CardContent className="p-3 sm:p-4">
-              <h2 className="mb-2 text-sm font-semibold text-foreground">Quick Actions</h2>
-              <ul className="space-y-1">
-                {[
-                  { label: "Upload Assignment", icon: Upload },
-                  { label: "Assignment Help", icon: MessageSquare, href: "/ai-tutor?greet=1" },
-                ].map((action) => (
-                  <li key={action.label}>
-                    {action.href ? (
-                      <Link
-                        href={action.href}
-                        className="flex items-center gap-2.5 rounded-lg px-2 py-2 text-sm transition-colors hover:bg-muted/50"
-                      >
-                        <action.icon className="h-4 w-4 text-primary" />
-                        <span className="flex-1 text-foreground">{action.label}</span>
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                      </Link>
-                    ) : (
-                      <button
-                        type="button"
-                        className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm transition-colors hover:bg-muted/50"
-                      >
-                        <action.icon className="h-4 w-4 text-primary" />
-                        <span className="flex-1 text-left text-foreground">{action.label}</span>
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                      </button>
-                    )}
+          <Card className="shadow-card">
+            <CardContent className="p-4">
+              <h2 className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-foreground sm:text-base">
+                <Lightbulb className="h-4 w-4 text-amber-500" />
+                Tips for success
+              </h2>
+              <ul className="space-y-2.5">
+                {TIPS_FOR_SUCCESS.map((tip) => (
+                  <li
+                    key={tip}
+                    className="flex gap-2 rounded-lg border border-border/60 bg-muted/15 px-3 py-2.5 text-xs text-muted-foreground sm:text-sm"
+                  >
+                    <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                    <span>{tip}</span>
                   </li>
                 ))}
               </ul>
             </CardContent>
           </Card>
-        </div>
+
+          <Card className="shrink-0 border border-border/70 bg-[#EEF1F8] shadow-sm dark:bg-primary/10">
+            <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:gap-4">
+              <img
+                src={brandImages.chatbot}
+                alt=""
+                aria-hidden
+                className="h-14 w-14 shrink-0 object-contain sm:h-16 sm:w-16"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-blue-900 dark:text-blue-100 sm:text-base">
+                  Need help with an assignment?
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">
+                  Ask AI Tutor for explanations, help with questions, or study tips.
+                </p>
+              </div>
+              <AskAiTutorButton className="h-9 w-full shrink-0 px-4 sm:h-10 sm:w-auto sm:px-5">
+                Ask AI Tutor
+              </AskAiTutorButton>
+            </CardContent>
+          </Card>
+        </aside>
       </div>
     </div>
   );

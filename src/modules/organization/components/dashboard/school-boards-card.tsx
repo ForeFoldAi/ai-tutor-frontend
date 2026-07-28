@@ -1,37 +1,39 @@
 import { BookOpen } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { DEMO_CURRICULUMS } from "@/modules/organization/data/demo-classes-admin";
+import { Card, CardContent } from "@/components/ui/card";
 
-export function SchoolBoardsCard() {
+interface SchoolBoardsCardProps {
+  curricula: string[];
+}
+
+export function SchoolBoardsCard({ curricula }: SchoolBoardsCardProps) {
   return (
     <Card className="border-border/70 shadow-sm">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-lg font-semibold text-blue-900 dark:text-blue-100">
+      <CardContent className="flex flex-wrap items-center gap-3 py-4">
+        <div className="flex shrink-0 items-center gap-2 text-lg font-semibold text-blue-900 dark:text-blue-100">
           <BookOpen className="h-5 w-5 text-primary" />
           Boards
-        </CardTitle>
-        <CardDescription>Curriculums active at your school.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-wrap gap-2">
-          {DEMO_CURRICULUMS.map((board) => (
-            <div
-              key={board.id}
-              className="flex min-w-[140px] flex-1 flex-col gap-1 rounded-xl border border-border/70 bg-muted/20 px-3 py-2.5 sm:max-w-[200px]"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <p className="font-semibold text-foreground">{board.name}</p>
-                <Badge variant="outline" className="border-primary/30 bg-primary/5 text-[10px] text-primary">
+        </div>
+        {curricula.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No curricula configured for your school yet.</p>
+        ) : (
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            {curricula.map((board) => (
+              <div
+                key={board}
+                className="flex items-center gap-2 rounded-xl border border-border/70 bg-muted/20 px-3 py-2"
+              >
+                <p className="font-semibold text-foreground">{board}</p>
+                <Badge
+                  variant="outline"
+                  className="shrink-0 border-primary/30 bg-primary/5 text-[10px] text-primary"
+                >
                   Active
                 </Badge>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Grades {board.grades} · {board.subjectsCount} subjects
-              </p>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

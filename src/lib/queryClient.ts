@@ -3,7 +3,7 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
 type DemoAccount = {
   username: string;
   password: string;
-  role: "student" | "tutor" | "school_admin" | "master_admin" | "org_admin";
+  role: "student" | "tutor" | "school_admin" | "master_admin";
   fullName: string;
   email: string;
 };
@@ -36,13 +36,6 @@ const demoAccounts: DemoAccount[] = [
     role: "master_admin",
     fullName: "Master Admin User",
     email: "master.admin@example.com",
-  },
-  {
-    username: import.meta.env.VITE_TEST_ORG_ADMIN_USERNAME || "organization",
-    password: import.meta.env.VITE_TEST_ORG_ADMIN_PASSWORD || "password",
-    role: "org_admin",
-    fullName: "Organization Admin User",
-    email: "org.admin@example.com",
   },
 ];
 
@@ -134,9 +127,12 @@ export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),
+      // Live lists: refetch when stale, on tab focus, and after reconnect.
+      staleTime: 30_000,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+      refetchOnMount: true,
       refetchInterval: false,
-      refetchOnWindowFocus: false,
-      staleTime: Infinity,
       retry: false,
     },
     mutations: {

@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useLocation } from "wouter";
 import { GraduationCap, School, Shield, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuthLightTheme } from "@/lib/theme-provider";
 import { AuthBrandMark } from "@/components/auth/auth-brand-mark";
 
 export type SignupAccountType = "student" | "teacher" | "school";
@@ -81,6 +82,7 @@ interface SignupShellProps {
 
 export function SignupShell({ accountType, onAccountTypeChange, children }: SignupShellProps) {
   const [, navigate] = useLocation();
+  useAuthLightTheme();
 
   useEffect(() => {
     document.documentElement.classList.add("overflow-hidden");
@@ -93,8 +95,14 @@ export function SignupShell({ accountType, onAccountTypeChange, children }: Sign
 
   return (
     <div className="flex h-[100dvh] max-h-[100dvh] w-full overflow-hidden bg-background">
-      <aside className="hidden h-full w-[340px] shrink-0 flex-col overflow-hidden border-r border-[#d4d2f5] bg-[#E2E1FB] dark:bg-sidebar lg:flex xl:w-[380px]">
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-6 pt-6 pb-3 xl:px-8">
+      <aside className="relative hidden h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-[#d4d2f5] lg:flex lg:w-[35%]">
+        <img
+          src="/signup-left.png"
+          alt=""
+          aria-hidden
+          className="absolute inset-0 h-full w-full object-cover object-left-bottom"
+        />
+        <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden px-6 pt-6 pb-3 xl:px-8">
           <div className="shrink-0">
             <AuthBrandMark size="signup" />
 
@@ -106,12 +114,12 @@ export function SignupShell({ accountType, onAccountTypeChange, children }: Sign
             </p>
           </div>
 
-          <div className="flex min-h-0 flex-1 items-center justify-center py-1">
+          <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden py-1">
             <img
               src="/signup.png"
               alt=""
               aria-hidden
-              className="w-[88%] max-h-[min(38vh,280px)] max-w-[300px] object-contain xl:max-w-[320px]"
+              className="h-full w-full max-h-[min(52vh,440px)] max-w-[min(100%,460px)] object-contain"
             />
           </div>
 
@@ -154,7 +162,7 @@ export function SignupShell({ accountType, onAccountTypeChange, children }: Sign
           </div>
         </div>
 
-        <div className="shrink-0 border-t border-[#d4d2f5] px-6 py-4 text-center xl:px-8">
+        <div className="relative z-10 shrink-0 border-t border-white/40 bg-white/25 px-6 py-4 text-center backdrop-blur-[2px] xl:px-8">
           <p className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
             <Shield className="h-4 w-4 text-primary" aria-hidden />
             Your data is safe and secure
@@ -172,11 +180,13 @@ export function SignupShell({ accountType, onAccountTypeChange, children }: Sign
         </div>
       </aside>
 
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-neutral-50">
         <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-3 lg:hidden">
           <AuthBrandMark variant="sidebar" />
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6 xl:px-10">{children}</div>
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-5 sm:px-6 sm:py-6 xl:px-10">
+          <div className="flex min-h-full flex-1 flex-col">{children}</div>
+        </div>
       </main>
     </div>
   );

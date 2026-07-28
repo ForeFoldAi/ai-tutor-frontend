@@ -48,9 +48,10 @@ interface AddTeacherDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (values: AddTeachersFormValues) => void;
+  isSubmitting?: boolean;
 }
 
-export function AddTeacherDialog({ open, onOpenChange, onSubmit }: AddTeacherDialogProps) {
+export function AddTeacherDialog({ open, onOpenChange, onSubmit, isSubmitting }: AddTeacherDialogProps) {
   const form = useForm<AddTeachersFormValues>({
     resolver: zodResolver(addTeachersSchema),
     defaultValues: { teachers: [emptyRow()] },
@@ -170,8 +171,8 @@ export function AddTeacherDialog({ open, onOpenChange, onSubmit }: AddTeacherDia
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
-              <Button type="submit">
-                Add {fields.length} teacher{fields.length === 1 ? "" : "s"}
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? "Saving…" : `Add ${fields.length} teacher${fields.length === 1 ? "" : "s"}`}
               </Button>
             </div>
           </form>

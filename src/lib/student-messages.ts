@@ -84,6 +84,8 @@ const API_DETAIL_MAP: Record<string, string> = {
     "This verification link is invalid or expired. Request a new one.",
   "Invalid reset token.":
     "This password reset link is invalid or expired. Request a new one.",
+  "This password reset code is invalid or expired. Request a new one.":
+    "That reset code is invalid or expired. Request a new one.",
   "User not found.": MSG.sessionExpired,
   "The answer is not found in the document.":
     "I couldn't find this in your chapter. Try a question about the chapter you're studying, or pick another chapter in Learning Studio.",
@@ -103,6 +105,10 @@ const API_DETAIL_MAP: Record<string, string> = {
   "grade cannot be empty": "Please select your class.",
   "At least one section (e.g. A, B) is required per class.":
     "Please enter your section (for example A or B).",
+  "More than one account shares that email or phone. Sign in with your username instead.":
+    "More than one account shares that email or phone. Sign in with your username instead.",
+  "We couldn't send the reset email. Please try again in a moment.":
+    "We couldn't send the reset email. Please try again in a moment.",
 };
 
 function extractDetailFromBody(body: string): string | null {

@@ -1,5 +1,7 @@
-import { BookOpen, CheckCircle2, Circle, Clock, Lightbulb, ListChecks, Presentation } from "lucide-react";
+import { BookOpen, CheckCircle2, Circle, Clock, Lightbulb, ListChecks } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { LessonPlanMarkdownView } from "@/modules/tutor/components/lesson-planner/lesson-plan-markdown-view";
+import { PptDeckPreview } from "@/modules/tutor/components/lesson-planner/ppt-deck-preview";
 import type {
   GeneratedLessonPlan,
   HomeworkTask,
@@ -10,6 +12,7 @@ import type {
   TeachingNotesContent,
   WorksheetQuestion,
 } from "@/modules/tutor/types/lesson-planner";
+import { normalizeQuestionOptions } from "@/modules/tutor/utils/lesson-planner-mappers";
 
 const EMPTY_MESSAGE =
   "Configure your lesson on the left and click Generate to see your AI lesson plan here.";
@@ -27,7 +30,14 @@ function SectionTitle({ icon: Icon, title }: { icon: typeof BookOpen; title: str
   );
 }
 
-export function TeachingNotesTab({ content }: { content?: TeachingNotesContent }) {
+export function TeachingNotesTab({
+  markdown,
+  content,
+}: {
+  markdown?: string;
+  content?: TeachingNotesContent;
+}) {
+  if (markdown) return <LessonPlanMarkdownView markdown={markdown} />;
   if (!content) return <EmptyState />;
 
   return (
@@ -75,7 +85,14 @@ export function TeachingNotesTab({ content }: { content?: TeachingNotesContent }
   );
 }
 
-export function ExamplesTab({ examples }: { examples?: LessonExample[] }) {
+export function ExamplesTab({
+  markdown,
+  examples,
+}: {
+  markdown?: string;
+  examples?: LessonExample[];
+}) {
+  if (markdown) return <LessonPlanMarkdownView markdown={markdown} />;
   if (!examples?.length) return <EmptyState />;
 
   return (
@@ -104,16 +121,19 @@ function QuestionCard({
   type,
   options,
 }: WorksheetQuestion | QuizQuestion) {
+  const optionLabels =
+    type === "mcq" && options?.length ? normalizeQuestionOptions(options) ?? [] : [];
+
   return (
     <div className="rounded-lg border border-border/60 p-3">
       <p className="mb-2 text-sm font-medium text-foreground">
         {number}. {question}
       </p>
-      {type === "mcq" && options ? (
+      {type === "mcq" && optionLabels.length ? (
         <div className="grid gap-1.5 sm:grid-cols-2">
-          {options.map((option) => (
+          {optionLabels.map((option, index) => (
             <div
-              key={option}
+              key={`${number}-${index}-${option}`}
               className="flex items-center gap-2 rounded-md border border-border/50 bg-muted/20 px-2.5 py-1.5 text-sm text-muted-foreground"
             >
               <Circle className="h-3.5 w-3.5 shrink-0" />
@@ -128,7 +148,21 @@ function QuestionCard({
   );
 }
 
-export function WorksheetTab({ questions }: { questions?: WorksheetQuestion[] }) {
+export function WorksheetTab({
+  markdown,
+  questions,
+}: {
+  markdown?: string;
+  questions?: WorksheetQuestion[];
+}) {
+  if (markdown) {
+    return (
+      <LessonPlanMarkdownView
+        markdown={markdown}
+        className="rounded-lg border border-border/60 bg-white p-4 dark:bg-card print:border-0 print:p-0"
+      />
+    );
+  }
   if (!questions?.length) return <EmptyState />;
 
   return (
@@ -143,7 +177,21 @@ export function WorksheetTab({ questions }: { questions?: WorksheetQuestion[] })
   );
 }
 
-export function QuizTab({ questions }: { questions?: QuizQuestion[] }) {
+export function QuizTab({
+  markdown,
+  questions,
+}: {
+  markdown?: string;
+  questions?: QuizQuestion[];
+}) {
+  if (markdown) {
+    return (
+      <LessonPlanMarkdownView
+        markdown={markdown}
+        className="rounded-lg border border-border/60 bg-white p-4 dark:bg-card"
+      />
+    );
+  }
   if (!questions?.length) return <EmptyState />;
 
   return (
@@ -156,7 +204,14 @@ export function QuizTab({ questions }: { questions?: QuizQuestion[] }) {
   );
 }
 
-export function HomeworkTab({ tasks }: { tasks?: HomeworkTask[] }) {
+export function HomeworkTab({
+  markdown,
+  tasks,
+}: {
+  markdown?: string;
+  tasks?: HomeworkTask[];
+}) {
+  if (markdown) return <LessonPlanMarkdownView markdown={markdown} />;
   if (!tasks?.length) return <EmptyState />;
 
   return (
@@ -184,36 +239,34 @@ export function HomeworkTab({ tasks }: { tasks?: HomeworkTask[] }) {
   );
 }
 
-export function PptOutlineTab({ slides }: { slides?: PptSlide[] }) {
-  if (!slides?.length) return <EmptyState />;
-
-  return (
-    <div className="space-y-0">
-      {slides.map((slide, index) => (
-        <div key={slide.number} className="flex gap-3">
-          <div className="flex flex-col items-center">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-xs font-bold text-primary">
-              {slide.number}
+export function PptOutlineTab({
+  markdown,
+  slides,
+  templateId,
+}: {
+  markdown?: string;
+  slides?: PptSlide[];
+  templateId?: string;
+}) {
+  if (slides?.length) {
+    return (
+      <div className="space-y-4">
+        <PptDeckPreview slides={slides} templateId={templateId} />
+        {markdown ? (
+          <details className="rounded-md border border-border/60 p-3">
+            <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+              View outline markdown
+            </summary>
+            <div className="mt-3">
+              <LessonPlanMarkdownView markdown={markdown} />
             </div>
-            {index < slides.length - 1 ? <div className="my-1 w-px flex-1 bg-border/70" /> : null}
-          </div>
-          <div className="mb-4 min-w-0 flex-1 rounded-lg border border-border/60 p-3">
-            <div className="mb-2 flex items-center gap-2">
-              <Presentation className="h-4 w-4 text-primary" />
-              <h3 className="text-sm font-semibold text-foreground">{slide.title}</h3>
-            </div>
-            <ul className="space-y-1">
-              {slide.bullets.map((bullet) => (
-                <li key={bullet} className="text-sm text-muted-foreground">
-                  • {bullet}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
+          </details>
+        ) : null}
+      </div>
+    );
+  }
+  if (markdown) return <LessonPlanMarkdownView markdown={markdown} />;
+  return <EmptyState />;
 }
 
 export function LessonPlanTabContent({
@@ -227,17 +280,23 @@ export function LessonPlanTabContent({
 
   switch (tab) {
     case "teaching-notes":
-      return <TeachingNotesTab content={plan.teachingNotes} />;
+      return <TeachingNotesTab markdown={plan.teachingNotesMarkdown} content={plan.teachingNotes} />;
     case "examples":
-      return <ExamplesTab examples={plan.examples} />;
+      return <ExamplesTab markdown={plan.examplesMarkdown} examples={plan.examples} />;
     case "worksheet":
-      return <WorksheetTab questions={plan.worksheet} />;
+      return <WorksheetTab markdown={plan.worksheetMarkdown} questions={plan.worksheet} />;
     case "quiz":
-      return <QuizTab questions={plan.quiz} />;
+      return <QuizTab markdown={plan.quizMarkdown} questions={plan.quiz} />;
     case "homework":
-      return <HomeworkTab tasks={plan.homework} />;
+      return <HomeworkTab markdown={plan.homeworkMarkdown} tasks={plan.homework} />;
     case "ppt-outline":
-      return <PptOutlineTab slides={plan.pptOutline} />;
+      return (
+        <PptOutlineTab
+          markdown={plan.pptOutlineMarkdown}
+          slides={plan.pptOutline}
+          templateId={plan.pptTemplateId}
+        />
+      );
     default:
       return <EmptyState />;
   }

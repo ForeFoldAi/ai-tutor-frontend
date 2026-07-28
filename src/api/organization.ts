@@ -4,10 +4,10 @@ import type {
   CreateSchoolAdminPayload,
   CreateStudentPayload,
   CreateTutorPayload,
-  OrganizationDetail,
-  OrganizationSchoolSummary,
+  SchoolDetail,
+  SchoolSummary,
   PatchSchoolPayload,
-  UpdateOrganizationPayload,
+  UpdateSchoolProfilePayload,
   UpdateStudentPayload,
   UpdateTutorPayload,
 } from "@/api/types";
@@ -16,36 +16,49 @@ export async function getOrganizationUsers(): Promise<ApiUser[]> {
   return apiFetch<ApiUser[]>("/auth/admin/users");
 }
 
-export async function getOrganizationDetail(): Promise<OrganizationDetail> {
-  return apiFetch<OrganizationDetail>("/auth/admin/organization");
+export async function getSchoolDetail(): Promise<SchoolDetail> {
+  return apiFetch<SchoolDetail>("/auth/admin/school");
 }
 
-export async function updateOrganization(payload: UpdateOrganizationPayload): Promise<OrganizationDetail> {
-  return apiFetch<OrganizationDetail>("/auth/admin/organization", {
+/** @deprecated use getSchoolDetail */
+export const getOrganizationDetail = getSchoolDetail;
+
+export async function updateSchoolProfile(payload: UpdateSchoolProfilePayload): Promise<SchoolDetail> {
+  return apiFetch<SchoolDetail>("/auth/admin/school", {
     method: "PATCH",
     body: JSON.stringify({
       name: payload.name.trim(),
+      branch: payload.branch?.trim() ? payload.branch.trim() : null,
+      board: payload.board?.trim() ? payload.board.trim() : null,
+      email: payload.email?.trim() ? payload.email.trim() : null,
       phone: payload.phone?.trim() ? payload.phone.trim() : null,
       address: payload.address?.trim() ? payload.address.trim() : null,
+      website: payload.website?.trim() ? payload.website.trim() : null,
+      grades_offered: payload.grades_offered?.trim() ? payload.grades_offered.trim() : null,
+      student_strength: payload.student_strength?.trim() ? payload.student_strength.trim() : null,
+      curricula: payload.curricula ?? [],
     }),
   });
 }
 
-export async function getOrganizationSchools(): Promise<OrganizationSchoolSummary[]> {
-  return apiFetch<OrganizationSchoolSummary[]>("/auth/admin/schools");
+/** @deprecated use updateSchoolProfile */
+export const updateOrganization = updateSchoolProfile;
+
+export async function getOrganizationSchools(): Promise<SchoolSummary[]> {
+  return apiFetch<SchoolSummary[]>("/auth/admin/schools");
 }
 
 export async function patchOrganizationSchool(
-  schoolId: string,
+  schoolId: string | number,
   payload: PatchSchoolPayload,
-): Promise<OrganizationSchoolSummary> {
-  return apiFetch<OrganizationSchoolSummary>(`/auth/admin/schools/${schoolId}`, {
+): Promise<SchoolSummary> {
+  return apiFetch<SchoolSummary>(`/auth/admin/schools/${schoolId}`, {
     method: "PATCH",
     body: JSON.stringify(payload),
   });
 }
 
-export async function deleteOrganizationSchool(schoolId: string): Promise<{ message: string }> {
+export async function deleteOrganizationSchool(schoolId: string | number): Promise<{ message: string }> {
   return apiFetch<{ message: string }>(`/auth/admin/schools/${schoolId}`, { method: "DELETE" });
 }
 
@@ -85,32 +98,32 @@ export async function createOrganizationSchoolAdmin(payload: CreateSchoolAdminPa
   });
 }
 
-export async function updateOrganizationUserStatus(userId: string, is_active: boolean): Promise<ApiUser> {
+export async function updateOrganizationUserStatus(userId: number, is_active: boolean): Promise<ApiUser> {
   return apiFetch<ApiUser>(`/auth/admin/users/${userId}/status`, {
     method: "PATCH",
     body: JSON.stringify({ is_active }),
   });
 }
 
-export async function updateOrganizationTutor(userId: string, payload: UpdateTutorPayload): Promise<ApiUser> {
+export async function updateOrganizationTutor(userId: number, payload: UpdateTutorPayload): Promise<ApiUser> {
   return apiFetch<ApiUser>(`/auth/admin/users/${userId}/tutor`, {
     method: "PATCH",
     body: JSON.stringify(payload),
   });
 }
 
-export async function deleteOrganizationTutor(userId: string): Promise<{ message: string }> {
+export async function deleteOrganizationTutor(userId: number): Promise<{ message: string }> {
   return apiFetch<{ message: string }>(`/auth/admin/users/${userId}/tutor`, { method: "DELETE" });
 }
 
-export async function updateOrganizationStudent(userId: string, payload: UpdateStudentPayload): Promise<ApiUser> {
+export async function updateOrganizationStudent(userId: number, payload: UpdateStudentPayload): Promise<ApiUser> {
   return apiFetch<ApiUser>(`/auth/admin/users/${userId}/student`, {
     method: "PATCH",
     body: JSON.stringify(payload),
   });
 }
 
-export async function deleteOrganizationStudent(userId: string): Promise<{ message: string }> {
+export async function deleteOrganizationStudent(userId: number): Promise<{ message: string }> {
   return apiFetch<{ message: string }>(`/auth/admin/users/${userId}/student`, { method: "DELETE" });
 }
 

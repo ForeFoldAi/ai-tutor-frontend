@@ -14,9 +14,11 @@ import type { SavedLessonPlan } from "@/modules/tutor/types/lesson-planner";
 
 interface SavedLessonPlansTableProps {
   plans: SavedLessonPlan[];
+  onOpen?: (plan: SavedLessonPlan) => void;
+  onDuplicate?: (plan: SavedLessonPlan) => void;
 }
 
-export function SavedLessonPlansTable({ plans }: SavedLessonPlansTableProps) {
+export function SavedLessonPlansTable({ plans, onOpen, onDuplicate }: SavedLessonPlansTableProps) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -26,58 +28,82 @@ export function SavedLessonPlansTable({ plans }: SavedLessonPlansTableProps) {
   }, [plans, page, pageSize]);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-xl border border-border/70 bg-card p-2 shadow-sm md:p-3">
-      <div className="shrink-0 px-1 pt-1">
-        <h2 className="text-lg font-bold text-blue-900 dark:text-blue-100">
+    <div className="overflow-hidden rounded-xl border border-border/70 bg-card">
+      <div className="shrink-0 border-b border-border/70 px-3 py-3">
+        <h2 className="text-base font-bold text-blue-900 dark:text-blue-100 sm:text-lg">
           Saved Lesson Plans ({plans.length})
         </h2>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto">
-        <Table>
+      <div className="overflow-x-auto">
+        <Table className="min-w-[720px] text-xs sm:min-w-[860px] sm:text-sm">
           <TableHeader>
             <TableRow className="hover:bg-transparent">
-              <TableHead className="h-9 py-2 font-semibold text-foreground">Title</TableHead>
-              <TableHead className="h-9 py-2 font-semibold text-foreground">Subject</TableHead>
-              <TableHead className="h-9 py-2 font-semibold text-foreground">Grade</TableHead>
-              <TableHead className="h-9 py-2 font-semibold text-foreground">Chapter</TableHead>
-              <TableHead className="h-9 py-2 font-semibold text-foreground">Last Updated</TableHead>
-              <TableHead className="h-9 py-2 text-right font-semibold text-foreground">Actions</TableHead>
+              <TableHead className="h-9 px-2 text-xs font-semibold text-foreground sm:px-3 sm:text-sm">
+                Title
+              </TableHead>
+              <TableHead className="h-9 px-2 text-xs font-semibold text-foreground sm:px-3 sm:text-sm">
+                Subject
+              </TableHead>
+              <TableHead className="h-9 px-2 text-xs font-semibold text-foreground sm:px-3 sm:text-sm">
+                Grade
+              </TableHead>
+              <TableHead className="h-9 px-2 text-xs font-semibold text-foreground sm:px-3 sm:text-sm">
+                Chapter
+              </TableHead>
+              <TableHead className="h-9 px-2 text-xs font-semibold text-foreground sm:px-3 sm:text-sm">
+                Last Updated
+              </TableHead>
+              <TableHead className="h-9 px-2 text-right text-xs font-semibold text-foreground sm:px-3 sm:text-sm">
+                Actions
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {paginatedPlans.map((plan) => (
               <TableRow key={plan.id}>
-                <TableCell className="py-2 text-sm font-medium text-foreground">{plan.title}</TableCell>
-                <TableCell className="py-2 text-sm">{plan.subject}</TableCell>
-                <TableCell className="py-2 text-sm">{plan.grade}</TableCell>
-                <TableCell className="py-2 text-sm">{plan.chapter}</TableCell>
-                <TableCell className="py-2 text-sm text-muted-foreground">{plan.lastUpdated}</TableCell>
-                <TableCell className="py-2 text-right">
-                  <div className="flex justify-end gap-1.5">
+                <TableCell className="whitespace-nowrap px-2 py-2 text-xs font-medium text-foreground sm:px-3 sm:text-sm">
+                  {plan.title}
+                </TableCell>
+                <TableCell className="whitespace-nowrap px-2 py-2 text-xs sm:px-3 sm:text-sm">
+                  {plan.subject}
+                </TableCell>
+                <TableCell className="whitespace-nowrap px-2 py-2 text-xs sm:px-3 sm:text-sm">
+                  {plan.grade}
+                </TableCell>
+                <TableCell className="whitespace-nowrap px-2 py-2 text-xs sm:px-3 sm:text-sm">
+                  {plan.chapter}
+                </TableCell>
+                <TableCell className="whitespace-nowrap px-2 py-2 text-xs text-muted-foreground sm:px-3 sm:text-sm">
+                  {plan.lastUpdated}
+                </TableCell>
+                <TableCell className="px-2 py-2 text-right sm:px-3">
+                  <div className="flex justify-end gap-1">
                     <Button
-                      size="sm"
+                      size="icon"
                       variant="ghost"
-                      className="h-8 gap-1 px-2 text-xs text-primary hover:bg-primary/10 hover:text-primary"
+                      className="h-8 w-8 text-primary hover:bg-primary/10 hover:text-primary"
+                      onClick={() => onOpen?.(plan)}
+                      aria-label={`Open ${plan.title}`}
                     >
                       <Eye className="h-3.5 w-3.5" />
-                      Open
                     </Button>
                     <Button
-                      size="sm"
+                      size="icon"
                       variant="ghost"
-                      className="h-8 gap-1 px-2 text-xs text-primary hover:bg-primary/10 hover:text-primary"
+                      className="h-8 w-8 text-primary hover:bg-primary/10 hover:text-primary"
+                      onClick={() => onDuplicate?.(plan)}
+                      aria-label={`Duplicate ${plan.title}`}
                     >
                       <Copy className="h-3.5 w-3.5" />
-                      Duplicate
                     </Button>
                     <Button
-                      size="sm"
+                      size="icon"
                       variant="ghost"
-                      className="h-8 gap-1 px-2 text-xs text-primary hover:bg-primary/10 hover:text-primary"
+                      className="h-8 w-8 text-primary hover:bg-primary/10 hover:text-primary"
+                      aria-label={`Use ${plan.title} in session`}
                     >
                       <MonitorPlay className="h-3.5 w-3.5" />
-                      Use in Session
                     </Button>
                   </div>
                 </TableCell>
@@ -87,17 +113,19 @@ export function SavedLessonPlansTable({ plans }: SavedLessonPlansTableProps) {
         </Table>
       </div>
 
-      <StudentsPagination
-        page={page}
-        pageSize={pageSize}
-        total={plans.length}
-        itemLabel="lesson plans"
-        onPageChange={setPage}
-        onPageSizeChange={(size) => {
-          setPageSize(size);
-          setPage(1);
-        }}
-      />
+      <div className="border-t border-border/70 px-3 py-3">
+        <StudentsPagination
+          page={page}
+          pageSize={pageSize}
+          total={plans.length}
+          itemLabel="lesson plans"
+          onPageChange={setPage}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setPage(1);
+          }}
+        />
+      </div>
     </div>
   );
 }

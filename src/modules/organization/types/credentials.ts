@@ -2,7 +2,12 @@ export type CredentialRole = "Teacher" | "Student";
 
 export type FirstLoginStatus = "Completed" | "Pending" | "Not Started";
 
-export type DeliveryStatus = "Email Sent" | "SMS Sent" | "Pending" | "Not Sent";
+export type DeliveryStatus =
+  | "Email Sent"
+  | "In Process"
+  | "Failed"
+  | "Not Sent"
+  | "Pending"; // legacy rows mapped from backend
 
 export interface CredentialCandidate {
   id: string;
@@ -30,6 +35,10 @@ export interface CredentialRecord {
   name: string;
   role: CredentialRole;
   userId: string;
+  grade: string | null;
+  section: string | null;
+  curriculum: string | null;
+  hasCredentials: boolean;
   credentialShared: string | null;
   firstLoginStatus: FirstLoginStatus;
   lastLogin: string | null;

@@ -5,6 +5,7 @@ import { useMasterAdminOverview } from "@/modules/master-admin/hooks/use-master-
 import { UserTable } from "@/modules/master-admin/components/user-table";
 import { DataState } from "@/modules/shared/components/data-state";
 import { Button } from "@/components/ui/button";
+import { invalidateManyAndBroadcast } from "@/lib/query-broadcast";
 
 export default function ManageTutorsPage() {
   const { usersQuery } = useMasterAdminOverview();
@@ -31,12 +32,12 @@ export default function ManageTutorsPage() {
         ],
       });
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["master-admin", "users"] }),
+    onSuccess: () => void invalidateManyAndBroadcast(qc, ["users", "teachers", "dashboard"]),
   });
 
   const toggleMutation = useMutation({
     mutationFn: (user: ApiUser) => patchUserStatus(user.id, !user.is_active),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["master-admin", "users"] }),
+    onSuccess: () => void invalidateManyAndBroadcast(qc, ["users", "teachers", "dashboard"]),
   });
 
   return (

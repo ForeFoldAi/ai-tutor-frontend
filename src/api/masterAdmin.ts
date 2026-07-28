@@ -11,8 +11,7 @@ import type {
   CreateStudentPayload,
   CreateTutorPayload,
   EmbeddingStatsApi,
-  OrganizationSchoolSummary,
-  OrganizationSignupPayload,
+  SchoolSummary,
   ProcessingStatusApi,
   ProcessResponseApi,
   SyllabusSubjectResponse,
@@ -23,20 +22,8 @@ export async function getAdminUsers(): Promise<ApiUser[]> {
   return apiFetch<ApiUser[]>("/auth/admin/users");
 }
 
-export async function getOrganizations(): Promise<ApiUser[]> {
-  const users = await getAdminUsers();
-  return users.filter((u) => u.role === "ORG_ADMIN");
-}
-
-export async function createOrganization(payload: OrganizationSignupPayload): Promise<{ message: string }> {
-  return apiFetch<{ message: string }>("/auth/signup/organization", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function getMasterAdminSchools(): Promise<OrganizationSchoolSummary[]> {
-  return apiFetch<OrganizationSchoolSummary[]>("/auth/admin/schools");
+export async function getMasterAdminSchools(): Promise<SchoolSummary[]> {
+  return apiFetch<SchoolSummary[]>("/auth/admin/schools");
 }
 
 export async function createTutor(payload: CreateTutorPayload): Promise<ApiUser> {
@@ -60,7 +47,7 @@ export async function createSchoolAdmin(payload: CreateSchoolAdminPayload): Prom
   });
 }
 
-export async function patchUserStatus(userId: string, is_active: boolean): Promise<ApiUser> {
+export async function patchUserStatus(userId: number, is_active: boolean): Promise<ApiUser> {
   return apiFetch<ApiUser>(`/auth/admin/users/${userId}/status`, {
     method: "PATCH",
     body: JSON.stringify({ is_active }),

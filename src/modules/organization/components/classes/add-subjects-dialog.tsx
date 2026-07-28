@@ -11,17 +11,58 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 
 const subjectRowSchema = z.object({
-  name: z.string().min(2, "Name required"),
-  code: z.string().min(1, "Code required"),
+  name: z.string(),
+  code: z.string(),
 });
 
-const addSubjectsSchema = z.object({
-  subjects: z.array(subjectRowSchema).min(1, "Add at least one subject"),
-});
+const addSubjectsSchema = z
+  .object({
+    subjects: z.array(subjectRowSchema).min(1, "Add at least one subject"),
+  })
+  .superRefine((data, ctx) => {
+    const codes = new Set<string>();
+    data.subjects.forEach((row, index) => {
+      const name = row.name.trim();
+      const code = row.code.trim().toUpperCase();
+      if (!name && !code) return;
+      if (!name || !code) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: !name ? "Name required (min 2 characters)" : "Code required",
+          path: !name ? ["subjects", index, "name"] : ["subjects", index, "code"],
+        });
+        return;
+      }
+      if (name.length < 2) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Name must be at least 2 characters",
+          path: ["subjects", index, "name"],
+        });
+        return;
+      }
+      if (codes.has(code)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Duplicate code in this form",
+          path: ["subjects", index, "code"],
+        });
+      }
+      codes.add(code);
+    });
+    const filled = data.subjects.filter((row) => row.name.trim() && row.code.trim());
+    if (filled.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Add at least one subject with name and code",
+        path: ["subjects"],
+      });
+    }
+  });
 
 export type AddSubjectsFormValues = z.infer<typeof addSubjectsSchema>;
 
@@ -29,9 +70,10 @@ interface AddSubjectsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: (values: AddSubjectsFormValues) => void;
+  isSubmitting?: boolean;
 }
 
-export function AddSubjectsDialog({ open, onOpenChange, onSubmit }: AddSubjectsDialogProps) {
+export function AddSubjectsDialog({ open, onOpenChange, onSubmit, isSubmitting }: AddSubjectsDialogProps) {
   const form = useForm<AddSubjectsFormValues>({
     resolver: zodResolver(addSubjectsSchema),
     defaultValues: { subjects: [{ name: "", code: "" }] },
@@ -60,12 +102,14 @@ export function AddSubjectsDialog({ open, onOpenChange, onSubmit }: AddSubjectsD
           <form
             className="space-y-4 pt-2"
             onSubmit={form.handleSubmit((values) => {
-              onSubmit({
-                subjects: values.subjects.map((row) => ({
+              const subjects = values.subjects
+                .map((row) => ({
                   name: row.name.trim(),
                   code: row.code.trim().toUpperCase(),
-                })),
-              });
+                }))
+                .filter((row) => row.name && row.code);
+              if (subjects.length === 0) return;
+              onSubmit({ subjects });
             })}
           >
             <div className="grid grid-cols-[1fr_1fr_auto] gap-x-3 gap-y-1 border-b border-border/60 pb-2">
@@ -132,7 +176,9 @@ export function AddSubjectsDialog({ open, onOpenChange, onSubmit }: AddSubjectsD
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
-              <Button type="submit">Add subjects</Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting ? "Saving…" : "Add subjects"}
+              </Button>
             </div>
           </form>
         </Form>

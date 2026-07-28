@@ -26,7 +26,7 @@ const roleMap: Record<string, string> = {
   STUDENT: UserRole.STUDENT,
   TUTOR: UserRole.TUTOR,
   SCHOOL_ADMIN: UserRole.SCHOOL_ADMIN,
-  ORG_ADMIN: UserRole.ORG_ADMIN,
+  ORG_ADMIN: UserRole.SCHOOL_ADMIN,
   MASTER_ADMIN: UserRole.MASTER_ADMIN,
 };
 
@@ -74,22 +74,24 @@ export default function LoginPage() {
         full_name: string;
         email: string;
         role: string;
-        organization_id: string | null;
         school_id: string | null;
+        created_by?: string | number | null;
         teaching_board?: string | null;
+        teaching_subjects?: string[] | null;
         teaching_classes?: { grade: string; sections: string[] }[] | null;
       };
 
       const mappedUser = {
-        id: me.id,
+        id: String(me.id),
         username: me.email.split("@")[0],
         email: me.email,
         fullName: me.full_name,
         role: roleMap[me.role] || UserRole.STUDENT,
         avatar: null,
-        organizationId: me.organization_id,
-        schoolId: me.school_id,
+        schoolId: me.school_id != null ? String(me.school_id) : null,
+        createdBy: me.created_by != null ? String(me.created_by) : null,
         teachingBoard: me.teaching_board ?? null,
+        teachingSubjects: me.teaching_subjects ?? null,
         teachingClasses: me.teaching_classes ?? null,
       };
 
@@ -192,12 +194,8 @@ export default function LoginPage() {
               <button
                 type="button"
                 className="text-sm font-medium text-primary transition-colors hover:text-primary-hover"
-                onClick={() =>
-                  toast({
-                    title: "Coming soon",
-                    description: "Password reset will be available shortly.",
-                  })
-                }
+                onClick={() => navigate("/forgot-password")}
+                data-testid="link-forgot-password"
               >
                 Forgot Password?
               </button>

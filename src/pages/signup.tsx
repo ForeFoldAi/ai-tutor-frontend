@@ -11,6 +11,7 @@ import {
   StudentSignupWizard,
   TeacherSignupWizard,
 } from "@/components/auth/signup/signup-wizards";
+import { SignupOptionsProvider } from "@/components/auth/signup/signup-options-context";
 
 const MOBILE_ACCOUNT_OPTIONS: { id: SignupAccountType; title: string; icon: typeof GraduationCap }[] = [
   { id: "student", title: "Student", icon: GraduationCap },
@@ -22,7 +23,8 @@ export default function SignupPage() {
   const [accountType, setAccountType] = useState<SignupAccountType>("student");
 
   return (
-    <SignupShell accountType={accountType} onAccountTypeChange={setAccountType}>
+    <SignupOptionsProvider>
+      <SignupShell accountType={accountType} onAccountTypeChange={setAccountType}>
       <div className="mb-4 flex gap-2 lg:hidden">
         {MOBILE_ACCOUNT_OPTIONS.map(({ id, title, icon: Icon }) => {
           const selected = accountType === id;
@@ -47,6 +49,7 @@ export default function SignupPage() {
       {accountType === "student" && <StudentSignupWizard key="student" />}
       {accountType === "teacher" && <TeacherSignupWizard key="teacher" />}
       {accountType === "school" && <SchoolSignupWizard key="school" />}
-    </SignupShell>
+      </SignupShell>
+    </SignupOptionsProvider>
   );
 }

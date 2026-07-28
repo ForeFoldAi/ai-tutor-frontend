@@ -19,6 +19,8 @@ interface ImportStudentsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onImport: (rows: AddStudentRowValues[]) => void;
+  /** When true, only the dialog content is rendered (open via onOpenChange). */
+  hideTrigger?: boolean;
 }
 
 function downloadStudentsTemplate() {
@@ -67,7 +69,12 @@ function parseStudentImport(text: string): { rows: AddStudentRowValues[]; error?
   return { rows: parsed };
 }
 
-export function ImportStudentsDialog({ open, onOpenChange, onImport }: ImportStudentsDialogProps) {
+export function ImportStudentsDialog({
+  open,
+  onOpenChange,
+  onImport,
+  hideTrigger = false,
+}: ImportStudentsDialogProps) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -97,15 +104,17 @@ export function ImportStudentsDialog({ open, onOpenChange, onImport }: ImportStu
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogTrigger asChild>
-        <Button
-          variant="outline"
-          className="h-10 shrink-0 gap-2 whitespace-nowrap !border !border-slate-300 bg-background hover:!border-slate-400"
-        >
-          <Download className="h-4 w-4" />
-          Import
-        </Button>
-      </DialogTrigger>
+      {!hideTrigger ? (
+        <DialogTrigger asChild>
+          <Button
+            variant="outline"
+            className="h-9 shrink-0 gap-1.5 whitespace-nowrap px-3 text-sm !border !border-slate-300 bg-background hover:!border-slate-400 sm:h-10 sm:gap-2"
+          >
+            <Download className="h-4 w-4" />
+            Import
+          </Button>
+        </DialogTrigger>
+      ) : null}
 
       <DialogContent className="max-w-lg gap-0 p-0">
         <DialogHeader className="space-y-0 border-b border-border px-6 py-5 pr-12">

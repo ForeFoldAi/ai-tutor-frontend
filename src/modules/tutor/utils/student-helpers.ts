@@ -1,95 +1,61 @@
-import type { ApiUser } from "@/api/types";
 import type {
   RiskLevel,
   StudentFilters,
   TutorStudentProfile,
+  TutorStudentProfileApi,
   TutorStudentRow,
+  TutorStudentRowApi,
 } from "@/modules/tutor/types/student-profile";
-import { DEMO_TUTOR_STUDENTS } from "@/modules/tutor/data/demo-students";
 
-const SUBJECTS = ["Mathematics", "Science", "English"] as const;
-
-function hashString(value: string) {
-  let hash = 0;
-  for (let i = 0; i < value.length; i += 1) {
-    hash = (hash << 5) - hash + value.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash);
-}
-
-function slugifyName(name: string) {
-  return name.trim().toLowerCase().replace(/\s+/g, "-");
-}
-
-function riskFromCompletion(completion: number): RiskLevel {
-  if (completion >= 70) return "Low";
-  if (completion >= 45) return "Medium";
-  return "High";
-}
-
-function mapApiUserToRow(user: ApiUser, index: number): TutorStudentRow {
-  const grade = user.teaching_classes?.[0]?.grade ?? "6";
-  const section = user.teaching_classes?.[0]?.sections?.[0] ?? "A";
-  const hash = hashString(user.id);
-  const completion = 30 + (hash % 65);
-  const subject = SUBJECTS[hash % SUBJECTS.length];
-
+export function mapTutorStudentRow(row: TutorStudentRowApi): TutorStudentRow {
+  const key = (row.risk_level || "Not Started").trim().toLowerCase().replace(/_/g, " ");
+  const riskLevel: RiskLevel =
+    key === "not started"
+      ? "Not Started"
+      : key === "high"
+        ? "High"
+        : key === "medium"
+          ? "Medium"
+          : key === "low"
+            ? "Low"
+            : "Not Started";
   return {
-    id: user.id,
-    slug: slugifyName(user.full_name),
-    fullName: user.full_name,
-    grade,
-    section,
-    subject,
-    completion,
-    riskLevel: riskFromCompletion(completion),
-    lastActive: user.is_active ? "Recently active" : "Inactive",
-    userId: user.email.split("@")[0] ?? slugifyName(user.full_name).replace(/-/g, "."),
+    id: String(row.id),
+    slug: row.slug || String(row.id),
+    fullName: row.full_name,
+    grade: row.grade ?? "",
+    section: row.section ?? "",
+    curriculum: row.curriculum ?? "",
+    gradeLabel: row.grade_label || "—",
+    subjects: row.subjects ?? [],
+    subject: (row.subjects ?? []).join(", ") || "—",
+    completion: row.completion ?? 0,
+    riskLevel,
+    lastActive: row.last_active ?? "Never",
+    userId: row.user_id,
+    isActive: row.is_active,
   };
 }
 
-function buildProfileFromRow(row: TutorStudentRow): TutorStudentProfile {
-  const demoMatch = DEMO_TUTOR_STUDENTS.find(
-    (student) => student.slug === row.slug || student.fullName === row.fullName,
-  );
-  if (demoMatch) return { ...demoMatch, ...row, id: row.id };
-
+export function mapTutorStudentProfile(api: TutorStudentProfileApi): TutorStudentProfile {
+  const row = mapTutorStudentRow(api);
   return {
     ...row,
-    currentTopic: row.subject,
-    overallProgress: row.completion,
-    strengths: [{ name: row.subject, score: Math.min(row.completion + 5, 95) }],
-    needsImprovement: [{ name: "Practice Topics", score: Math.max(row.completion - 20, 15) }],
-    aiActivity: [{ title: `AI session on ${row.subject}`, when: row.lastActive }],
-    averageQuizScore: Math.max(row.completion - 10, 20),
-    quizTrend: row.riskLevel === "Low" ? 8 : row.riskLevel === "Medium" ? 2 : -6,
-    recentQuizzes: [{ name: `${row.subject} Quiz`, score: row.completion }],
-    assignments: [
-      {
-        title: `${row.subject} Worksheet`,
-        due: "May 18, 2024",
-        status: row.completion >= 70 ? "Completed" : row.completion >= 45 ? "In Progress" : "Not Started",
-      },
-    ],
-    teacherNotes: `${row.fullName} is assigned to Grade ${row.grade} Section ${row.section}. Monitor ${row.subject} progress regularly.`,
-    notesUpdated: "Recently",
+    currentTopic: api.current_topic ?? row.subject,
+    overallProgress: api.overall_progress ?? row.completion,
+    strengths: api.strengths ?? [],
+    needsImprovement: api.needs_improvement ?? [],
+    aiActivity: api.ai_activity ?? [],
+    averageQuizScore: api.average_quiz_score ?? 0,
+    quizTrend: api.quiz_trend ?? 0,
+    recentQuizzes: api.recent_quizzes ?? [],
+    assignments: (api.assignments ?? []).map((a) => ({
+      ...a,
+      status: a.status as TutorStudentProfile["assignments"][number]["status"],
+    })),
+    teacherNotes: api.teacher_notes ?? "",
+    notesUpdated: api.notes_updated ?? "",
   };
-}
-
-export function mergeTutorStudents(apiStudents: ApiUser[]): TutorStudentRow[] {
-  const apiRows = apiStudents.map(mapApiUserToRow);
-  if (apiRows.length > 0) return apiRows;
-  return DEMO_TUTOR_STUDENTS;
-}
-
-export function getStudentProfile(students: TutorStudentRow[], slug: string): TutorStudentProfile | null {
-  const row = students.find((student) => student.slug === slug);
-  if (!row) {
-    const demo = DEMO_TUTOR_STUDENTS.find((student) => student.slug === slug);
-    return demo ?? null;
-  }
-  return buildProfileFromRow(row);
 }
 
 export function filterStudents(students: TutorStudentRow[], filters: StudentFilters) {
@@ -97,9 +63,14 @@ export function filterStudents(students: TutorStudentRow[], filters: StudentFilt
 
   return students.filter((student) => {
     if (filters.grade !== "all" && student.grade !== filters.grade) return false;
-    if (filters.subject !== "all" && student.subject !== filters.subject) return false;
+    if (filters.subject !== "all") {
+      const want = filters.subject.toLowerCase();
+      if (!student.subjects.some((s) => s.toLowerCase() === want)) return false;
+    }
     if (filters.riskLevel !== "all" && student.riskLevel !== filters.riskLevel) return false;
-    if (query && !student.fullName.toLowerCase().includes(query)) return false;
+    if (query && !student.fullName.toLowerCase().includes(query) && !student.userId.toLowerCase().includes(query)) {
+      return false;
+    }
     return true;
   });
 }
@@ -112,6 +83,8 @@ export function completionBarClass(completion: number) {
 
 export function riskBadgeClass(risk: RiskLevel) {
   switch (risk) {
+    case "Not Started":
+      return "border-slate-200 bg-slate-50 text-slate-600";
     case "Low":
       return "border-emerald-200 bg-emerald-50 text-emerald-700";
     case "Medium":

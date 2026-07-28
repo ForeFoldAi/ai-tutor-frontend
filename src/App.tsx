@@ -5,14 +5,18 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/lib/theme-provider";
 import { useAuthStore } from "@/lib/auth-store";
+import { useLiveQuerySync } from "@/hooks/use-live-query-sync";
 import { AppLayout } from "@/components/app-layout";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
+import ForgotPasswordPage from "@/pages/forgot-password";
 import SignupPage from "@/pages/signup";
 import DashboardPage from "@/pages/dashboard";
 import AILearningStudioPage from "@/pages/ai-learning-studio";
 import MyLearningPage from "@/pages/my-learning";
 import AITutorPage from "@/pages/ai-tutor";
+import AiTutorAgentPage from "@/pages/ai-tutor-agent";
+import AskAiTutorPage from "@/pages/ask-ai-tutor";
 import AssignmentsPage from "@/pages/assignments";
 import LiveClassesPage from "@/pages/live-classes";
 import SettingsPage from "@/pages/settings";
@@ -20,9 +24,9 @@ import UsersPage from "@/pages/users";
 import SyllabusPage from "@/pages/syllabus";
 import AIVoicePage from "@/pages/ai-voice";
 import { getDashboardPath } from "@/lib/dashboard-routes";
+import { isIndividualStudent } from "@/lib/app-nav-items";
 import { UserRole, type UserRoleType } from "@/types/schema";
 import MasterAdminDashboardModulePage from "@/modules/master-admin/pages/dashboard-page";
-import ManageOrganizationsPage from "@/modules/master-admin/pages/manage-organizations-page";
 import MasterAdminSchoolsPage from "@/modules/master-admin/pages/schools-page";
 import MasterAdminUsersPage from "@/modules/master-admin/pages/users-page";
 import MasterAdminBoardsSyllabusPage from "@/modules/master-admin/pages/boards-syllabus-page";
@@ -34,13 +38,10 @@ import ManageTutorsPage from "@/modules/master-admin/pages/manage-tutors-page";
 import ManageStudentsPage from "@/modules/master-admin/pages/manage-students-page";
 import MasterAdminReportsPage from "@/modules/master-admin/pages/reports-page";
 import MasterAdminSettingsPage from "@/modules/master-admin/pages/settings-page";
-import OrganizationDashboardPage from "@/modules/organization/pages/dashboard-page";
-import OrganizationManageSchoolsPage from "@/modules/organization/pages/manage-schools-page";
 import OrganizationManageTutorsPage from "@/modules/organization/pages/manage-tutors-page";
 import OrganizationManageStudentsPage from "@/modules/organization/pages/manage-students-page";
 import OrganizationManageClassesPage from "@/modules/organization/pages/manage-classes-page";
 import OrganizationCredentialsPage from "@/modules/organization/pages/credentials-page";
-import OrganizationReportsPage from "@/modules/organization/pages/reports-page";
 import OrganizationSettingsPage from "@/modules/organization/pages/settings-page";
 import TutorDashboardModulePage from "@/modules/tutor/pages/dashboard-page";
 import TutorAssignedStudentsPage from "@/modules/tutor/pages/assigned-students-page";
@@ -50,6 +51,7 @@ import TutorLessonPlannerPage from "@/modules/tutor/pages/lesson-planner-page";
 import TutorAIInsightsPage from "@/modules/tutor/pages/ai-insights-page";
 import TutorProgressTrackingPage from "@/modules/tutor/pages/progress-tracking-page";
 import TutorProfileSettingsPage from "@/modules/tutor/pages/profile-settings-page";
+import AssignmentTakePage from "@/pages/assignment-take";
 
 function normalizeRole(value: string | undefined | null): string {
   return String(value || "").toLowerCase();
@@ -90,6 +92,32 @@ function RoleRoute({
   return <AppLayout>{children}</AppLayout>;
 }
 
+/** School- or tutor-tagged students only — hides Session/Assignments for public signup. */
+function TaggedStudentRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, user } = useAuthStore();
+  if (!isAuthenticated) return <Redirect to="/login" />;
+  if (normalizeRole(user?.role) !== normalizeRole(UserRole.STUDENT)) {
+    return <Redirect to={getDashboardPath(user?.role)} />;
+  }
+  if (isIndividualStudent(user?.role, user?.schoolId, user?.createdBy)) {
+    return <Redirect to={getDashboardPath(user?.role)} />;
+  }
+  return <AppLayout>{children}</AppLayout>;
+}
+
+/** School admin, or individual tutor (no school) — not school-tagged tutors. */
+function SchoolAdminOrIndividualTutorRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, user } = useAuthStore();
+  if (!isAuthenticated) return <Redirect to="/login" />;
+  const role = normalizeRole(user?.role);
+  const individualTutor =
+    role === normalizeRole(UserRole.TUTOR) && (user?.schoolId == null || user.schoolId === "");
+  if (role === normalizeRole(UserRole.SCHOOL_ADMIN) || individualTutor) {
+    return <AppLayout>{children}</AppLayout>;
+  }
+  return <Redirect to={getDashboardPath(user?.role)} />;
+}
+
 function Router() {
   return (
     <Switch>
@@ -100,6 +128,12 @@ function Router() {
       <Route path="/login">
         <PublicRoute>
           <LoginPage />
+        </PublicRoute>
+      </Route>
+
+      <Route path="/forgot-password">
+        <PublicRoute>
+          <ForgotPasswordPage />
         </PublicRoute>
       </Route>
       
@@ -133,6 +167,27 @@ function Router() {
         </ProtectedRoute>
       </Route>
       
+      <Route path="/ask-ai-tutor">
+        <ProtectedRoute>
+          <AskAiTutorPage />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/ai-tutor/ask">
+        <ProtectedRoute>
+          <AiTutorAgentPage />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/ai-tutor/practice">
+        <ProtectedRoute>
+          <AiTutorAgentPage />
+        </ProtectedRoute>
+      </Route>
+      <Route path="/ai-tutor/explain">
+        <ProtectedRoute>
+          <AiTutorAgentPage />
+        </ProtectedRoute>
+      </Route>
       <Route path="/ai-tutor">
         <ProtectedRoute>
           <AITutorPage />
@@ -151,10 +206,16 @@ function Router() {
         </ProtectedRoute>
       </Route>
       
+      <Route path="/assignments/:id">
+        <TaggedStudentRoute>
+          <AssignmentTakePage />
+        </TaggedStudentRoute>
+      </Route>
+
       <Route path="/assignments">
-        <ProtectedRoute>
+        <TaggedStudentRoute>
           <AssignmentsPage />
-        </ProtectedRoute>
+        </TaggedStudentRoute>
       </Route>
       
       <Route path="/analytics">
@@ -164,15 +225,15 @@ function Router() {
       </Route>
       
       <Route path="/live-classes">
-        <ProtectedRoute>
+        <TaggedStudentRoute>
           <LiveClassesPage />
-        </ProtectedRoute>
+        </TaggedStudentRoute>
       </Route>
       
       <Route path="/my-classes">
-        <ProtectedRoute>
+        <TaggedStudentRoute>
           <LiveClassesPage />
-        </ProtectedRoute>
+        </TaggedStudentRoute>
       </Route>
       
       <Route path="/settings">
@@ -200,14 +261,20 @@ function Router() {
       </Route>
 
       <Route path="/classes">
-        <RoleRoute roles={[UserRole.SCHOOL_ADMIN]}>
+        <SchoolAdminOrIndividualTutorRoute>
           <OrganizationManageClassesPage />
-        </RoleRoute>
+        </SchoolAdminOrIndividualTutorRoute>
       </Route>
 
       <Route path="/credentials">
-        <RoleRoute roles={[UserRole.SCHOOL_ADMIN]}>
+        <SchoolAdminOrIndividualTutorRoute>
           <OrganizationCredentialsPage />
+        </SchoolAdminOrIndividualTutorRoute>
+      </Route>
+
+      <Route path="/school-settings">
+        <RoleRoute roles={[UserRole.SCHOOL_ADMIN]}>
+          <OrganizationSettingsPage />
         </RoleRoute>
       </Route>
       
@@ -248,11 +315,6 @@ function Router() {
       <Route path="/master-admin/">
         <RoleRoute roles={[UserRole.MASTER_ADMIN]}>
           <Redirect to="/master-admin/dashboard" />
-        </RoleRoute>
-      </Route>
-      <Route path="/master-admin/organizations">
-        <RoleRoute roles={[UserRole.MASTER_ADMIN]}>
-          <ManageOrganizationsPage />
         </RoleRoute>
       </Route>
       <Route path="/master-admin/schools">
@@ -307,43 +369,12 @@ function Router() {
         </RoleRoute>
       </Route>
 
-      <Route path="/organization/dashboard">
-        <RoleRoute roles={[UserRole.ORG_ADMIN]}>
-          <OrganizationDashboardPage />
-        </RoleRoute>
-      </Route>
-      <Route path="/organization/tutors">
-        <RoleRoute roles={[UserRole.ORG_ADMIN]}>
-          <OrganizationManageTutorsPage />
-        </RoleRoute>
-      </Route>
-      <Route path="/organization/schools">
-        <RoleRoute roles={[UserRole.ORG_ADMIN]}>
-          <OrganizationManageSchoolsPage />
-        </RoleRoute>
-      </Route>
-      <Route path="/organization/students">
-        <RoleRoute roles={[UserRole.ORG_ADMIN]}>
-          <OrganizationManageStudentsPage />
-        </RoleRoute>
-      </Route>
-      <Route path="/organization/reports">
-        <RoleRoute roles={[UserRole.ORG_ADMIN]}>
-          <OrganizationReportsPage />
-        </RoleRoute>
-      </Route>
-      <Route path="/organization/settings">
-        <RoleRoute roles={[UserRole.ORG_ADMIN]}>
-          <OrganizationSettingsPage />
-        </RoleRoute>
-      </Route>
-
       <Route path="/tutor/dashboard">
         <RoleRoute roles={[UserRole.TUTOR]}>
           <TutorDashboardModulePage />
         </RoleRoute>
       </Route>
-      <Route path="/tutor/students/:slug">
+      <Route path="/tutor/students/:studentId">
         <RoleRoute roles={[UserRole.TUTOR]}>
           <TutorStudentProfilePage />
         </RoleRoute>
@@ -362,6 +393,9 @@ function Router() {
         <RoleRoute roles={[UserRole.TUTOR]}>
           <TutorLessonPlannerPage />
         </RoleRoute>
+      </Route>
+      <Route path="/tutor/student-results">
+        <Redirect to="/tutor/progress?tab=results" />
       </Route>
       <Route path="/tutor/ai-insights">
         <RoleRoute roles={[UserRole.TUTOR]}>
@@ -387,12 +421,18 @@ function Router() {
   );
 }
 
+function LiveQuerySync() {
+  useLiveQuerySync();
+  return null;
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <TooltipProvider>
           <Toaster />
+          <LiveQuerySync />
           <Router />
         </TooltipProvider>
       </ThemeProvider>

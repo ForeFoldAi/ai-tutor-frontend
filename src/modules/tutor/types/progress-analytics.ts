@@ -21,6 +21,7 @@ export interface CompletionTrendPoint {
 
 export interface AtRiskStudent {
   id: string;
+  slug?: string;
   name: string;
   grade: string;
   subject: string;

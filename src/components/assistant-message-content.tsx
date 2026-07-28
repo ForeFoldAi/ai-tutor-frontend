@@ -261,8 +261,13 @@ export function shouldUseSubtopicSectionLayout(
   content: string,
   images: RelatedTextbookImage[],
 ): boolean {
+  const trimmed = content.trim();
+  // Chapter-awareness a/b/c menus use many **bold** spans — not subtopic sections.
+  if (trimmed.includes("How would you like to continue?")) {
+    return false;
+  }
   const knownTitles = images.map((i) => i.subtopic?.trim() || "").filter(Boolean);
-  const blocks = splitSubtopicBlocks(content.trim(), knownTitles);
+  const blocks = splitSubtopicBlocks(trimmed, knownTitles);
   return blocks.length >= 2 && blocks.every((b) => b.title.length > 0);
 }
 

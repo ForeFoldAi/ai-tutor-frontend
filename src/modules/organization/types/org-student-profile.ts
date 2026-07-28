@@ -1,7 +1,9 @@
 import type { ApiUser } from "@/api/types";
+import type { StudentRecord } from "@/api/types";
 
 export type LearningType = "Teacher Guided" | "Self Learning";
-export type PasswordStatus = "Set" | "Not Set";
+export type PasswordStatus = "Not Set" | "Generated" | "Logged In";
+export type StudentActiveStatus = "Active" | "Inactive";
 
 export interface SchoolStudentFilters {
   search: string;
@@ -24,5 +26,9 @@ export interface SchoolStudentRow {
   learningType: LearningType;
   learningTeacher: string | null;
   passwordStatus: PasswordStatus;
+  status: StudentActiveStatus;
+  /** Legacy org-admin user payload */
   source?: ApiUser;
+  /** School-admin students API record */
+  record?: StudentRecord;
 }

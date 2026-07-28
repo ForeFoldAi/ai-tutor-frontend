@@ -133,7 +133,7 @@ export default function OrganizationManageSchoolsPage() {
   });
 
   const addAdminMutation = useMutation({
-    mutationFn: (args: AddAdminFormValues & { schoolId: string }) =>
+    mutationFn: (args: AddAdminFormValues & { schoolId: number }) =>
       createOrganizationSchoolAdmin({
         full_name: args.full_name,
         email: args.email,
@@ -150,7 +150,7 @@ export default function OrganizationManageSchoolsPage() {
   });
 
   const editSchoolMutation = useMutation({
-    mutationFn: async (args: { schoolId: string; values: EditSchoolFormValues }) => {
+    mutationFn: async (args: { schoolId: number; values: EditSchoolFormValues }) => {
       const { schoolId, values } = args;
       const body: PatchSchoolPayload = {
         name: values.school_name.trim(),

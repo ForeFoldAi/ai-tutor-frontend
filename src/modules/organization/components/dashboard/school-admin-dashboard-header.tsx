@@ -1,19 +1,17 @@
-import { useState } from "react";
-import { Link, useLocation } from "wouter";
-import { Bell, ChevronDown, LogOut, Moon, Search, Settings, Sun } from "lucide-react";
+import { useLocation } from "wouter";
+import { ChevronDown, LogOut, Moon, Settings, Sun } from "lucide-react";
 import { useAuthStore } from "@/lib/auth-store";
 import { useTheme } from "@/lib/theme-provider";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { NotificationBell } from "@/components/notification-bell";
+import { GlobalSearchInput } from "@/modules/search";
 
 interface SchoolAdminDashboardHeaderProps {
   welcomeName: string;
@@ -28,7 +26,6 @@ export function SchoolAdminDashboardHeader({ welcomeName }: SchoolAdminDashboard
   const { user, logout } = useAuthStore();
   const { theme, toggleTheme } = useTheme();
   const [, setLocation] = useLocation();
-  const [searchQuery, setSearchQuery] = useState("");
 
   const displayName = user?.fullName ?? "School Admin";
   const initials =
@@ -53,18 +50,11 @@ export function SchoolAdminDashboardHeader({ welcomeName }: SchoolAdminDashboard
         <p className="mt-1 text-sm text-muted-foreground">Here&apos;s an overview of your school.</p>
       </div>
 
-      <div className="flex w-full flex-wrap items-center gap-2 sm:gap-3 xl:w-auto xl:justify-end">
-        <div className="relative min-w-[180px] flex-1 sm:min-w-[220px] sm:max-w-xs xl:w-64 xl:flex-none">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="search"
-            placeholder="Search teachers, students..."
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            className="h-10 rounded-full border border-border bg-background pl-9 shadow-sm"
-            data-testid="school-admin-dashboard-search"
-          />
-        </div>
+      <div className="hidden w-full flex-wrap items-center gap-2 sm:gap-3 lg:flex xl:w-auto xl:justify-end">
+        <GlobalSearchInput
+          placeholder="Search teachers, students..."
+          data-testid="school-admin-dashboard-search"
+        />
 
         <Button
           variant="outline"
@@ -81,16 +71,10 @@ export function SchoolAdminDashboardHeader({ welcomeName }: SchoolAdminDashboard
           )}
         </Button>
 
-        <Button
-          variant="outline"
-          size="icon"
-          className={headerIconButtonClass}
-          aria-label="Notifications"
+        <NotificationBell
+          buttonClassName={headerIconButtonClass}
           data-testid="school-admin-dashboard-notifications"
-        >
-          <Bell className="h-4 w-4 text-muted-foreground" />
-          <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-background" />
-        </Button>
+        />
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -124,13 +108,14 @@ export function SchoolAdminDashboardHeader({ welcomeName }: SchoolAdminDashboard
               </div>
             </div>
             <div className="p-1">
-              <DropdownMenuItem asChild>
-                <Link href="/settings" className="cursor-pointer">
-                  <Settings className="mr-2 h-4 w-4" />
-                  Settings
-                </Link>
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onClick={() => setLocation("/school-settings")}
+                data-testid="school-admin-dashboard-settings"
+              >
+                <Settings className="mr-2 h-4 w-4" />
+                Settings
               </DropdownMenuItem>
-              <DropdownMenuSeparator />
               <DropdownMenuItem
                 className="cursor-pointer text-rose-600 focus:text-rose-600"
                 onClick={handleSignOut}

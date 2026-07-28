@@ -1,12 +1,14 @@
-import { useForm } from "react-hook-form";
+import { useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useForm, type FieldErrors } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { CalendarIcon, Info, Plus, X } from "lucide-react";
+import { CalendarIcon, Link2, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -14,7 +16,6 @@ import {
 import {
   Form,
   FormControl,
-  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -29,30 +30,44 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { SESSION_STUDENT_OPTIONS } from "@/modules/tutor/data/demo-sessions";
+import { getMyProfile } from "@/api/profile";
+import { useAuthStore } from "@/lib/auth-store";
+import { resolveClassCurriculum, classOptionLabel } from "@/lib/teaching-curriculum";
+import { getTutorStudentOptions } from "@/api/tutor";
+import { useLessonPlannerCatalog } from "@/modules/tutor/hooks/use-lesson-planner-catalog";
+import { useToast } from "@/hooks/use-toast";
 import type { CreateSessionFormValues } from "@/modules/tutor/types/sessions";
 
 const createSessionSchema = z.object({
-  title: z.string().min(2, "Enter a topic or title"),
+  title: z.string().trim().min(2, "Enter a topic or title"),
   subject: z.string().min(1, "Select a subject"),
-  studentIds: z.array(z.string()).min(1, "Select at least one student"),
-  grade: z.string().min(1, "Select a grade"),
+  chapterId: z.string().default(""),
+  chapter: z.string().default(""),
+  classKey: z.string().min(1, "Select a class"),
+  grade: z.string().min(1, "Select a class"),
+  section: z.string().min(1, "Select a class"),
+  curriculum: z.string().default(""),
   date: z.string().min(1, "Pick a date"),
   startTime: z.string().min(1, "Pick a start time"),
   durationMinutes: z.coerce.number().min(15).max(240),
-  mode: z.enum(["video", "ai-guided", "hybrid"]),
-  generateAiLessonKit: z.boolean(),
-  notes: z.string().optional(),
+  meetingLink: z.string().default(""),
+  notes: z.string().default(""),
+}).superRefine((data, ctx) => {
+  if (!data.chapterId.trim() && !data.chapter.trim()) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Select a chapter",
+      path: ["chapterId"],
+    });
+  }
+  const link = data.meetingLink.trim();
+  if (link && !/^https?:\/\/.+/i.test(link)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Enter a valid Google Meet or Zoom link",
+      path: ["meetingLink"],
+    });
+  }
 });
 
 interface CreateSessionDialogProps {
@@ -60,14 +75,35 @@ interface CreateSessionDialogProps {
   onOpenChange: (open: boolean) => void;
   onSubmit: (values: CreateSessionFormValues) => void;
   isPending?: boolean;
+  /** When set, dialog opens in edit mode with these values. */
+  initialValues?: CreateSessionFormValues | null;
+  showTrigger?: boolean;
 }
 
-const DEFAULT_STUDENT_IDS = ["rahul-sharma", "priya-reddy", "aarav-patel", "kiran-kumar", "sneha-iyer", "meera-singh"];
+const EMPTY_CLASSES: { grade: string; sections: string[]; curriculum?: string | null }[] = [];
 
 function defaultDateValue() {
-  const d = new Date();
-  d.setDate(d.getDate() + 2);
-  return d.toISOString().slice(0, 10);
+  const date = new Date();
+  const offset = date.getTimezoneOffset();
+  return new Date(date.getTime() - offset * 60_000).toISOString().slice(0, 10);
+}
+
+function emptyFormValues(curriculum: string): CreateSessionFormValues {
+  return {
+    title: "",
+    subject: "",
+    chapterId: "",
+    chapter: "",
+    classKey: "",
+    grade: "",
+    section: "",
+    curriculum,
+    date: defaultDateValue(),
+    startTime: "10:00",
+    durationMinutes: 60,
+    meetingLink: "",
+    notes: "",
+  };
 }
 
 export function CreateSessionDialog({
@@ -75,351 +111,442 @@ export function CreateSessionDialog({
   onOpenChange,
   onSubmit,
   isPending,
+  initialValues = null,
+  showTrigger = true,
 }: CreateSessionDialogProps) {
-  const form = useForm<CreateSessionFormValues>({
-    resolver: zodResolver(createSessionSchema),
-    defaultValues: {
-      title: "",
-      subject: "",
-      studentIds: DEFAULT_STUDENT_IDS,
-      grade: "",
-      date: defaultDateValue(),
-      startTime: "10:00",
-      durationMinutes: 60,
-      mode: "video",
-      generateAiLessonKit: true,
-      notes: "",
+  const { toast } = useToast();
+  const teachingClasses = useAuthStore((state) => state.user?.teachingClasses ?? EMPTY_CLASSES);
+  const teachingBoard = useAuthStore((state) => state.user?.teachingBoard?.trim() ?? "");
+  const updateUser = useAuthStore((state) => state.updateUser);
+  const defaultCurriculum = resolveClassCurriculum(teachingClasses[0], teachingBoard);
+  const isEditing = Boolean(initialValues);
+
+  useQuery({
+    queryKey: ["auth", "me", "create-session"],
+    queryFn: async () => {
+      const me = await getMyProfile();
+      updateUser({
+        teachingBoard: me.teaching_board ?? null,
+        teachingSubjects: me.teaching_subjects ?? null,
+        teachingClasses: me.teaching_classes ?? null,
+      });
+      return me;
     },
+    enabled: open,
+    staleTime: 30_000,
   });
 
-  const selectedStudentIds = form.watch("studentIds");
-  const visibleTags = selectedStudentIds.slice(0, 3);
-  const overflowCount = Math.max(0, selectedStudentIds.length - 3);
+  const form = useForm<CreateSessionFormValues>({
+    resolver: zodResolver(createSessionSchema),
+    defaultValues: emptyFormValues(defaultCurriculum),
+  });
 
-  const toggleStudent = (id: string, checked: boolean) => {
-    const current = form.getValues("studentIds");
-    form.setValue(
-      "studentIds",
-      checked ? [...current, id] : current.filter((item) => item !== id),
-      { shouldValidate: true },
+  useEffect(() => {
+    if (!open) return;
+    form.reset(initialValues ?? emptyFormValues(defaultCurriculum));
+  }, [open, initialValues, defaultCurriculum, form]);
+
+  const selectedGrade = form.watch("grade");
+  const selectedCurriculum = form.watch("curriculum") || defaultCurriculum;
+  const selectedSubjectName = form.watch("subject");
+  const watchedChapterId = form.watch("chapterId");
+  const watchedChapter = form.watch("chapter");
+  const { subjects, loadingSubjects } = useLessonPlannerCatalog(
+    selectedGrade,
+    selectedCurriculum,
+  );
+  const taggedSubjectsQuery = useQuery({
+    queryKey: ["tutor", "students", "options"],
+    queryFn: getTutorStudentOptions,
+    enabled: open,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const classOptions = useMemo(() => {
+    const opts = teachingClasses.flatMap((assignedClass) =>
+      assignedClass.sections.map((section) => {
+        const curriculum = resolveClassCurriculum(assignedClass, teachingBoard);
+        return {
+          key: `${assignedClass.grade}::${section}::${curriculum || "none"}`,
+          grade: assignedClass.grade,
+          section,
+          curriculum,
+        };
+      }),
     );
+    if (initialValues?.grade && initialValues?.section) {
+      const key =
+        initialValues.classKey ||
+        `${initialValues.grade}::${initialValues.section}::${initialValues.curriculum || "none"}`;
+      if (!opts.some((option) => option.key === key)) {
+        opts.unshift({
+          key,
+          grade: initialValues.grade,
+          section: initialValues.section,
+          curriculum: initialValues.curriculum || "",
+        });
+      }
+    }
+    return opts;
+  }, [teachingBoard, teachingClasses, initialValues]);
+
+  const taggedSubjectNames = new Set(
+    (taggedSubjectsQuery.data?.subjects ?? []).map((subject) => subject.toLowerCase()),
+  );
+  const filteredSubjects = taggedSubjectNames.size
+    ? subjects.filter((subject) => taggedSubjectNames.has(subject.subject_name.toLowerCase()))
+    : subjects;
+  const availableSubjects = filteredSubjects.length ? filteredSubjects : subjects;
+  const selectedSubject = availableSubjects.find(
+    (subject) => subject.subject_name === selectedSubjectName,
+  );
+  const chapters = useMemo(() => {
+    const rows = (selectedSubject?.chapters ?? []).map((chapter) => ({
+      ...chapter,
+      id: String(chapter.id),
+    }));
+    if (watchedChapterId && !rows.some((row) => row.id === watchedChapterId)) {
+      rows.unshift({
+        id: watchedChapterId,
+        chapter: watchedChapter || `Chapter ${watchedChapterId}`,
+        file_name: watchedChapter || `Chapter ${watchedChapterId}`,
+      });
+    }
+    return rows;
+  }, [selectedSubject, watchedChapterId, watchedChapter]);
+
+  const selectClass = (classKey: string) => {
+    const selected = classOptions.find((option) => option.key === classKey);
+    if (!selected) return;
+    form.setValue("classKey", classKey, { shouldValidate: true });
+    form.setValue("grade", selected.grade);
+    form.setValue("section", selected.section);
+    form.setValue("curriculum", selected.curriculum);
+    form.setValue("subject", "");
+    form.setValue("chapterId", "");
+    form.setValue("chapter", "");
   };
 
-  const removeStudent = (id: string) => {
-    form.setValue(
-      "studentIds",
-      form.getValues("studentIds").filter((item) => item !== id),
-      { shouldValidate: true },
-    );
+  const selectSubject = (subject: string) => {
+    form.setValue("subject", subject, { shouldValidate: true });
+    form.setValue("chapterId", "");
+    form.setValue("chapter", "");
+  };
+
+  const selectChapter = (chapterId: string) => {
+    const chapter = chapters.find((item) => item.id === chapterId);
+    const label =
+      chapter?.chapter?.trim() ||
+      chapter?.file_name?.trim() ||
+      `Chapter ${chapterId}`;
+    form.setValue("chapterId", chapterId, { shouldValidate: true });
+    form.setValue("chapter", label, { shouldValidate: true });
+  };
+
+  const closeDialog = (next: boolean) => {
+    onOpenChange(next);
+    if (!next) {
+      form.reset(emptyFormValues(defaultCurriculum));
+    }
+  };
+
+  const onInvalid = (errors: FieldErrors<CreateSessionFormValues>) => {
+    const first =
+      errors.title?.message ||
+      errors.classKey?.message ||
+      errors.subject?.message ||
+      errors.chapterId?.message ||
+      errors.date?.message ||
+      errors.startTime?.message ||
+      errors.meetingLink?.message ||
+      errors.curriculum?.message ||
+      "Please fill all required fields.";
+    toast({
+      title: isEditing ? "Can't save yet" : "Can't schedule yet",
+      description: String(first),
+      variant: "destructive",
+    });
+  };
+
+  const submitForm = (values: CreateSessionFormValues) => {
+    const curriculum =
+      values.curriculum?.trim() ||
+      defaultCurriculum ||
+      resolveClassCurriculum(
+        teachingClasses.find((c) => c.grade === values.grade),
+        teachingBoard,
+      );
+    if (!curriculum) {
+      toast({
+        title: isEditing ? "Can't save yet" : "Can't schedule yet",
+        description: "Selected class has no curriculum. Ask your school admin to set it.",
+        variant: "destructive",
+      });
+      return;
+    }
+    onSubmit({
+      ...values,
+      title: values.title.trim(),
+      chapter: values.chapter?.trim() || `Chapter ${values.chapterId}`,
+      curriculum,
+      meetingLink: values.meetingLink?.trim() || undefined,
+      notes: values.notes?.trim() || undefined,
+    });
   };
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        onOpenChange(next);
-        if (!next) form.reset();
-      }}
-    >
-      <DialogTrigger asChild>
-        <Button className="h-10 gap-2 bg-primary px-4 shadow-sm">
-          <Plus className="h-4 w-4" />
-          Create Session
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={closeDialog}>
+      {showTrigger ? (
+        <DialogTrigger asChild>
+          <Button className="h-9 gap-1.5 bg-primary px-3 text-sm shadow-sm sm:h-10 sm:gap-2 sm:px-4">
+            <Plus className="h-4 w-4" />
+            Create Session
+          </Button>
+        </DialogTrigger>
+      ) : null}
       <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-xl font-bold text-blue-900 dark:text-blue-100">
-            Create New Session
+            {isEditing ? "Edit Session" : "Schedule a Session"}
           </DialogTitle>
+          <DialogDescription>
+            {isEditing
+              ? "Update class, subject, timing, or meeting details."
+              : "Choose an assigned class, then select its subject and chapter."}
+          </DialogDescription>
         </DialogHeader>
-        <Form {...form}>
-          <form className="space-y-4 pt-2" onSubmit={form.handleSubmit(onSubmit)}>
-            <div className="grid gap-4 md:grid-cols-2">
-              <FormField
-                control={form.control}
-                name="title"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      Topic / Title <span className="text-red-500">*</span>
-                    </FormLabel>
-                    <FormControl>
-                      <Input placeholder="e.g., Algebra Fundamentals" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="subject"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      Subject <span className="text-red-500">*</span>
-                    </FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select Subject" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="Mathematics">Mathematics</SelectItem>
-                        <SelectItem value="Science">Science</SelectItem>
-                        <SelectItem value="English">English</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
 
-            <FormField
-              control={form.control}
-              name="studentIds"
-              render={() => (
-                <FormItem>
-                  <FormLabel>
-                    Select Students <span className="text-red-500">*</span>
-                  </FormLabel>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <FormControl>
-                        <button
-                          type="button"
-                          className="flex min-h-10 w-full flex-wrap items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-left text-sm"
-                        >
-                          {selectedStudentIds.length === 0 ? (
-                            <span className="text-muted-foreground">Select students</span>
-                          ) : (
-                            <>
-                              {visibleTags.map((id) => {
-                                const student = SESSION_STUDENT_OPTIONS.find((s) => s.id === id);
-                                if (!student) return null;
-                                return (
-                                  <Badge
-                                    key={id}
-                                    variant="secondary"
-                                    className="gap-1 pr-1 font-normal"
-                                  >
-                                    {student.name}
-                                    <button
-                                      type="button"
-                                      className="rounded-full p-0.5 hover:bg-muted"
-                                      onClick={(event) => {
-                                        event.stopPropagation();
-                                        removeStudent(id);
-                                      }}
-                                    >
-                                      <X className="h-3 w-3" />
-                                    </button>
-                                  </Badge>
-                                );
-                              })}
-                              {overflowCount > 0 && (
-                                <Badge variant="secondary" className="font-normal">
-                                  +{overflowCount}
-                                </Badge>
-                              )}
-                            </>
-                          )}
-                        </button>
-                      </FormControl>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[280px] p-3" align="start">
-                      <div className="space-y-2">
-                        {SESSION_STUDENT_OPTIONS.map((student) => (
-                          <label
-                            key={student.id}
-                            className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted/50"
-                          >
-                            <Checkbox
-                              checked={selectedStudentIds.includes(student.id)}
-                              onCheckedChange={(checked) =>
-                                toggleStudent(student.id, checked === true)
+        <Form {...form}>
+          <form
+            className="space-y-5 pt-2"
+            noValidate
+            onSubmit={form.handleSubmit(submitForm, onInvalid)}
+          >
+            <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+              <p className="mb-3 text-sm font-semibold text-foreground">Lesson details</p>
+              <div className="grid gap-4 md:grid-cols-2">
+                <FormField
+                  control={form.control}
+                  name="classKey"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        Class / Grade <span className="text-destructive">*</span>
+                      </FormLabel>
+                      <Select value={field.value || undefined} onValueChange={selectClass}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue
+                              placeholder={
+                                classOptions.length ? "Select class" : "No classes assigned"
                               }
                             />
-                            <span className="text-sm">{student.name}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {classOptions.map((option) => (
+                            <SelectItem key={option.key} value={option.key}>
+                              {classOptionLabel(option.grade, option.section, option.curriculum)}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-            <FormField
-              control={form.control}
-              name="grade"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Class / Grade</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select Grade" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="6">Grade 6</SelectItem>
-                      <SelectItem value="7">Grade 7</SelectItem>
-                      <SelectItem value="8">Grade 8</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                <FormField
+                  control={form.control}
+                  name="subject"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        Subject <span className="text-destructive">*</span>
+                      </FormLabel>
+                      <Select
+                        value={field.value || undefined}
+                        onValueChange={selectSubject}
+                        disabled={!selectedGrade || loadingSubjects}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue
+                              placeholder={
+                                loadingSubjects
+                                  ? "Loading subjects..."
+                                  : selectedGrade
+                                    ? "Select subject"
+                                    : "Select class first"
+                              }
+                            />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {availableSubjects.map((subject) => (
+                            <SelectItem key={String(subject.id)} value={subject.subject_name}>
+                              {subject.subject_name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-            <div className="grid gap-4 md:grid-cols-3">
-              <FormField
-                control={form.control}
-                name="date"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      Date <span className="text-red-500">*</span>
-                    </FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <Input type="date" {...field} />
-                        <CalendarIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="startTime"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      Start Time <span className="text-red-500">*</span>
-                    </FormLabel>
-                    <Select value={field.value} onValueChange={field.onChange}>
+                <FormField
+                  control={form.control}
+                  name="chapterId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        Chapter <span className="text-destructive">*</span>
+                      </FormLabel>
+                      <Select
+                        value={field.value || undefined}
+                        onValueChange={selectChapter}
+                        disabled={!selectedSubject || chapters.length === 0}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue
+                              placeholder={
+                                !selectedSubject
+                                  ? "Select subject first"
+                                  : chapters.length
+                                    ? "Select chapter"
+                                    : "No chapters uploaded"
+                              }
+                            />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {chapters.map((chapter) => (
+                            <SelectItem key={chapter.id} value={chapter.id}>
+                              {chapter.chapter ?? chapter.file_name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="title"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        Topic / Title <span className="text-destructive">*</span>
+                      </FormLabel>
                       <FormControl>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
+                        <Input placeholder="e.g., Introduction to fractions" {...field} />
                       </FormControl>
-                      <SelectContent>
-                        <SelectItem value="09:00">9:00 AM</SelectItem>
-                        <SelectItem value="10:00">10:00 AM</SelectItem>
-                        <SelectItem value="11:30">11:30 AM</SelectItem>
-                        <SelectItem value="14:00">2:00 PM</SelectItem>
-                        <SelectItem value="16:30">4:30 PM</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="durationMinutes"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      Duration <span className="text-red-500">*</span>
-                    </FormLabel>
-                    <Select
-                      value={String(field.value)}
-                      onValueChange={(value) => field.onChange(Number(value))}
-                    >
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border/70 p-4">
+              <p className="mb-3 text-sm font-semibold text-foreground">Schedule</p>
+              <div className="grid gap-4 md:grid-cols-3">
+                <FormField
+                  control={form.control}
+                  name="date"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        Date <span className="text-destructive">*</span>
+                      </FormLabel>
                       <FormControl>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
+                        <div className="relative">
+                          <Input type="date" min={defaultDateValue()} {...field} />
+                          <CalendarIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        </div>
                       </FormControl>
-                      <SelectContent>
-                        <SelectItem value="30">30 min</SelectItem>
-                        <SelectItem value="45">45 min</SelectItem>
-                        <SelectItem value="60">60 min</SelectItem>
-                        <SelectItem value="90">90 min</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="startTime"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        Start Time <span className="text-destructive">*</span>
+                      </FormLabel>
+                      <FormControl>
+                        <Input type="time" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="durationMinutes"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>
+                        Duration <span className="text-destructive">*</span>
+                      </FormLabel>
+                      <Select
+                        value={String(field.value)}
+                        onValueChange={(value) => field.onChange(Number(value))}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {[30, 45, 60, 90, 120].map((minutes) => (
+                            <SelectItem key={minutes} value={String(minutes)}>
+                              {minutes < 60
+                                ? `${minutes} minutes`
+                                : `${minutes / 60} ${minutes === 60 ? "hour" : "hours"}`}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
             </div>
 
             <FormField
               control={form.control}
-              name="mode"
+              name="meetingLink"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>
-                    Mode <span className="text-red-500">*</span>
-                  </FormLabel>
+                  <FormLabel>Meeting Link</FormLabel>
                   <FormControl>
-                    <RadioGroup
-                      value={field.value}
-                      onValueChange={field.onChange}
-                      className="flex flex-wrap gap-4"
-                    >
-                      {[
-                        { value: "video", label: "Video" },
-                        { value: "ai-guided", label: "AI Guided" },
-                        { value: "hybrid", label: "Hybrid" },
-                      ].map((option) => (
-                        <div key={option.value} className="flex items-center gap-2">
-                          <RadioGroupItem value={option.value} id={`mode-${option.value}`} />
-                          <Label htmlFor={`mode-${option.value}`} className="font-normal">
-                            {option.label}
-                          </Label>
-                        </div>
-                      ))}
-                    </RadioGroup>
+                    <div className="relative">
+                      <Link2 className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        type="text"
+                        inputMode="url"
+                        placeholder="Google Meet or Zoom link"
+                        className="pl-9"
+                        value={field.value ?? ""}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        name={field.name}
+                        ref={field.ref}
+                      />
+                    </div>
                   </FormControl>
                   <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="generateAiLessonKit"
-              render={({ field }) => (
-                <FormItem className="rounded-lg border border-border/60 bg-muted/20 px-4 py-3">
-                  <div className="flex items-start gap-3">
-                    <FormControl>
-                      <Checkbox
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                        className="mt-0.5"
-                      />
-                    </FormControl>
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-1.5">
-                        <FormLabel className="font-medium leading-none">
-                          Generate AI Lesson Kit
-                        </FormLabel>
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button type="button" className="text-muted-foreground">
-                                <Info className="h-3.5 w-3.5" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              Creates lesson plan, notes, worksheet, quiz, and more.
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </div>
-                      <FormDescription>
-                        AI will create lesson plan, teaching notes, worksheet, quiz and more.
-                      </FormDescription>
-                    </div>
-                  </div>
                 </FormItem>
               )}
             />
@@ -433,9 +560,13 @@ export function CreateSessionDialog({
                   <FormControl>
                     <Textarea
                       rows={3}
-                      placeholder="Add any additional notes..."
+                      placeholder="Materials, preparation, or reminders..."
                       className="resize-none"
-                      {...field}
+                      value={field.value ?? ""}
+                      onChange={field.onChange}
+                      onBlur={field.onBlur}
+                      name={field.name}
+                      ref={field.ref}
                     />
                   </FormControl>
                   <FormMessage />
@@ -443,12 +574,18 @@ export function CreateSessionDialog({
               )}
             />
 
-            <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button type="button" variant="outline" onClick={() => closeDialog(false)}>
                 Cancel
               </Button>
-              <Button type="submit" className="bg-primary" disabled={isPending}>
-                {isPending ? "Creating..." : "Create Session"}
+              <Button type="submit" disabled={isPending}>
+                {isPending
+                  ? isEditing
+                    ? "Saving..."
+                    : "Scheduling..."
+                  : isEditing
+                    ? "Save Changes"
+                    : "Schedule Session"}
               </Button>
             </div>
           </form>

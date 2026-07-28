@@ -11,34 +11,43 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { useToast } from "@/hooks/use-toast";
-import { DEMO_CLASS_OVERVIEW } from "@/modules/organization/data/demo-classes-admin";
 import type { TeacherRow } from "@/modules/organization/types/teacher-profile";
+
+export interface AssignableClass {
+  id: string;
+  grade: string;
+  section: string;
+  students?: number;
+  teachers?: number;
+  curriculums?: string[];
+}
 
 interface AssignClassesDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   teachers: TeacherRow[];
+  classes: AssignableClass[];
+  onAssign: (teacherIds: string[], classIds: string[]) => void;
+  isSubmitting?: boolean;
 }
 
-function classLabel(grade: string, section: string) {
-  return `Grade ${grade} · Section ${section}`;
+function classLabel(grade: string, section: string, curriculum?: string) {
+  const base = `Grade ${grade} · Section ${section}`;
+  return curriculum ? `${base} · ${curriculum}` : base;
 }
 
-export function AssignClassesDialog({ open, onOpenChange, teachers }: AssignClassesDialogProps) {
-  const { toast } = useToast();
+export function AssignClassesDialog({
+  open,
+  onOpenChange,
+  teachers,
+  classes,
+  onAssign,
+  isSubmitting,
+}: AssignClassesDialogProps) {
   const [selectedTeacherIds, setSelectedTeacherIds] = useState<Set<string>>(new Set());
   const [selectedClassIds, setSelectedClassIds] = useState<Set<string>>(new Set());
   const [teacherSearch, setTeacherSearch] = useState("");
-  const [classGrade, setClassGrade] = useState("all");
+  const [classSearch, setClassSearch] = useState("");
 
   const activeTeachers = useMemo(() => {
     const q = teacherSearch.trim().toLowerCase();
@@ -54,8 +63,18 @@ export function AssignClassesDialog({ open, onOpenChange, teachers }: AssignClas
   }, [teachers, teacherSearch]);
 
   const filteredClasses = useMemo(() => {
-    return DEMO_CLASS_OVERVIEW.filter((cls) => classGrade === "all" || cls.grade === classGrade);
-  }, [classGrade]);
+    const q = classSearch.trim().toLowerCase();
+    return classes.filter((cls) => {
+      if (!q) return true;
+      const curriculum = cls.curriculums?.[0] ?? "";
+      return (
+        cls.grade.toLowerCase().includes(q) ||
+        cls.section.toLowerCase().includes(q) ||
+        curriculum.toLowerCase().includes(q) ||
+        classLabel(cls.grade, cls.section, curriculum).toLowerCase().includes(q)
+      );
+    });
+  }, [classes, classSearch]);
 
   const toggleTeacher = (id: string) => {
     setSelectedTeacherIds((prev) => {
@@ -79,17 +98,12 @@ export function AssignClassesDialog({ open, onOpenChange, teachers }: AssignClas
     setSelectedTeacherIds(new Set());
     setSelectedClassIds(new Set());
     setTeacherSearch("");
-    setClassGrade("all");
+    setClassSearch("");
   };
 
   const handleAssign = () => {
     if (selectedTeacherIds.size === 0 || selectedClassIds.size === 0) return;
-    toast({
-      title: "Classes assigned",
-      description: `${selectedClassIds.size} class(es) assigned to ${selectedTeacherIds.size} teacher(s).`,
-    });
-    resetState();
-    onOpenChange(false);
+    onAssign([...selectedTeacherIds], [...selectedClassIds]);
   };
 
   const resetOnClose = (next: boolean) => {
@@ -99,8 +113,8 @@ export function AssignClassesDialog({ open, onOpenChange, teachers }: AssignClas
 
   return (
     <Dialog open={open} onOpenChange={resetOnClose}>
-      <DialogContent className="flex max-h-[90vh] max-w-4xl flex-col gap-0 overflow-hidden p-0">
-        <DialogHeader className="border-b border-border px-6 py-5">
+      <DialogContent className="flex max-h-[90dvh] w-[calc(100%-1.5rem)] max-w-4xl flex-col gap-0 overflow-hidden p-0 sm:h-[min(90dvh,42rem)]">
+        <DialogHeader className="shrink-0 border-b border-border px-6 py-5">
           <DialogTitle className="flex items-center gap-2">
             <BookOpen className="h-5 w-5 text-primary" />
             Assign Classes
@@ -110,20 +124,22 @@ export function AssignClassesDialog({ open, onOpenChange, teachers }: AssignClas
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid min-h-0 flex-1 gap-0 md:grid-cols-2">
-          <section className="flex min-h-[280px] flex-col border-b border-border p-4 md:border-b-0 md:border-r">
-            <h3 className="text-sm font-semibold text-foreground">Select Teachers</h3>
-            <p className="mt-1 text-xs text-muted-foreground">Choose one or more teachers.</p>
-            <div className="relative mt-3">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Search teachers..."
-                value={teacherSearch}
-                onChange={(e) => setTeacherSearch(e.target.value)}
-                className="h-9 !border !border-slate-300 bg-background pl-9 hover:!border-slate-400 focus-visible:!border-primary"
-              />
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:overflow-hidden md:flex-row">
+          <section className="flex flex-col border-b border-border p-4 md:min-h-0 md:flex-1 md:overflow-hidden md:border-b-0 md:border-r">
+            <div className="shrink-0">
+              <h3 className="text-sm font-semibold text-foreground">Select Teachers</h3>
+              <p className="mt-1 text-xs text-muted-foreground">Choose one or more teachers.</p>
+              <div className="relative mt-3">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Search teachers..."
+                  value={teacherSearch}
+                  onChange={(e) => setTeacherSearch(e.target.value)}
+                  className="h-9 !border !border-slate-300 bg-background pl-9 hover:!border-slate-400 focus-visible:!border-primary"
+                />
+              </div>
             </div>
-            <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+            <div className="mt-3 h-[20rem] space-y-2 overflow-y-auto overscroll-contain pr-1 sm:h-[22rem] md:h-auto md:min-h-0 md:flex-1">
               {activeTeachers.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No teachers match your search.</p>
               ) : (
@@ -149,60 +165,64 @@ export function AssignClassesDialog({ open, onOpenChange, teachers }: AssignClas
             </div>
           </section>
 
-          <section className="flex min-h-[280px] flex-col p-4">
-            <h3 className="text-sm font-semibold text-foreground">Select Classes</h3>
-            <p className="mt-1 text-xs text-muted-foreground">Choose one or more classes to assign.</p>
-            <div className="mt-3 space-y-1">
-              <Label className="text-xs text-muted-foreground">Grade</Label>
-              <Select value={classGrade} onValueChange={setClassGrade}>
-                <SelectTrigger className="h-9 bg-background">
-                  <SelectValue placeholder="All Grades" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Grades</SelectItem>
-                  <SelectItem value="6">Grade 6</SelectItem>
-                  <SelectItem value="7">Grade 7</SelectItem>
-                  <SelectItem value="8">Grade 8</SelectItem>
-                </SelectContent>
-              </Select>
+          <section className="flex flex-col p-4 md:min-h-0 md:flex-1 md:overflow-hidden">
+            <div className="shrink-0">
+              <h3 className="text-sm font-semibold text-foreground">Select Classes</h3>
+              <p className="mt-1 text-xs text-muted-foreground">Choose one or more classes to assign.</p>
+              <div className="relative mt-3">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Search classes..."
+                  value={classSearch}
+                  onChange={(e) => setClassSearch(e.target.value)}
+                  className="h-9 !border !border-slate-300 bg-background pl-9 hover:!border-slate-400 focus-visible:!border-primary"
+                />
+              </div>
             </div>
-            <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+            <div className="mt-3 h-[20rem] space-y-2 overflow-y-auto overscroll-contain pr-1 sm:h-[22rem] md:h-auto md:min-h-0 md:flex-1">
               {filteredClasses.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No classes match your filter.</p>
+                <p className="text-sm text-muted-foreground">
+                  No classes available yet. Add classes from the Classes tab first.
+                </p>
               ) : (
-                filteredClasses.map((cls) => (
-                  <label
-                    key={cls.id}
-                    className="flex cursor-pointer items-start gap-3 rounded-lg border border-border px-3 py-2 hover:bg-muted/30"
-                  >
-                    <Checkbox
-                      checked={selectedClassIds.has(cls.id)}
-                      onCheckedChange={() => toggleClass(cls.id)}
-                      className="mt-0.5"
-                    />
-                    <div className="min-w-0">
-                      <p className="font-medium text-foreground">{classLabel(cls.grade, cls.section)}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {cls.students} students · {cls.teachers} teachers · {cls.curriculums.join(", ")}
-                      </p>
-                    </div>
-                  </label>
-                ))
+                filteredClasses.map((cls) => {
+                  const curriculum = cls.curriculums?.[0];
+                  return (
+                    <label
+                      key={cls.id}
+                      className="flex cursor-pointer items-start gap-3 rounded-lg border border-border px-3 py-2 hover:bg-muted/30"
+                    >
+                      <Checkbox
+                        checked={selectedClassIds.has(cls.id)}
+                        onCheckedChange={() => toggleClass(cls.id)}
+                        className="mt-0.5"
+                      />
+                      <div className="min-w-0">
+                        <p className="font-medium text-foreground">
+                          {classLabel(cls.grade, cls.section, curriculum)}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {cls.students ?? 0} students · {cls.teachers ?? 0} teachers
+                        </p>
+                      </div>
+                    </label>
+                  );
+                })
               )}
             </div>
           </section>
         </div>
 
-        <DialogFooter className="border-t border-border px-6 py-4">
+        <DialogFooter className="shrink-0 border-t border-border px-6 py-4">
           <Button type="button" variant="outline" onClick={() => resetOnClose(false)}>
             Cancel
           </Button>
           <Button
             type="button"
-            disabled={selectedTeacherIds.size === 0 || selectedClassIds.size === 0}
+            disabled={selectedTeacherIds.size === 0 || selectedClassIds.size === 0 || isSubmitting}
             onClick={handleAssign}
           >
-            Assign Classes
+            {isSubmitting ? "Assigning…" : "Assign Classes"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -113,7 +113,7 @@ export function OnboardStudentDialog({
                     </FormControl>
                     <SelectContent>
                       {schools.map((s) => (
-                        <SelectItem key={s.id} value={s.id}>
+                        <SelectItem key={s.id} value={String(s.id)}>
                           {schoolDisplayName(s)}
                           {s.board ? ` · ${s.board}` : ""}
                         </SelectItem>

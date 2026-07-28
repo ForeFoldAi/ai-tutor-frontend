@@ -14,7 +14,6 @@ import {
   BookOpen,
   Bot,
   Check,
-  Clock,
   Layers,
   Mic,
   PlayCircle,
@@ -43,6 +42,10 @@ interface LearningSetupWizardProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   subject: StudentSubjectApi | null;
+  /** Real chapter progress from learning overview (chapter id → status). */
+  chapterStatusById?: Record<string, ChapterStatus>;
+  /** Topic-coverage % per chapter id (0–100). */
+  chapterProgressById?: Record<string, number>;
 }
 
 const METHOD_OPTIONS: {
@@ -98,9 +101,18 @@ function formatClassLevel(cl: string) {
   return cl.replace("CLASS_", "Class ");
 }
 
-function getChapterMeta(index: number): { status: ChapterStatus; progress: number } {
-  if (index === 0) return { status: "in_progress", progress: 60 };
-  if (index === 1) return { status: "completed", progress: 100 };
+function getChapterMeta(
+  chapterId: string,
+  statusById?: Record<string, ChapterStatus>,
+  progressById?: Record<string, number>
+): { status: ChapterStatus; progress: number } {
+  const status = statusById?.[chapterId] ?? "not_started";
+  if (progressById && chapterId in progressById) {
+    const progress = Math.max(0, Math.min(100, Math.round(progressById[chapterId] ?? 0)));
+    return { status, progress };
+  }
+  if (status === "completed") return { status, progress: 100 };
+  if (status === "in_progress") return { status, progress: 50 };
   return { status: "not_started", progress: 0 };
 }
 
@@ -137,7 +149,13 @@ function StepBadge({ step, title }: { step: number; title: string }) {
   );
 }
 
-export function LearningSetupWizard({ open, onOpenChange, subject }: LearningSetupWizardProps) {
+export function LearningSetupWizard({
+  open,
+  onOpenChange,
+  subject,
+  chapterStatusById,
+  chapterProgressById,
+}: LearningSetupWizardProps) {
   const [, setLocation] = useLocation();
   const [step, setStep] = useState<WizardStep>(2);
   const [filter, setFilter] = useState<ChapterFilter>("all");
@@ -147,9 +165,10 @@ export function LearningSetupWizard({ open, onOpenChange, subject }: LearningSet
   const chapters: ChapterItem[] = useMemo(() => {
     if (!subject) return [];
     return subject.chapters.map((ch, idx) => {
-      const meta = getChapterMeta(idx);
+      const id = String(ch.id);
+      const meta = getChapterMeta(id, chapterStatusById, chapterProgressById);
       return {
-        id: ch.id,
+        id,
         title: ch.chapter || `Chapter ${idx + 1}`,
         subtitle: ch.file_name,
         status: meta.status,
@@ -157,7 +176,7 @@ export function LearningSetupWizard({ open, onOpenChange, subject }: LearningSet
         iconBg: CHAPTER_ICON_COLORS[idx % CHAPTER_ICON_COLORS.length],
       };
     });
-  }, [subject]);
+  }, [subject, chapterStatusById, chapterProgressById]);
 
   const filteredChapters = useMemo(() => {
     if (filter === "all") return chapters;
@@ -170,7 +189,6 @@ export function LearningSetupWizard({ open, onOpenChange, subject }: LearningSet
     : 0;
 
   const selectedChapterItems = chapters.filter((ch) => selectedChapters.has(ch.id));
-  const estimatedMinutes = Math.max(15, selectedChapters.size * 25);
 
   useEffect(() => {
     if (!open) {
@@ -215,7 +233,7 @@ export function LearningSetupWizard({ open, onOpenChange, subject }: LearningSet
       board: subject.board,
       class: subject.class_level,
       subject: subject.subject_name,
-      subjectId: subject.id,
+      subjectId: String(subject.id),
       chapters: Array.from(selectedChapters).join(","),
       chapterNames: selectedChapterItems.map((ch) => ch.title).join("||"),
       greet: "1",

@@ -12,6 +12,7 @@ interface StudentsAdminPaginationProps {
   page: number;
   pageSize: number;
   total: number;
+  pageSizeOptions?: number[];
   onPageChange: (page: number) => void;
   onPageSizeChange: (size: number) => void;
 }
@@ -31,6 +32,7 @@ export function StudentsAdminPagination({
   page,
   pageSize,
   total,
+  pageSizeOptions = [10, 20, 30, 40, 50, 100, 200, 500],
   onPageChange,
   onPageSizeChange,
 }: StudentsAdminPaginationProps) {
@@ -40,16 +42,16 @@ export function StudentsAdminPagination({
   const pages = pageNumbers(page, totalPages);
 
   return (
-    <div className="flex flex-col gap-3 border-t border-border/70 pt-4 sm:flex-row sm:items-center sm:justify-between">
-      <p className="text-sm text-muted-foreground">
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center lg:justify-between">
+      <p className="text-xs text-muted-foreground sm:text-sm">
         Showing {start} to {end} of {total.toLocaleString()} students
       </p>
 
-      <div className="flex flex-wrap items-center justify-center gap-1.5">
+      <div className="flex flex-wrap items-center justify-center gap-1">
         <Button
           variant="outline"
           size="icon"
-          className="h-9 w-9"
+          className="h-7 w-7 sm:h-8 sm:w-8"
           disabled={page <= 1}
           onClick={() => onPageChange(page - 1)}
         >
@@ -65,7 +67,7 @@ export function StudentsAdminPagination({
               key={item}
               variant={item === page ? "default" : "outline"}
               size="icon"
-              className="h-9 w-9"
+              className="h-7 w-7 text-xs sm:h-8 sm:w-8 sm:text-sm"
               onClick={() => onPageChange(item)}
             >
               {item}
@@ -75,7 +77,7 @@ export function StudentsAdminPagination({
         <Button
           variant="outline"
           size="icon"
-          className="h-9 w-9"
+          className="h-7 w-7 sm:h-8 sm:w-8"
           disabled={page >= totalPages}
           onClick={() => onPageChange(page + 1)}
         >
@@ -83,19 +85,19 @@ export function StudentsAdminPagination({
         </Button>
       </div>
 
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <span>Rows per page:</span>
-        <Select
-          value={String(pageSize)}
-          onValueChange={(value) => onPageSizeChange(Number(value))}
-        >
-          <SelectTrigger className="h-9 w-[72px] bg-background">
+      <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground sm:justify-start sm:text-sm">
+        <span className="hidden sm:inline">Rows per page:</span>
+        <span className="sm:hidden">Rows:</span>
+        <Select value={String(pageSize)} onValueChange={(value) => onPageSizeChange(Number(value))}>
+          <SelectTrigger className="h-7 min-w-[4.75rem] w-auto gap-1 px-2 !border !border-slate-300 bg-background text-sm tabular-nums hover:!border-slate-400 sm:h-8 dark:!border-slate-600 dark:hover:!border-slate-500">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="5">5</SelectItem>
-            <SelectItem value="10">10</SelectItem>
-            <SelectItem value="20">20</SelectItem>
+          <SelectContent className="!border !border-slate-300 dark:!border-slate-600">
+            {pageSizeOptions.map((size) => (
+              <SelectItem key={size} value={String(size)}>
+                {size}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
       </div>

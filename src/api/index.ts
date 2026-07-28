@@ -1,8 +1,10 @@
 import { useAuthStore } from "@/lib/auth-store";
+import { assertProdApiConfigured, getHttpApiBase } from "@/lib/api-base";
 import { studentFriendlyApiError } from "@/lib/student-messages";
 
-// Empty VITE_API_URL = same-origin (Vite dev proxy → backend); set full URL only when needed.
-const API_BASE = String(import.meta.env.VITE_API_URL ?? "").trim().replace(/\/$/, "");
+// Empty VITE_API_URL = same-origin (Vite dev proxy → backend); set full URL on Vercel.
+const API_BASE = getHttpApiBase();
+assertProdApiConfigured();
 const FETCH_TIMEOUT_MS = 20_000;
 
 function getAuthHeader(): Record<string, string> {

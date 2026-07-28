@@ -4,9 +4,14 @@ import type { CredentialMetrics } from "@/modules/organization/types/credentials
 
 interface CredentialsSummaryCardsProps {
   metrics: CredentialMetrics;
+  /** Individual tutors don't manage teachers. */
+  hideTeacherMetrics?: boolean;
 }
 
-export function CredentialsSummaryCards({ metrics }: CredentialsSummaryCardsProps) {
+export function CredentialsSummaryCards({
+  metrics,
+  hideTeacherMetrics = false,
+}: CredentialsSummaryCardsProps) {
   const cards = [
     {
       label: "Credentials Generated",
@@ -17,15 +22,19 @@ export function CredentialsSummaryCards({ metrics }: CredentialsSummaryCardsProp
       labelClassName: "text-blue-700",
       iconClassName: "bg-blue-50 text-blue-600",
     },
-    {
-      label: "Teachers Pending First Login",
-      value: metrics.teachersPendingLogin,
-      subtext: `↑ ${metrics.teachersPendingTrend}`,
-      trendUp: true,
-      icon: Users,
-      labelClassName: "text-blue-700",
-      iconClassName: "bg-blue-50 text-blue-600",
-    },
+    ...(!hideTeacherMetrics
+      ? [
+          {
+            label: "Teachers Pending First Login",
+            value: metrics.teachersPendingLogin,
+            subtext: `↑ ${metrics.teachersPendingTrend}`,
+            trendUp: true,
+            icon: Users,
+            labelClassName: "text-blue-700",
+            iconClassName: "bg-blue-50 text-blue-600",
+          },
+        ]
+      : []),
     {
       label: "Students Pending First Login",
       value: metrics.studentsPendingLogin,
@@ -47,28 +56,32 @@ export function CredentialsSummaryCards({ metrics }: CredentialsSummaryCardsProp
   ];
 
   return (
-    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+    <div
+      className={`grid grid-cols-2 gap-2 md:grid-cols-3 ${hideTeacherMetrics ? "xl:grid-cols-3" : "xl:grid-cols-4"}`}
+    >
       {cards.map((card) => {
         const Icon = card.icon;
         const TrendIcon = card.trendUp ? TrendingUp : TrendingDown;
         return (
           <Card key={card.label} className="border-border/70 shadow-sm">
-            <CardContent className="space-y-1.5 p-3.5">
-              <div className="flex items-center gap-2">
-                <div className={`rounded-md p-1.5 ${card.iconClassName}`}>
+            <CardContent className="space-y-1 p-3 sm:space-y-1.5 sm:p-3.5">
+              <div className="flex items-start gap-2">
+                <div className={`shrink-0 rounded-md p-1.5 ${card.iconClassName}`}>
                   <Icon className="h-3.5 w-3.5" />
                 </div>
-                <p className={`text-sm font-medium leading-snug ${card.labelClassName}`}>{card.label}</p>
+                <p className={`text-xs font-medium leading-snug sm:text-sm ${card.labelClassName}`}>
+                  {card.label}
+                </p>
               </div>
-              <p className="text-2xl font-bold tracking-tight text-blue-900 dark:text-blue-100">
+              <p className="text-xl font-bold tracking-tight text-blue-900 dark:text-blue-100 sm:text-2xl">
                 {card.value}
               </p>
               <p
-                className={`flex items-center gap-1 text-xs font-medium ${
+                className={`flex items-center gap-1 text-[11px] font-medium sm:text-xs ${
                   card.trendUp ? "text-emerald-600" : "text-rose-600"
                 }`}
               >
-                <TrendIcon className="h-3 w-3" />
+                <TrendIcon className="h-3 w-3 shrink-0" />
                 {card.subtext.replace(/^[↑↓]\s*/, "")}
               </p>
             </CardContent>

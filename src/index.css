@@ -11,13 +11,13 @@
   --elevate-2: rgba(0, 0, 0, 0.06);
 
   /* Surfaces */
-  --background: 228 33% 98%;
+  --background: 45 100% 98.4%;
   --foreground: 217 28% 17%;
   --body-foreground: 215 16% 34%;
   --border: 227 25% 92%;
   --card: 0 0% 100%;
   --card-foreground: 217 28% 17%;
-  --card-border: 227 25% 92%;
+  --card-border: 214.3 31.8% 91.4%;
 
   /* Sidebar */
   --sidebar: 228 33% 97%;
@@ -81,7 +81,7 @@
   --gradient-brand-hover: linear-gradient(90deg, #5b7af8 0%, #7a5df8 50%, #9a5df8 100%);
 
   /* Shadows */
-  --shadow-card: 0 8px 24px rgba(79, 110, 247, 0.08);
+  --shadow-card: 0 8px 20px rgba(15, 23, 42, 0.18);
   --shadow-card-hover: 0 12px 32px rgba(79, 110, 247, 0.14);
   --shadow-focus: 0 0 0 3px hsl(251 91% 63% / 0.2);
 
@@ -94,7 +94,7 @@
   --radius: 0.75rem;
   --radius-button: 0.75rem;
   --radius-input: 0.75rem;
-  --radius-card: 1.25rem;
+  --radius-card: 1rem;
   --radius-dialog: 1.5rem;
   --radius-badge: 9999px;
 

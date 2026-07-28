@@ -41,7 +41,12 @@ The built files will be in the `dist` directory, ready for deployment.
 3. Click "Add New Project"
 4. Import your repository
 5. Vercel will automatically detect the `vercel.json` configuration
-6. Click "Deploy"
+6. Set Environment Variables (required for API + WebSockets):
+   - `VITE_API_URL` = your backend HTTPS URL (e.g. `https://api.yourdomain.com`)
+   - `VITE_VOICE_URL` = same backend URL (voice WS + `/chat-voice`)
+   - See `.env.production.example`
+7. Ensure the backend `ALLOWED_ORIGINS` includes your Vercel domain
+8. Click "Deploy"
 
 **Option 2: Deploy via Vercel CLI**
 ```bash

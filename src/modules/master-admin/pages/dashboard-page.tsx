@@ -25,6 +25,9 @@ import {
   OrganizationGrowthChart,
   AIUsageAnalyticsChart,
 } from "@/modules/master-admin/components/analytics-charts";
+import { GlobalSearchInput } from "@/modules/search";
+import { DashboardHeaderActions } from "@/components/dashboard-header-actions";
+import { useAuthStore } from "@/lib/auth-store";
 
 function isSameDay(iso: string) {
   const d = new Date(iso);
@@ -37,6 +40,8 @@ function formatCurrencyUSD(value: number) {
 }
 
 export default function MasterAdminDashboardModulePage() {
+  const user = useAuthStore((s) => s.user);
+  const welcomeName = user?.fullName?.split(" ")[0] ?? "Admin";
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -177,18 +182,29 @@ export default function MasterAdminDashboardModulePage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Master Admin Dashboard</h1>
-          <p className="text-sm text-muted-foreground mt-1">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold tracking-tight">
+            Welcome, {welcomeName}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             Premium overview of platform health, growth, revenue, and AI ingestion pipelines.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <Badge variant="outline" className="h-fit">
             <Sparkles className="mr-2 h-4 w-4" />
             Admin-grade analytics
           </Badge>
+          <DashboardHeaderActions
+            className="hidden lg:flex"
+            leading={
+              <GlobalSearchInput
+                placeholder="Search users, schools..."
+                data-testid="master-admin-dashboard-search"
+              />
+            }
+          />
         </div>
       </div>
 

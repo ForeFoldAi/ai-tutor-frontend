@@ -23,11 +23,23 @@ import type { ClassOverviewItem, SubjectItem } from "@/modules/organization/type
 import { classSubjectMappingKey } from "@/modules/organization/utils/classes-subject-helpers";
 
 function subjectsForCurriculum(subjects: SubjectItem[], curriculum: string) {
-  return subjects.filter(
-    (s) =>
-      s.active &&
-      (s.curriculums.includes(curriculum) || s.curriculums.includes("All Curriculums")),
-  );
+  return subjects.filter((s) => {
+    if (!s.active) return false;
+    // ponytail: subjects API doesn't stamp curriculum yet — show all active
+    if (!s.curriculums.length || s.curriculums.includes("All Curriculums")) return true;
+    return s.curriculums.includes(curriculum);
+  });
+}
+
+function selectionState(
+  subjects: SubjectItem[],
+  curriculum: string,
+  mappings: Record<string, Record<string, boolean>>,
+  classId: string,
+) {
+  const available = subjectsForCurriculum(subjects, curriculum);
+  const saved = mappings[classSubjectMappingKey(classId, curriculum)] ?? {};
+  return Object.fromEntries(available.map((s) => [s.id, !!saved[s.id]]));
 }
 
 interface MapClassSubjectsDialogProps {
@@ -54,25 +66,13 @@ export function MapClassSubjectsDialog({
     if (!open || !classItem) return;
     const first = classItem.curriculums[0] ?? "";
     setCurriculum(first);
-    const key = classSubjectMappingKey(classItem.id, first);
-    const saved = mappings[key];
-    const available = subjectsForCurriculum(subjects, first);
-    setSelected(
-      saved ??
-        Object.fromEntries(available.map((s) => [s.id, false])),
-    );
+    setSelected(selectionState(subjects, first, mappings, classItem.id));
   }, [open, classItem, subjects, mappings]);
 
   useEffect(() => {
-    if (!classItem || !curriculum) return;
-    const key = classSubjectMappingKey(classItem.id, curriculum);
-    const saved = mappings[key];
-    const available = subjectsForCurriculum(subjects, curriculum);
-    setSelected(
-      saved ??
-        Object.fromEntries(available.map((s) => [s.id, false])),
-    );
-  }, [curriculum, classItem, subjects, mappings]);
+    if (!open || !classItem || !curriculum) return;
+    setSelected(selectionState(subjects, curriculum, mappings, classItem.id));
+  }, [curriculum, open, classItem, subjects, mappings]);
 
   const availableSubjects = useMemo(
     () => (curriculum ? subjectsForCurriculum(subjects, curriculum) : []),
@@ -86,7 +86,6 @@ export function MapClassSubjectsDialog({
   const handleSave = () => {
     if (!classItem || !curriculum) return;
     onSave(classItem.id, curriculum, selected);
-    onOpenChange(false);
   };
 
   if (!classItem) return null;

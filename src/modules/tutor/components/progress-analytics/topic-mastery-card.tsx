@@ -47,9 +47,11 @@ export function TopicMasteryCard({ topics, allTopics }: TopicMasteryCardProps) {
           <CardDescription>Average mastery by topic</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3.5 pb-5">
-          {topics.map((item) => (
-            <TopicMasteryRow key={item.topic} item={item} />
-          ))}
+          {topics.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No chapter progress recorded yet.</p>
+          ) : (
+            topics.map((item) => <TopicMasteryRow key={item.topic} item={item} />)
+          )}
         </CardContent>
       </Card>
 

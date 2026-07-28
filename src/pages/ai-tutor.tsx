@@ -30,8 +30,10 @@ import {
   Square,
   ArrowLeft,
   History,
+  CheckCircle2,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/auth-store";
+import { getHttpApiBase, getVoiceHttpBase } from "@/lib/api-base";
 import { apiFetch, authFetch } from "@/api";
 import { MSG, studentFriendlyApiError, studentFriendlyError } from "@/lib/student-messages";
 import {
@@ -48,6 +50,11 @@ import {
   stripGreetSearchParam,
 } from "@/lib/tutor-greeting";
 import { chapterSelectionPath } from "@/lib/tutor-chapter-nav";
+import { useStudySession } from "@/hooks/use-study-session";
+import { completeLearningChapter, getTutorChapterChat, saveTutorChapterChat, type TutorChatApi } from "@/api/learning";
+import { useQueryClient } from "@tanstack/react-query";
+import { LEARNING_OVERVIEW_KEY } from "@/hooks/use-learning-overview";
+import { STUDENT_DASHBOARD_KEY } from "@/hooks/use-student-dashboard";
 
 export type { RelatedTextbookImage };
 
@@ -67,6 +74,58 @@ interface Conversation {
   messages: Message[];
 }
 
+function mapApiMessages(
+  rows: Array<{ id: string; role: string; content: string; created_at?: string | null }>
+): Message[] {
+  return rows
+    .filter((m) => m.role === "user" || m.role === "assistant")
+    .map((m) => ({
+      id: m.id,
+      role: m.role as "user" | "assistant",
+      content: m.content,
+      timestamp: m.created_at ? new Date(m.created_at) : new Date(),
+    }));
+}
+
+function conversationsFromTutorChat(
+  data: TutorChatApi,
+  fallbackTitle: string
+): { conversations: Conversation[]; activeId: string | null } {
+  const threadSource = (
+    data.threads && data.threads.length > 0
+      ? data.threads
+      : data.messages.length > 0
+        ? [
+            {
+              id: data.active_thread_id || `chapter-${data.chapter_id}`,
+              title: fallbackTitle,
+              messages: data.messages,
+              updated_at: data.updated_at,
+            },
+          ]
+        : []
+  ).filter(
+    (t) => (t.messages?.length ?? 0) > 0 || t.id === data.active_thread_id
+  );
+
+  const conversations = [...threadSource]
+    .sort((a, b) => {
+      const at = a.updated_at ? Date.parse(a.updated_at) : 0;
+      const bt = b.updated_at ? Date.parse(b.updated_at) : 0;
+      return bt - at;
+    })
+    .map((t) => ({
+      id: t.id,
+      title: t.title || fallbackTitle,
+      messages: mapApiMessages(t.messages ?? []),
+    }));
+  const activeId =
+    data.active_thread_id && conversations.some((c) => c.id === data.active_thread_id)
+      ? data.active_thread_id
+      : conversations[0]?.id ?? null;
+  return { conversations, activeId };
+}
+
 const quickActions = [
   { label: "Explain simpler", icon: Lightbulb, prompt: "Can you explain that in simpler terms?" },
   { label: "Give example", icon: FileText, prompt: "Can you give me an example?" },
@@ -81,10 +140,10 @@ const suggestedTopics = [
 ];
 
 // API URL from environment variable
-const API_URL = import.meta.env.VITE_API_URL || "";
+const API_URL = getHttpApiBase();
 
 // Voice API URL from environment
-const VOICE_URL = import.meta.env.VITE_VOICE_URL || API_URL;
+const VOICE_URL = getVoiceHttpBase();
 
 // Upload PDF file
 const uploadPDF = async (file: File): Promise<void> => {
@@ -109,9 +168,11 @@ interface ChapterContext {
   subjectId: string | null;
   chapterIds: string[];
   chapterNames: string[];
+  agentMode: "ask" | "practice" | "explain" | null;
 }
 
 function useChapterContext(): ChapterContext | null {
+  const [location] = useLocation();
   return useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     const board = params.get("board");
@@ -119,6 +180,9 @@ function useChapterContext(): ChapterContext | null {
     const subject = params.get("subject");
     const chaptersRaw = params.get("chapters");
     if (!board || !classLevel || !subject || !chaptersRaw) return null;
+    const rawMode = (params.get("agentMode") || "").toLowerCase();
+    const agentMode =
+      rawMode === "ask" || rawMode === "practice" || rawMode === "explain" ? rawMode : null;
     return {
       board,
       classLevel,
@@ -126,8 +190,10 @@ function useChapterContext(): ChapterContext | null {
       subjectId: params.get("subjectId"),
       chapterIds: chaptersRaw.split(",").filter(Boolean),
       chapterNames: (params.get("chapterNames") || "").split("||").filter(Boolean),
+      agentMode,
     };
-  }, []);
+    // location changes when Resume / chapter links navigate; search must be re-read.
+  }, [location]);
 }
 
 const sendChatMessage = async (query: string): Promise<string> => {
@@ -174,6 +240,7 @@ const sendChapterChatMessage = async (
       chapter_names: ctx.chapterNames,
       conversation_history: conversationHistory ?? [],
       images_only: options?.imagesOnly ?? false,
+      agent_mode: ctx.agentMode ?? undefined,
     }),
   });
   return {
@@ -220,6 +287,7 @@ async function streamChapterChatMessage(
       chapter: ctx.chapterNames[0] || "",
       chapter_names: ctx.chapterNames,
       conversation_history: conversationHistory ?? [],
+      agent_mode: ctx.agentMode ?? undefined,
     }),
   });
 
@@ -287,6 +355,7 @@ export default function AITutorPage() {
   const { user, token } = useAuthStore();
   const [, setLocation] = useLocation();
   const chapterCtx = useChapterContext();
+  const queryClient = useQueryClient();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [input, setInput] = useState("");
@@ -298,6 +367,8 @@ export default function AITutorPage() {
   const [isVoiceLoading, setIsVoiceLoading] = useState(false);
   const [isVoicePlaying, setIsVoicePlaying] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [markingComplete, setMarkingComplete] = useState(false);
+  const [chapterCompleted, setChapterCompleted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -307,6 +378,204 @@ export default function AITutorPage() {
   const lastVoicedMessageId = useRef<string | null>(null);
   const lastVoiceUrl = useRef<string | null>(null);
   const startGreetingHandledRef = useRef(false);
+  const chatHydratedRef = useRef(false);
+  const chatHydratingRef = useRef(false);
+  const skipNextPersistRef = useRef(false);
+  const allowEmptyPersistRef = useRef(false);
+  const persistSnapshotRef = useRef<{
+    chapterId: number | null;
+    subject: string;
+    threadId: string | null;
+    messages: Message[];
+    hydrated: boolean;
+  }>({ chapterId: null, subject: "", threadId: null, messages: [], hydrated: false });
+
+  const primaryChapterId = chapterCtx?.chapterIds[0]
+    ? Number(chapterCtx.chapterIds[0])
+    : null;
+
+  const persistChapterChat = useCallback(
+    (
+      chapterId: number,
+      messages: Message[],
+      subject: string,
+      opts: {
+        allowEmpty?: boolean;
+        threadId?: string | null;
+        activeThreadId?: string | null;
+        newThread?: boolean;
+      } = {}
+    ) => {
+      const threadId = opts.threadId ?? opts.activeThreadId;
+      if (!opts.newThread && !opts.allowEmpty && messages.length === 0) return;
+      void saveTutorChapterChat(chapterId, {
+        subject_name: subject,
+        messages: messages.map((m) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          created_at: m.timestamp.toISOString(),
+        })),
+        thread_id: threadId ?? undefined,
+        active_thread_id: opts.activeThreadId ?? threadId ?? undefined,
+        new_thread: opts.newThread,
+      }).catch(() => {
+        /* fail-open — progress still tracks via study sessions */
+      });
+    },
+    []
+  );
+
+  const applyTutorChatData = useCallback(
+    (data: TutorChatApi) => {
+      const fallbackTitle = chapterCtx?.chapterNames[0] || chapterCtx?.subject || "Chat";
+      const { conversations: restored, activeId } = conversationsFromTutorChat(data, fallbackTitle);
+      setConversations(restored);
+      setActiveConversation(restored.find((c) => c.id === activeId) ?? restored[0] ?? null);
+    },
+    [chapterCtx?.chapterNames, chapterCtx?.subject]
+  );
+
+  useStudySession({
+    enabled: Boolean(chapterCtx?.subject),
+    subjectName: chapterCtx?.subject,
+    chapterId: primaryChapterId != null && !Number.isNaN(primaryChapterId) ? primaryChapterId : null,
+    chapterName: chapterCtx?.chapterNames[0] ?? null,
+    mode: "ai_tutor",
+    agentMode: chapterCtx?.agentMode ?? "free",
+  });
+
+  // Keep a snapshot for unmount flush — debounced saves are cancelled on navigate away.
+  useEffect(() => {
+    persistSnapshotRef.current = {
+      chapterId: primaryChapterId != null && !Number.isNaN(primaryChapterId) ? primaryChapterId : null,
+      subject: chapterCtx?.subject ?? "",
+      threadId: activeConversation?.id ?? null,
+      messages: activeConversation?.messages ?? [],
+      hydrated: chatHydratedRef.current,
+    };
+  }, [activeConversation?.id, activeConversation?.messages, primaryChapterId, chapterCtx?.subject]);
+
+  // Resume chat from where the student stopped (Continue / Recent Lessons / Resume).
+  useEffect(() => {
+    chatHydratedRef.current = false;
+    chatHydratingRef.current = false;
+    startGreetingHandledRef.current = false;
+    if (primaryChapterId == null || Number.isNaN(primaryChapterId)) {
+      return;
+    }
+    chatHydratingRef.current = true;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const data = await getTutorChapterChat(primaryChapterId);
+        if (cancelled) return;
+        chatHydratedRef.current = true;
+        skipNextPersistRef.current = true;
+        applyTutorChatData(data);
+        if ((data.messages?.length ?? 0) > 0 || (data.threads?.length ?? 0) > 0) {
+          startGreetingHandledRef.current = true;
+          if (hasGreetSearchParam()) stripGreetSearchParam();
+        }
+      } catch {
+        // Allow greeting / new chat, but skipNextPersist so we never PUT [] over a good row.
+        chatHydratedRef.current = true;
+        skipNextPersistRef.current = true;
+      } finally {
+        chatHydratingRef.current = false;
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [primaryChapterId, applyTutorChatData]);
+
+  // Persist chat after each turn so resume reloads the same thread.
+  useEffect(() => {
+    if (
+      primaryChapterId == null ||
+      Number.isNaN(primaryChapterId) ||
+      !chatHydratedRef.current ||
+      isStreaming ||
+      isLoading
+    ) {
+      return;
+    }
+    if (skipNextPersistRef.current) {
+      skipNextPersistRef.current = false;
+      return;
+    }
+    const messages = activeConversation?.messages ?? [];
+    const allowEmpty = allowEmptyPersistRef.current;
+    if (!allowEmpty && messages.length === 0) return;
+    allowEmptyPersistRef.current = false;
+    const subject = chapterCtx?.subject ?? "";
+    const threadId = activeConversation?.id ?? null;
+    const handle = window.setTimeout(() => {
+      persistChapterChat(primaryChapterId, messages, subject, {
+        allowEmpty,
+        threadId,
+        activeThreadId: threadId,
+      });
+    }, 400);
+    return () => window.clearTimeout(handle);
+  }, [
+    activeConversation?.id,
+    activeConversation?.messages,
+    primaryChapterId,
+    chapterCtx?.subject,
+    isStreaming,
+    isLoading,
+    persistChapterChat,
+  ]);
+
+  // Flush on leave / chapter switch — otherwise the 400ms debounce is cancelled and Resume is empty.
+  useEffect(() => {
+    return () => {
+      const snap = persistSnapshotRef.current;
+      if (snap.chapterId == null || !snap.hydrated || snap.messages.length === 0) return;
+      persistChapterChat(snap.chapterId, snap.messages, snap.subject, {
+        threadId: snap.threadId,
+        activeThreadId: snap.threadId,
+      });
+    };
+  }, [primaryChapterId, persistChapterChat]);
+
+  const agentChrome =
+    chapterCtx?.agentMode === "practice"
+      ? {
+          title: "Practice Problems",
+          hint: "Stay in practice mode — problems from your textbook only.",
+          banner: "bg-rose-50 dark:bg-rose-950/30 border-rose-200/60",
+        }
+      : chapterCtx?.agentMode === "explain"
+        ? {
+            title: "Explain a Topic",
+            hint: "Structured explanations grounded in your chapter.",
+            banner: "bg-amber-50 dark:bg-amber-950/30 border-amber-200/60",
+          }
+        : chapterCtx?.agentMode === "ask"
+          ? {
+              title: "Ask Anything",
+              hint: "Ask questions — answers use your uploaded textbooks.",
+              banner: "bg-sky-50 dark:bg-sky-950/30 border-sky-200/60",
+            }
+          : null;
+
+  const handleMarkComplete = async () => {
+    if (primaryChapterId == null || Number.isNaN(primaryChapterId)) return;
+    setMarkingComplete(true);
+    try {
+      await completeLearningChapter(primaryChapterId);
+      setChapterCompleted(true);
+      void queryClient.invalidateQueries({ queryKey: LEARNING_OVERVIEW_KEY });
+      void queryClient.invalidateQueries({ queryKey: STUDENT_DASHBOARD_KEY });
+    } catch {
+      // ignore — user can retry
+    } finally {
+      setMarkingComplete(false);
+    }
+  };
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
     messagesEndRef.current?.scrollIntoView({ behavior, block: "end" });
@@ -316,9 +585,10 @@ export default function AITutorPage() {
     scrollToBottom(isStreaming ? "auto" : "smooth");
   }, [activeConversation?.messages, isStreaming, scrollToBottom]);
 
-  // Welcome message when arriving from Learning Studio → Start Learning
+  // Welcome message when arriving from Learning Studio → Start Learning (only if no saved chat).
   useEffect(() => {
     if (!chapterCtx || startGreetingHandledRef.current || !hasGreetSearchParam()) return;
+    if (primaryChapterId != null && !chatHydratedRef.current) return;
     startGreetingHandledRef.current = true;
     stripGreetSearchParam();
 
@@ -327,23 +597,44 @@ export default function AITutorPage() {
       subject: chapterCtx.subject,
       chapterNames: chapterCtx.chapterNames,
     });
+    const welcomeMsg: Message = {
+      id: `welcome-msg-${Date.now()}`,
+      role: "assistant",
+      content: greeting,
+      timestamp: new Date(),
+    };
     const conv: Conversation = {
       id: `welcome-${Date.now()}`,
       title: chapterCtx.subject,
-      messages: [
-        {
-          id: `welcome-msg-${Date.now()}`,
-          role: "assistant",
-          content: greeting,
-          timestamp: new Date(),
-        },
-      ],
+      messages: [welcomeMsg],
     };
     setConversations((prev) => [conv, ...prev]);
     setActiveConversation(conv);
-  }, [chapterCtx, user?.fullName]);
+    if (primaryChapterId != null && !Number.isNaN(primaryChapterId)) {
+      chatHydratedRef.current = true;
+      persistChapterChat(primaryChapterId, [welcomeMsg], chapterCtx.subject, {
+        threadId: conv.id,
+        activeThreadId: conv.id,
+      });
+    }
+  }, [chapterCtx, user?.fullName, primaryChapterId, persistChapterChat]);
 
-  const createNewConversation = () => {
+  const createNewConversation = async () => {
+    if (primaryChapterId != null && !Number.isNaN(primaryChapterId)) {
+      try {
+        const data = await saveTutorChapterChat(primaryChapterId, {
+          subject_name: chapterCtx?.subject ?? "",
+          messages: [],
+          new_thread: true,
+        });
+        skipNextPersistRef.current = true;
+        applyTutorChatData(data);
+        inputRef.current?.focus();
+        return;
+      } catch {
+        /* fall through to local-only new chat */
+      }
+    }
     const newConversation: Conversation = {
       id: Date.now().toString(),
       title: "New Chat",
@@ -562,6 +853,24 @@ export default function AITutorPage() {
           return c;
         })
       );
+
+      if (primaryChapterId != null && !Number.isNaN(primaryChapterId)) {
+        chatHydratedRef.current = true;
+        const finalMessages: Message[] = [
+          ...updatedConversation.messages,
+          {
+            ...assistantMessage,
+            content: fullContent,
+            relatedImages,
+            mathLesson: mathLesson ?? undefined,
+            scienceExperiment: scienceExperiment ?? undefined,
+          },
+        ];
+        persistChapterChat(primaryChapterId, finalMessages, chapterCtx?.subject ?? "", {
+          threadId: conversation.id,
+          activeThreadId: conversation.id,
+        });
+      }
     } catch (error) {
       console.error("Chat error:", error);
       setActiveConversation((prev) => {
@@ -584,10 +893,20 @@ export default function AITutorPage() {
   };
 
   const deleteConversation = (id: string) => {
-    setConversations((prev) => prev.filter((c) => c.id !== id));
-    if (activeConversation?.id === id) {
-      setActiveConversation(null);
-    }
+    setConversations((prev) => {
+      const next = prev.filter((c) => c.id !== id);
+      if (activeConversation?.id === id) {
+        const replacement = next[0] ?? null;
+        setActiveConversation(replacement);
+        if (primaryChapterId != null && !Number.isNaN(primaryChapterId) && replacement) {
+          persistChapterChat(primaryChapterId, replacement.messages, chapterCtx?.subject ?? "", {
+            threadId: replacement.id,
+            activeThreadId: replacement.id,
+          });
+        }
+      }
+      return next;
+    });
   };
 
   const stopChatVoicePlayback = () => {
@@ -780,6 +1099,12 @@ export default function AITutorPage() {
 
   const selectConversation = (conv: Conversation) => {
     setActiveConversation(conv);
+    if (primaryChapterId != null && !Number.isNaN(primaryChapterId)) {
+      persistChapterChat(primaryChapterId, conv.messages, chapterCtx?.subject ?? "", {
+        threadId: conv.id,
+        activeThreadId: conv.id,
+      });
+    }
   };
 
   return (
@@ -811,6 +1136,19 @@ export default function AITutorPage() {
         </div>
 
         <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+          {chapterCtx && primaryChapterId != null && !Number.isNaN(primaryChapterId) && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5"
+              disabled={markingComplete || chapterCompleted}
+              onClick={() => void handleMarkComplete()}
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              {chapterCompleted ? "Completed" : markingComplete ? "Saving…" : "Mark complete"}
+            </Button>
+          )}
           {chapterCtx && (
             <div className="hidden items-center gap-2 sm:flex">
               <span className="text-xs text-muted-foreground sm:text-sm">
@@ -824,7 +1162,7 @@ export default function AITutorPage() {
 
           <Button
             className="h-8 shrink-0 gap-1.5 bg-gradient-brand px-3 sm:h-9 sm:px-4"
-            onClick={createNewConversation}
+            onClick={() => void createNewConversation()}
             data-testid="button-new-chat"
           >
             <Plus className="h-4 w-4" />
@@ -883,6 +1221,13 @@ export default function AITutorPage() {
         </div>
       </div>
 
+      {agentChrome && (
+        <div className={cn("shrink-0 border-b px-4 py-2", agentChrome.banner)}>
+          <p className="text-sm font-semibold text-foreground">{agentChrome.title}</p>
+          <p className="text-xs text-muted-foreground">{agentChrome.hint}</p>
+        </div>
+      )}
+
       <div className="flex min-h-0 flex-1 flex-col">
         {!activeConversation || activeConversation.messages.length === 0 ? (
           <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6">
@@ -892,16 +1237,18 @@ export default function AITutorPage() {
               </div>
               <div>
                 <h2 className="text-xl sm:text-2xl font-semibold mb-2">
-                  {chapterCtx ? `${chapterCtx.subject} Tutor` : "AI Virtual Tutor"}
+                  {agentChrome?.title ??
+                    (chapterCtx ? `${chapterCtx.subject} Tutor` : "AI Virtual Tutor")}
                 </h2>
                 <p className="text-sm sm:text-base text-muted-foreground">
-                  {chapterCtx
-                    ? buildStartLearningGreeting({
-                        fullName: user?.fullName,
-                        subject: chapterCtx.subject,
-                        chapterNames: chapterCtx.chapterNames,
-                      })
-                    : `Hello${user?.fullName ? `, ${user.fullName.split(" ")[0]}` : ""}! I'm your AI tutor. Ask me anything about your studies.`}
+                  {agentChrome?.hint ??
+                    (chapterCtx
+                      ? buildStartLearningGreeting({
+                          fullName: user?.fullName,
+                          subject: chapterCtx.subject,
+                          chapterNames: chapterCtx.chapterNames,
+                        })
+                      : `Hello${user?.fullName ? `, ${user.fullName.split(" ")[0]}` : ""}! I'm your AI tutor. Ask me anything about your studies.`)}
                 </p>
               </div>
               <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
@@ -909,9 +1256,32 @@ export default function AITutorPage() {
                 <span>Powered by advanced AI</span>
               </div>
               <div className="grid gap-2 sm:gap-3 grid-cols-1 sm:grid-cols-2">
-                {(chapterCtx
-                  ? chapterCtx.chapterNames.slice(0, 4).map((name) => `Explain the key concepts in ${name}`)
-                  : suggestedTopics
+                {(chapterCtx?.agentMode === "practice"
+                  ? [
+                      "Give me a practice problem from this chapter",
+                      "Quiz me with 3 short questions",
+                      "Check my answer and give the next problem",
+                      "Give me a harder problem on the same topic",
+                    ]
+                  : chapterCtx?.agentMode === "explain"
+                    ? [
+                        "Explain the main ideas of this chapter step by step",
+                        "Explain this like I'm new to the topic",
+                        "Give a clear example from the textbook",
+                        "Summarize the key points, then go deeper",
+                      ]
+                    : chapterCtx?.agentMode === "ask"
+                      ? [
+                          "What are the key concepts in this chapter?",
+                          "I have a doubt — can you clarify?",
+                          "How does this topic connect to what I already know?",
+                          "What should I focus on while studying this?",
+                        ]
+                      : chapterCtx
+                        ? chapterCtx.chapterNames
+                            .slice(0, 4)
+                            .map((name) => `Explain the key concepts in ${name}`)
+                        : suggestedTopics
                 ).map((topic, i) => (
                   <Button
                     key={i}

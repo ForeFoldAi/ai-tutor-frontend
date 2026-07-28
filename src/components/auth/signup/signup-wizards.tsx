@@ -5,14 +5,11 @@ import {
   Bot,
   Building2,
   Download,
-  FileSpreadsheet,
   Loader2,
   Mail,
   Mic,
   Phone,
   PlayCircle,
-  RefreshCw,
-  Upload,
   User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -24,39 +21,36 @@ import {
   SelectItem,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { API_BASE } from "@/api";
 import { MSG, studentFriendlyApiError, studentFriendlyError } from "@/lib/student-messages";
 import { cn } from "@/lib/utils";
 import { SIGNUP_THEMES } from "./signup-shell";
+import { useSignupOptions } from "./signup-options-context";
+import { STUDENT_SIGNUP_FIELDS, TEACHER_SIGNUP_FIELDS, SCHOOL_SIGNUP_FIELDS } from "./signup-fields";
 import {
   FormField,
   FormRow,
   FormSection,
   IconField,
   MethodCard,
+  OptionsSlot,
   PasswordField,
   PillSelect,
   SignupSelectTrigger,
   SignupTextarea,
   signupFieldClass,
+  SignupSuccessCard,
+  SignupSuccessFrame,
   SuccessPanel,
   UserIdField,
 } from "./signup-shared";
 
-const CURRICULUMS = ["CBSE", "ICSE", "State Board", "IB", "IGCSE", "Cambridge"];
-const GRADES = ["Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6", "Grade 7", "Grade 8", "Grade 9", "Grade 10"];
-const SUBJECTS = ["Mathematics", "Science", "English", "Computer", "Hindi", "Sanskrit"];
-const LEARNING_GOALS = ["Improve Grades", "Exam Preparation", "Build Concepts", "Homework Help", "Competitive Exams"];
+const LEARNING_METHOD_META: Record<string, { title: string; description: string; icon: typeof Bot }> = {
+  "ai-tutor": { title: "AI Tutor (Text to Text)", description: "Chat with AI for step-by-step explanations.", icon: Bot },
+  "ai-voice": { title: "AI Voice Tutor", description: "Learn hands-free with voice interaction.", icon: Mic },
+  videos: { title: "Pre-recorded Videos", description: "Watch concept videos at your own pace.", icon: PlayCircle },
+};
 
 function slugName(name: string) {
   return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/^\.+|\.+$/g, "");
@@ -104,6 +98,7 @@ function FormHeader({ eyebrow, title, accountType }: { eyebrow: string; title: s
 export function StudentSignupWizard() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const { options, loading: optionsLoading, error: optionsError, retry: retryOptions } = useSignupOptions();
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -111,7 +106,7 @@ export function StudentSignupWizard() {
   const [grade, setGrade] = useState("");
   const [parentPhone, setParentPhone] = useState("");
   const [parentEmail, setParentEmail] = useState("");
-  const [board, setBoard] = useState("");
+  const [curricula, setCurricula] = useState<string[]>([]);
   const [userId, setUserId] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -127,6 +122,14 @@ export function StudentSignupWizard() {
   }, [fullName, grade]);
 
   const submit = async () => {
+    if (optionsLoading || !options) {
+      toast({
+        title: "Dropdown options not ready",
+        description: optionsError ?? "Wait a moment or tap Retry on the highlighted fields.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (!fullName.trim()) {
       toast({ title: "Enter your name", variant: "destructive" });
       return;
@@ -135,8 +138,12 @@ export function StudentSignupWizard() {
       toast({ title: "Select your grade", variant: "destructive" });
       return;
     }
-    if (!board) {
+    if (!curricula.length) {
       toast({ title: "Choose a curriculum", variant: "destructive" });
+      return;
+    }
+    if (!userId.trim()) {
+      toast({ title: "Choose a user ID", variant: "destructive" });
       return;
     }
     if (password.length < 8) {
@@ -149,17 +156,20 @@ export function StudentSignupWizard() {
     }
     setLoading(true);
     try {
-      const email = parentEmail.trim() || `${userId || slugName(fullName)}@signup.aitutor.app`;
       const res = await fetch(`${API_BASE}/auth/signup/student`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          full_name: fullName,
-          email,
-          password,
-          school_name: "Individual Learning",
+          full_name: fullName.trim(),
           grade: grade.replace("Grade ", ""),
-          board,
+          user_id: userId.trim(),
+          password,
+          curricula,
+          parent_phone: parentPhone.trim() || undefined,
+          parent_email: parentEmail.trim() || undefined,
+          favorite_subjects: subjects,
+          learning_goals: goals,
+          preferred_learning_method: method || undefined,
         }),
       });
       const txt = await res.text();
@@ -185,6 +195,8 @@ export function StudentSignupWizard() {
     );
   }
 
+  const F = STUDENT_SIGNUP_FIELDS;
+
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6">
       <FormHeader
@@ -195,63 +207,100 @@ export function StudentSignupWizard() {
 
       <FormSection title="Basic Information" accountType="student">
         <FormRow cols={2}>
-          <FormField label="Full Name" required>
+          <FormField label={F.fullName.label} required={F.fullName.required}>
             <IconField icon={User} value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Rahul Sharma" />
           </FormField>
-          <FormField label="Grade / Class" required>
-            <Select value={grade || undefined} onValueChange={setGrade}>
-              <SignupSelectTrigger><SelectValue placeholder="Select grade" /></SignupSelectTrigger>
-              <SelectContent>{GRADES.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent>
-            </Select>
+          <FormField label={F.grade.label} required={F.grade.required}>
+            <OptionsSlot loading={optionsLoading} error={optionsError} onRetry={retryOptions} variant="select">
+              <Select value={grade || undefined} onValueChange={setGrade} disabled={!options}>
+                <SignupSelectTrigger><SelectValue placeholder="Select grade" /></SignupSelectTrigger>
+                <SelectContent>
+                  {(options?.student_grades ?? []).map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </OptionsSlot>
           </FormField>
         </FormRow>
         <FormRow cols={2}>
-          <FormField label="Parent Phone (Optional)">
+          <FormField label={F.parentPhone.label}>
             <IconField icon={Phone} value={parentPhone} onChange={(e) => setParentPhone(e.target.value)} placeholder="+91 98765 43210" />
           </FormField>
-          <FormField label="Parent Email (Optional)">
+          <FormField label={F.parentEmail.label}>
             <IconField icon={Mail} type="email" value={parentEmail} onChange={(e) => setParentEmail(e.target.value)} placeholder="parent@email.com" />
           </FormField>
         </FormRow>
-        <FormField label="Choose Curriculum" required>
-          <PillSelect options={CURRICULUMS} value={board} onChange={(v) => setBoard(v as string)} accountType="student" />
+        <FormField label={F.curricula.label} required={F.curricula.required}>
+          <OptionsSlot loading={optionsLoading} error={optionsError} onRetry={retryOptions} variant="pills">
+            <PillSelect
+              options={options?.curricula ?? []}
+              value={curricula}
+              onChange={(v) => setCurricula(v as string[])}
+              multiple
+              accountType="student"
+            />
+          </OptionsSlot>
         </FormField>
       </FormSection>
 
       <FormSection title="Login Details" accountType="student">
-        <FormField label="Choose User ID" required>
+        <FormField label={F.userId.label} required={F.userId.required}>
           <UserIdField value={userId} onChange={setUserId} suggestions={suggestions} accountType="student" />
         </FormField>
         <FormRow cols={2}>
-          <FormField label="Password" required>
+          <FormField label={F.password.label} required={F.password.required}>
             <PasswordField value={password} onChange={setPassword} />
           </FormField>
-          <FormField label="Confirm Password" required>
+          <FormField label={F.confirmPassword.label} required={F.confirmPassword.required}>
             <PasswordField value={confirmPassword} onChange={setConfirmPassword} placeholder="Confirm password" />
           </FormField>
         </FormRow>
       </FormSection>
 
       <FormSection title="Personalize Learning" accountType="student">
-        <FormField label="Favorite Subjects">
-          <PillSelect options={SUBJECTS} value={subjects} onChange={(v) => setSubjects(v as string[])} multiple accountType="student" />
+        <FormField label={F.subjects.label}>
+          <OptionsSlot loading={optionsLoading} error={optionsError} onRetry={retryOptions} variant="pills">
+            <PillSelect
+              options={options?.student_subjects ?? []}
+              value={subjects}
+              onChange={(v) => setSubjects(v as string[])}
+              multiple
+              accountType="student"
+            />
+          </OptionsSlot>
         </FormField>
-        <FormField label="Learning Goals">
-          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-            {LEARNING_GOALS.map((g) => (
-              <label key={g} className="flex items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
-                <Checkbox checked={goals.includes(g)} onCheckedChange={(c) => setGoals(c ? [...goals, g] : goals.filter((x) => x !== g))} />
-                {g}
-              </label>
-            ))}
-          </div>
+        <FormField label={F.goals.label}>
+          <OptionsSlot loading={optionsLoading} error={optionsError} onRetry={retryOptions} variant="checkboxes">
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+              {(options?.learning_goals ?? []).map((g) => (
+                <label key={g} className="flex items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+                  <Checkbox checked={goals.includes(g)} onCheckedChange={(c) => setGoals(c ? [...goals, g] : goals.filter((x) => x !== g))} />
+                  {g}
+                </label>
+              ))}
+            </div>
+          </OptionsSlot>
         </FormField>
-        <FormField label="Preferred Learning Method">
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-            <MethodCard accountType="student" title="AI Tutor (Text to Text)" description="Chat with AI for step-by-step explanations." icon={Bot} selected={method === "ai-tutor"} onSelect={() => setMethod("ai-tutor")} />
-            <MethodCard accountType="student" title="AI Voice Tutor" description="Learn hands-free with voice interaction." icon={Mic} selected={method === "ai-voice"} onSelect={() => setMethod("ai-voice")} />
-            <MethodCard accountType="student" title="Pre-recorded Videos" description="Watch concept videos at your own pace." icon={PlayCircle} selected={method === "videos"} onSelect={() => setMethod("videos")} />
-          </div>
+        <FormField label={F.method.label}>
+          <OptionsSlot loading={optionsLoading} error={optionsError} onRetry={retryOptions} variant="methods">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+              {(options?.learning_methods ?? []).map((m) => {
+                const meta = LEARNING_METHOD_META[m];
+                if (!meta) return null;
+                const Icon = meta.icon;
+                return (
+                  <MethodCard
+                    key={m}
+                    accountType="student"
+                    title={meta.title}
+                    description={meta.description}
+                    icon={Icon}
+                    selected={method === m}
+                    onSelect={() => setMethod(m)}
+                  />
+                );
+              })}
+            </div>
+          </OptionsSlot>
         </FormField>
       </FormSection>
 
@@ -262,14 +311,10 @@ export function StudentSignupWizard() {
 
 // ─── Teacher ─────────────────────────────────────────────────────────────────
 
-const TEACHER_SUBJECTS = ["Mathematics", "Science", "Physics", "Chemistry", "English", "Biology"];
-const EXPERIENCE = ["Less than 1 Year", "1-3 Years", "3-5 Years", "5+ Years"];
-const GRADE_RANGES = ["1st Grade - 5th Grade", "6th Grade - 10th Grade", "11th Grade - 12th Grade", "All Grades"];
-const CLASS_SIZES = ["1 - 20 Students", "21 - 40 Students", "41 - 60 Students", "60+ Students"];
-
 export function TeacherSignupWizard() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const { options, loading: optionsLoading, error: optionsError, retry: retryOptions } = useSignupOptions();
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -282,7 +327,7 @@ export function TeacherSignupWizard() {
   const [userId, setUserId] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [teachingMode, setTeachingMode] = useState("");
+  const [teachingModes, setTeachingModes] = useState<string[]>([]);
   const [bio, setBio] = useState("");
   const [classSize, setClassSize] = useState("");
 
@@ -293,8 +338,28 @@ export function TeacherSignupWizard() {
   }, [fullName]);
 
   const submit = async () => {
-    if (!fullName.trim() || !email.trim()) {
+    if (optionsLoading || !options) {
+      toast({
+        title: "Dropdown options not ready",
+        description: optionsError ?? "Wait a moment or tap Retry on the highlighted fields.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!fullName.trim() || !email.trim() || !mobile.trim()) {
       toast({ title: "Fill required fields", variant: "destructive" });
+      return;
+    }
+    if (!experience || !gradeRange || !classSize || !teachSubjects.length) {
+      toast({ title: "Complete your teaching profile", variant: "destructive" });
+      return;
+    }
+    if (!userId.trim()) {
+      toast({ title: "Choose a teacher user ID", variant: "destructive" });
+      return;
+    }
+    if (!teachingModes.length) {
+      toast({ title: "Select a teaching mode", variant: "destructive" });
       return;
     }
     if (password.length < 8 || password !== confirmPassword) {
@@ -302,10 +367,32 @@ export function TeacherSignupWizard() {
       return;
     }
     setLoading(true);
-    // ponytail: no tutor self-signup endpoint yet — UI completes with success state
-    await new Promise((r) => setTimeout(r, 800));
-    setLoading(false);
-    setSuccess(true);
+    try {
+      const res = await fetch(`${API_BASE}/auth/signup/tutor`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          full_name: fullName.trim(),
+          user_id: userId.trim(),
+          password,
+          email: email.trim(),
+          mobile: mobile.trim(),
+          teaching_experience: experience,
+          grades_teach: gradeRange,
+          class_size: classSize,
+          teaching_subjects: teachSubjects,
+          teaching_modes: teachingModes,
+          bio: bio.trim() || undefined,
+        }),
+      });
+      const txt = await res.text();
+      if (!res.ok) throw new Error(studentFriendlyApiError(txt, res.status, MSG.signupFailed));
+      setSuccess(true);
+    } catch (e) {
+      toast({ title: "Couldn't create account", description: studentFriendlyError(e, MSG.signupFailed), variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (success) {
@@ -321,82 +408,110 @@ export function TeacherSignupWizard() {
     );
   }
 
+  const TF = TEACHER_SIGNUP_FIELDS;
+
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6">
       <FormHeader accountType="teacher" eyebrow="Individual Teacher Signup" title="Set up your teaching profile" />
 
       <FormSection title="Teacher Details" accountType="teacher">
         <FormRow cols={2}>
-          <FormField label="Full Name" required>
+          <FormField label={TF.fullName.label} required={TF.fullName.required}>
             <IconField icon={User} value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Anita Verma" />
           </FormField>
-          <FormField label="Teaching Experience" required>
-            <Select value={experience || undefined} onValueChange={setExperience}>
-              <SignupSelectTrigger><SelectValue placeholder="Select experience" /></SignupSelectTrigger>
-              <SelectContent>{EXPERIENCE.map((e) => <SelectItem key={e} value={e}>{e}</SelectItem>)}</SelectContent>
-            </Select>
+          <FormField label={TF.experience.label} required={TF.experience.required}>
+            <OptionsSlot loading={optionsLoading} error={optionsError} onRetry={retryOptions} variant="select">
+              <Select value={experience || undefined} onValueChange={setExperience} disabled={!options}>
+                <SignupSelectTrigger><SelectValue placeholder="Select experience" /></SignupSelectTrigger>
+                <SelectContent>
+                  {(options?.teaching_experience ?? []).map((e) => <SelectItem key={e} value={e}>{e}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </OptionsSlot>
           </FormField>
         </FormRow>
         <FormRow cols={2}>
-          <FormField label="Grades You Teach" required>
-            <Select value={gradeRange || undefined} onValueChange={setGradeRange}>
-              <SignupSelectTrigger><SelectValue placeholder="Select grades" /></SignupSelectTrigger>
-              <SelectContent>{GRADE_RANGES.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent>
-            </Select>
+          <FormField label={TF.gradeRange.label} required={TF.gradeRange.required}>
+            <OptionsSlot loading={optionsLoading} error={optionsError} onRetry={retryOptions} variant="select">
+              <Select value={gradeRange || undefined} onValueChange={setGradeRange} disabled={!options}>
+                <SignupSelectTrigger><SelectValue placeholder="Select grades" /></SignupSelectTrigger>
+                <SelectContent>
+                  {(options?.tutor_grade_ranges ?? []).map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </OptionsSlot>
           </FormField>
-          <FormField label="Class Size (Average)" required>
-            <Select value={classSize || undefined} onValueChange={setClassSize}>
-              <SignupSelectTrigger><SelectValue placeholder="Select class size" /></SignupSelectTrigger>
-              <SelectContent>{CLASS_SIZES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
-            </Select>
+          <FormField label={TF.classSize.label} required={TF.classSize.required}>
+            <OptionsSlot loading={optionsLoading} error={optionsError} onRetry={retryOptions} variant="select">
+              <Select value={classSize || undefined} onValueChange={setClassSize} disabled={!options}>
+                <SignupSelectTrigger><SelectValue placeholder="Select class size" /></SignupSelectTrigger>
+                <SelectContent>
+                  {(options?.class_sizes ?? []).map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </OptionsSlot>
           </FormField>
         </FormRow>
-        <FormField label="Teaching Subjects" required>
-          <PillSelect options={TEACHER_SUBJECTS} value={teachSubjects} onChange={(v) => setTeachSubjects(v as string[])} multiple accountType="teacher" />
+        <FormField label={TF.teachSubjects.label} required={TF.teachSubjects.required}>
+          <OptionsSlot loading={optionsLoading} error={optionsError} onRetry={retryOptions} variant="pills">
+            <PillSelect
+              options={options?.tutor_subjects ?? []}
+              value={teachSubjects}
+              onChange={(v) => setTeachSubjects(v as string[])}
+              multiple
+              accountType="teacher"
+            />
+          </OptionsSlot>
         </FormField>
         <FormRow cols={2}>
-          <FormField label="Email (for recovery)" required>
+          <FormField label={TF.email.label} required={TF.email.required}>
             <IconField icon={Mail} type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="anita@email.com" />
           </FormField>
-          <FormField label="Mobile Number (for recovery)" required>
+          <FormField label={TF.mobile.label} required={TF.mobile.required}>
             <IconField icon={Phone} value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="+91 98765 43210" />
           </FormField>
         </FormRow>
       </FormSection>
 
       <FormSection title="Login Details" accountType="teacher">
-        <FormField label="Choose Teacher User ID" required>
+        <FormField label={TF.userId.label} required={TF.userId.required}>
           <UserIdField value={userId} onChange={setUserId} suggestions={suggestions} accountType="teacher" />
         </FormField>
         <FormRow cols={2}>
-          <FormField label="Password" required>
+          <FormField label={TF.password.label} required={TF.password.required}>
             <PasswordField value={password} onChange={setPassword} />
           </FormField>
-          <FormField label="Confirm Password" required>
+          <FormField label={TF.confirmPassword.label} required={TF.confirmPassword.required}>
             <PasswordField value={confirmPassword} onChange={setConfirmPassword} placeholder="Confirm password" />
           </FormField>
         </FormRow>
       </FormSection>
 
       <FormSection title="Teaching Profile" accountType="teacher">
-        <FormField label="Teaching Mode" required>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-            {(["online", "in-person", "hybrid"] as const).map((m) => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => setTeachingMode(m)}
-                className={cn(
-                  "rounded-lg border px-3 py-2.5 text-sm font-medium capitalize",
-                  teachingMode === m ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-300 bg-white text-muted-foreground hover:border-slate-400"
-                )}
-              >
-                {m.replace("-", " ")}
-              </button>
-            ))}
-          </div>
+        <FormField label={TF.teachingModes.label} required={TF.teachingModes.required}>
+          <OptionsSlot loading={optionsLoading} error={optionsError} onRetry={retryOptions} variant="modes">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              {(options?.teaching_modes ?? []).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() =>
+                    setTeachingModes((prev) =>
+                      prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]
+                    )
+                  }
+                  className={cn(
+                    "rounded-lg border px-3 py-2.5 text-sm font-medium capitalize",
+                    teachingModes.includes(m) ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-300 bg-white text-muted-foreground hover:border-slate-400"
+                  )}
+                >
+                  {m.replace("-", " ")}
+                </button>
+              ))}
+            </div>
+          </OptionsSlot>
         </FormField>
-        <FormField label="Short Bio / Introduction (Optional)">
+        <FormField label={TF.bio.label}>
           <SignupTextarea value={bio} onChange={(e) => setBio(e.target.value.slice(0, 200))} placeholder="Tell students about your teaching style..." rows={3} />
           <p className="mt-1 text-right text-xs text-muted-foreground">{bio.length} / 200</p>
         </FormField>
@@ -409,19 +524,10 @@ export function TeacherSignupWizard() {
 
 // ─── School ──────────────────────────────────────────────────────────────────
 
-const DEMO_STUDENTS = [
-  { name: "Rahul Sharma", grade: "6 - A", userId: "rahul.sharma", password: "Rs@4837", type: "Teacher Guided", teacher: "Anita Verma" },
-  { name: "Priya Patel", grade: "6 - B", userId: "priya.patel", password: "Pp@2910", type: "Self Learning", teacher: "Anita Verma" },
-  { name: "Arjun Singh", grade: "7 - A", userId: "arjun.singh", password: "As@7721", type: "Teacher Guided", teacher: "Rajesh Kumar" },
-];
-const DEMO_TEACHERS = [
-  { name: "Anita Verma", grade: "6-10", userId: "anita.verma", password: "Av@5521", type: "Mathematics", teacher: "—" },
-  { name: "Rajesh Kumar", grade: "7-9", userId: "rajesh.kumar", password: "Rk@8834", type: "Science", teacher: "—" },
-];
-
 export function SchoolSignupWizard() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const { options, loading: optionsLoading, error: optionsError, retry: retryOptions } = useSignupOptions();
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -448,8 +554,28 @@ export function SchoolSignupWizard() {
   }, [adminName, schoolName]);
 
   const submit = async () => {
-    if (!schoolName.trim() || !schoolEmail.trim() || !adminName.trim()) {
+    if (optionsLoading || !options) {
+      toast({
+        title: "Dropdown options not ready",
+        description: optionsError ?? "Wait a moment or tap Retry on the highlighted fields.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!schoolName.trim() || !schoolEmail.trim() || !adminName.trim() || !address.trim()) {
       toast({ title: "Fill required fields", variant: "destructive" });
+      return;
+    }
+    if (!designation.trim() || !recoveryEmail.trim() || !adminMobile.trim()) {
+      toast({ title: "Complete administrator details", variant: "destructive" });
+      return;
+    }
+    if (!adminUserId.trim()) {
+      toast({ title: "Choose an admin user ID", variant: "destructive" });
+      return;
+    }
+    if (!gradesOffered || !studentStrength || !curricula.length) {
+      toast({ title: "Complete school preferences", variant: "destructive" });
       return;
     }
     if (password.length < 8 || password !== confirmPassword) {
@@ -458,17 +584,24 @@ export function SchoolSignupWizard() {
     }
     setLoading(true);
     try {
-      const email = recoveryEmail.trim() || schoolEmail.trim();
-      const res = await fetch(`${API_BASE}/auth/signup/organization`, {
+      const res = await fetch(`${API_BASE}/auth/signup/school`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          full_name: adminName,
-          email,
+          school_name: schoolName.trim(),
+          school_email: schoolEmail.trim(),
+          phone: schoolPhone.trim(),
+          address: address.trim(),
+          website: website.trim() || undefined,
+          full_name: adminName.trim(),
+          designation: designation.trim(),
+          recovery_email: recoveryEmail.trim(),
+          mobile: adminMobile.trim(),
+          user_id: adminUserId.trim(),
           password,
-          organization_name: schoolName,
-          phone: schoolPhone || adminMobile,
-          address,
+          grades_offered: gradesOffered,
+          student_strength: studentStrength,
+          curricula,
         }),
       });
       const txt = await res.text();
@@ -483,27 +616,31 @@ export function SchoolSignupWizard() {
 
   if (success) {
     return (
-      <div className="mx-auto max-w-lg text-center">
-        <Building2 className="mx-auto h-16 w-16 text-blue-600" />
-        <h2 className="mt-4 text-xl font-bold text-foreground">All Set! Your School Workspace is Ready</h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          <span className="font-semibold text-foreground">{schoolName}</span> has been registered successfully.
-        </p>
-        <div className="mt-5 flex flex-wrap justify-center gap-2">
-          <Button variant="outline" size="sm" className="gap-1.5"><Download className="h-4 w-4" />Download Credentials</Button>
-          <Button variant="outline" size="sm" className="gap-1.5"><Mail className="h-4 w-4" />Send Credentials</Button>
-        </div>
-        <button
-          type="button"
-          onClick={() => navigate("/login")}
-          className={cn("mt-6 inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white", SIGNUP_THEMES.school.button)}
-        >
-          Go to School Dashboard
-          <ArrowRight className="h-4 w-4" />
-        </button>
-      </div>
+      <SignupSuccessFrame>
+        <SignupSuccessCard accountType="school">
+          <Building2 className="mx-auto h-16 w-16 text-blue-600" />
+          <h2 className="mt-4 text-xl font-bold text-foreground">All Set! Your School Workspace is Ready</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            <span className="font-semibold text-foreground">{schoolName}</span> has been registered successfully.
+          </p>
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
+            <Button variant="outline" size="sm" className="gap-1.5"><Download className="h-4 w-4" />Download Credentials</Button>
+            <Button variant="outline" size="sm" className="gap-1.5"><Mail className="h-4 w-4" />Send Credentials</Button>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate("/login")}
+            className={cn("mt-6 inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white", SIGNUP_THEMES.school.button)}
+          >
+            Go to School Dashboard
+            <ArrowRight className="h-4 w-4" />
+          </button>
+        </SignupSuccessCard>
+      </SignupSuccessFrame>
     );
   }
+
+  const SF = SCHOOL_SIGNUP_FIELDS;
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6">
@@ -511,51 +648,51 @@ export function SchoolSignupWizard() {
 
       <FormSection title="School Information" accountType="school">
         <FormRow cols={2}>
-          <FormField label="School Name" required>
+          <FormField label={SF.schoolName.label} required={SF.schoolName.required}>
             <IconField icon={Building2} value={schoolName} onChange={(e) => setSchoolName(e.target.value)} placeholder="Greenwood High School" />
           </FormField>
-          <FormField label="Official School Email" required>
+          <FormField label={SF.schoolEmail.label} required={SF.schoolEmail.required}>
             <IconField icon={Mail} type="email" value={schoolEmail} onChange={(e) => setSchoolEmail(e.target.value)} placeholder="admin@school.edu" />
           </FormField>
         </FormRow>
         <FormRow cols={2}>
-          <FormField label="Phone Number" required>
+          <FormField label={SF.schoolPhone.label} required={SF.schoolPhone.required}>
             <IconField icon={Phone} value={schoolPhone} onChange={(e) => setSchoolPhone(e.target.value)} placeholder="+91 98765 43210" />
           </FormField>
-          <FormField label="School Website (Optional)">
+          <FormField label={SF.website.label}>
             <Input value={website} onChange={(e) => setWebsite(e.target.value)} placeholder="https://school.edu" className={cn("h-10", signupFieldClass)} />
           </FormField>
         </FormRow>
-        <FormField label="School Address" required>
+        <FormField label={SF.address.label} required={SF.address.required}>
           <SignupTextarea value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Street, City, State" rows={2} />
         </FormField>
       </FormSection>
 
       <FormSection title="Administrator Login" accountType="school">
         <FormRow cols={2}>
-          <FormField label="Administrator Name" required>
+          <FormField label={SF.adminName.label} required={SF.adminName.required}>
             <IconField icon={User} value={adminName} onChange={(e) => setAdminName(e.target.value)} placeholder="John Doe" />
           </FormField>
-          <FormField label="Designation" required>
+          <FormField label={SF.designation.label} required={SF.designation.required}>
             <Input value={designation} onChange={(e) => setDesignation(e.target.value)} placeholder="School Administrator" className={cn("h-10", signupFieldClass)} />
           </FormField>
         </FormRow>
         <FormRow cols={2}>
-          <FormField label="Recovery Email" required>
+          <FormField label={SF.recoveryEmail.label} required={SF.recoveryEmail.required}>
             <IconField icon={Mail} type="email" value={recoveryEmail} onChange={(e) => setRecoveryEmail(e.target.value)} placeholder="admin@email.com" />
           </FormField>
-          <FormField label="Mobile Number" required>
+          <FormField label={SF.adminMobile.label} required={SF.adminMobile.required}>
             <IconField icon={Phone} value={adminMobile} onChange={(e) => setAdminMobile(e.target.value)} placeholder="+91 98765 43210" />
           </FormField>
         </FormRow>
-        <FormField label="Choose Admin User ID" required>
+        <FormField label={SF.adminUserId.label} required={SF.adminUserId.required}>
           <UserIdField value={adminUserId} onChange={setAdminUserId} suggestions={adminSuggestions} accountType="school" />
         </FormField>
         <FormRow cols={2}>
-          <FormField label="Create Password" required>
+          <FormField label={SF.password.label} required={SF.password.required}>
             <PasswordField value={password} onChange={setPassword} />
           </FormField>
-          <FormField label="Confirm Password" required>
+          <FormField label={SF.confirmPassword.label} required={SF.confirmPassword.required}>
             <PasswordField value={confirmPassword} onChange={setConfirmPassword} placeholder="Confirm password" />
           </FormField>
         </FormRow>
@@ -563,110 +700,47 @@ export function SchoolSignupWizard() {
 
       <FormSection title="School Preferences" accountType="school">
         <FormRow cols={2}>
-          <FormField label="Grades Offered" required>
-            <Select value={gradesOffered || undefined} onValueChange={setGradesOffered}>
-              <SignupSelectTrigger><SelectValue placeholder="Select grade range" /></SignupSelectTrigger>
-              <SelectContent>
-                <SelectItem value="1st Grade - 5th Grade">1st Grade - 5th Grade</SelectItem>
-                <SelectItem value="1st Grade - 10th Grade">1st Grade - 10th Grade</SelectItem>
-                <SelectItem value="6th Grade - 12th Grade">6th Grade - 12th Grade</SelectItem>
-              </SelectContent>
-            </Select>
+          <FormField label={SF.gradesOffered.label} required={SF.gradesOffered.required}>
+            <OptionsSlot loading={optionsLoading} error={optionsError} onRetry={retryOptions} variant="select">
+              <Select value={gradesOffered || undefined} onValueChange={setGradesOffered} disabled={!options}>
+                <SignupSelectTrigger><SelectValue placeholder="Select grade range" /></SignupSelectTrigger>
+                <SelectContent>
+                  {(options?.school_grade_ranges ?? []).map((g) => (
+                    <SelectItem key={g} value={g}>{g}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </OptionsSlot>
           </FormField>
-          <FormField label="Student Strength" required>
-            <Select value={studentStrength || undefined} onValueChange={setStudentStrength}>
-              <SignupSelectTrigger><SelectValue placeholder="Select student strength" /></SignupSelectTrigger>
-              <SelectContent>
-                <SelectItem value="1 - 100 Students">1 - 100 Students</SelectItem>
-                <SelectItem value="101 - 500 Students">101 - 500 Students</SelectItem>
-                <SelectItem value="501 - 1000 Students">501 - 1000 Students</SelectItem>
-                <SelectItem value="1000+ Students">1000+ Students</SelectItem>
-              </SelectContent>
-            </Select>
+          <FormField label={SF.studentStrength.label} required={SF.studentStrength.required}>
+            <OptionsSlot loading={optionsLoading} error={optionsError} onRetry={retryOptions} variant="select">
+              <Select value={studentStrength || undefined} onValueChange={setStudentStrength} disabled={!options}>
+                <SignupSelectTrigger><SelectValue placeholder="Select student strength" /></SignupSelectTrigger>
+                <SelectContent>
+                  {(options?.student_strength ?? []).map((s) => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </OptionsSlot>
           </FormField>
         </FormRow>
-        <FormField label="Curriculum Offered" required>
-          <PillSelect options={CURRICULUMS} value={curricula} onChange={(v) => setCurricula(v as string[])} multiple accountType="school" />
+        <FormField label={SF.curricula.label} required={SF.curricula.required}>
+          <OptionsSlot loading={optionsLoading} error={optionsError} onRetry={retryOptions} variant="pills">
+            <PillSelect
+              options={options?.curricula ?? []}
+              value={curricula}
+              onChange={(v) => setCurricula(v as string[])}
+              multiple
+              accountType="school"
+            />
+          </OptionsSlot>
         </FormField>
       </FormSection>
 
-      <FormSection title="Bulk Onboarding" accountType="school">
-        <FormRow cols={2}>
-          <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-white p-6 text-center">
-            <Upload className="h-8 w-8 text-blue-600" />
-            <p className="mt-2 text-sm font-semibold text-foreground">Upload Teachers</p>
-            <p className="mt-1 text-xs text-muted-foreground">Drag & drop Excel/CSV</p>
-            <button type="button" className="mt-2 text-xs font-medium text-blue-600 hover:underline">
-              <FileSpreadsheet className="mr-1 inline h-3.5 w-3.5" />
-              Download template
-            </button>
-          </div>
-          <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-white p-6 text-center">
-            <Upload className="h-8 w-8 text-blue-600" />
-            <p className="mt-2 text-sm font-semibold text-foreground">Upload Students</p>
-            <p className="mt-1 text-xs text-muted-foreground">Drag & drop Excel/CSV</p>
-            <button type="button" className="mt-2 text-xs font-medium text-blue-600 hover:underline">
-              <FileSpreadsheet className="mr-1 inline h-3.5 w-3.5" />
-              Download template
-            </button>
-          </div>
-        </FormRow>
-        <Tabs defaultValue="students">
-          <TabsList>
-            <TabsTrigger value="teachers">Teachers ({DEMO_TEACHERS.length})</TabsTrigger>
-            <TabsTrigger value="students">Students ({DEMO_STUDENTS.length})</TabsTrigger>
-          </TabsList>
-          <TabsContent value="teachers">
-            <CredentialsPreviewTable rows={DEMO_TEACHERS} isTeacher />
-          </TabsContent>
-          <TabsContent value="students">
-            <CredentialsPreviewTable rows={DEMO_STUDENTS} />
-          </TabsContent>
-        </Tabs>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" className="gap-1.5 border-slate-300"><RefreshCw className="h-3.5 w-3.5" />Regenerate All Passwords</Button>
-          <Button variant="outline" size="sm" className="gap-1.5 border-slate-300"><Download className="h-3.5 w-3.5" />Download Preview (Excel)</Button>
-        </div>
-      </FormSection>
+    
 
       <SubmitButton accountType="school" onClick={submit} loading={loading} label="Create School Account" />
-    </div>
-  );
-}
-
-function CredentialsPreviewTable({
-  rows,
-  isTeacher,
-}: {
-  rows: { name: string; grade: string; userId: string; password: string; type: string; teacher: string }[];
-  isTeacher?: boolean;
-}) {
-  return (
-    <div className="overflow-auto rounded-xl border border-slate-300 bg-white">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>{isTeacher ? "Grades" : "Grade / Subject"}</TableHead>
-            <TableHead>User ID</TableHead>
-            <TableHead>Temp Password</TableHead>
-            {!isTeacher && <TableHead>Learning Type</TableHead>}
-            {!isTeacher && <TableHead>Assigned Teacher</TableHead>}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((r) => (
-            <TableRow key={r.userId}>
-              <TableCell className="font-medium">{r.name}</TableCell>
-              <TableCell>{r.grade}</TableCell>
-              <TableCell className="text-muted-foreground">{r.userId}</TableCell>
-              <TableCell className="font-mono text-xs">{r.password}</TableCell>
-              {!isTeacher && <TableCell>{r.type}</TableCell>}
-              {!isTeacher && <TableCell>{r.teacher}</TableCell>}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
     </div>
   );
 }

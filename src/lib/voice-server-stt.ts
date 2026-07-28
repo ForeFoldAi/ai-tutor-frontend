@@ -10,9 +10,11 @@ export function shouldUseServerStt(_subjectName: string): boolean {
   return true;
 }
 
-/** Whisper augments barge-in capture only — browser STT stays primary for listening. */
-export function useWhisperVoiceCapture(_serverSttActive: boolean): boolean {
-  return false;
+/** Server Whisper is primary for listening when available (cross-device). */
+export function useWhisperVoiceCapture(serverSttActive: boolean): boolean {
+  const flag = import.meta.env.VITE_VOICE_SERVER_STT;
+  if (flag === "false") return false;
+  return serverSttActive;
 }
 
 /** @deprecated Whisper is preferred for all voice capture when available. */
@@ -51,6 +53,7 @@ export async function transcribeWithServer(
     token?: string | null;
     language?: string;
     rejectIfSimilarTo?: string;
+    voiceSessionId?: string;
   },
 ): Promise<TranscribeResult> {
   const root = baseUrl.replace(/\/$/, "");
@@ -61,6 +64,9 @@ export async function transcribeWithServer(
   form.append("language", opts.language || "en");
   if (opts.rejectIfSimilarTo?.trim()) {
     form.append("reject_if_similar_to", opts.rejectIfSimilarTo.trim());
+  }
+  if (opts.voiceSessionId?.trim()) {
+    form.append("voice_session_id", opts.voiceSessionId.trim());
   }
 
   const res = await fetch(endpoint, {
@@ -214,4 +220,17 @@ export function createVoiceRecorder(stream: MediaStream): VoiceRecorderControlle
       return recorder?.state === "recording";
     },
   };
+}
+
+export function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const raw = String(reader.result || "");
+      const idx = raw.indexOf(",");
+      resolve(idx >= 0 ? raw.slice(idx + 1) : raw);
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("read failed"));
+    reader.readAsDataURL(blob);
+  });
 }

@@ -7,7 +7,12 @@ import type {
 export const DEFAULT_LESSON_FORM: LessonPlanFormValues = {
   subject: "",
   grade: "",
+  sections: [],
   chapter: "",
+  topics: [],
+  customTopics: "",
+  pptTemplate: "clean_academic",
+  pptSlideCount: "12",
   duration: "",
   learningObjectives: "",
   prepareOptions: {

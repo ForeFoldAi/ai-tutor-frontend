@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
 import { ArrowDownAZ, ArrowUpAZ, KeyRound, Mail, Search } from "lucide-react";
+import { listCredentialCandidates, mapCredentialCandidate } from "@/api/credentials";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -21,7 +23,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { DEMO_CREDENTIAL_CANDIDATES } from "@/modules/organization/data/demo-credential-candidates";
 import type { AddCredsCandidateFilters, CredentialCandidate, CredentialRole } from "@/modules/organization/types/credentials";
 import {
   DEFAULT_ADD_CREDS_FILTERS,
@@ -67,9 +68,19 @@ interface CredentialUsersDialogProps {
   onOpenChange: (open: boolean) => void;
   variant: CredentialUsersDialogVariant;
   onSubmit: (values: CredentialUsersSubmitValues) => void;
+  pending?: boolean;
+  /** Individual tutors only manage students. */
+  hideTeacherRole?: boolean;
 }
 
-export function CredentialUsersDialog({ open, onOpenChange, variant, onSubmit }: CredentialUsersDialogProps) {
+export function CredentialUsersDialog({
+  open,
+  onOpenChange,
+  variant,
+  onSubmit,
+  pending,
+  hideTeacherRole = false,
+}: CredentialUsersDialogProps) {
   const config = VARIANT_CONFIG[variant];
   const Icon = config.icon;
 
@@ -77,9 +88,23 @@ export function CredentialUsersDialog({ open, onOpenChange, variant, onSubmit }:
   const [filters, setFilters] = useState<AddCredsCandidateFilters>(() => defaultFiltersForVariant(variant));
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
+  const candidatesQuery = useQuery({
+    queryKey: ["credentials", "candidates", role, open],
+    queryFn: () => listCredentialCandidates({ role }),
+    enabled: open,
+  });
+
+  const candidates = useMemo(
+    () => (candidatesQuery.data?.items ?? []).map(mapCredentialCandidate),
+    [candidatesQuery.data?.items],
+  );
+
+  const grades = candidatesQuery.data?.grades ?? [];
+  const sections = candidatesQuery.data?.sections ?? [];
+
   const visibleUsers = useMemo(
-    () => filterCredentialCandidates(DEMO_CREDENTIAL_CANDIDATES, role, filters),
-    [role, filters],
+    () => filterCredentialCandidates(candidates, role, filters),
+    [candidates, role, filters],
   );
 
   const resetState = () => {
@@ -90,6 +115,7 @@ export function CredentialUsersDialog({ open, onOpenChange, variant, onSubmit }:
 
   useEffect(() => {
     if (open) resetState();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, variant]);
 
   useEffect(() => {
@@ -118,11 +144,9 @@ export function CredentialUsersDialog({ open, onOpenChange, variant, onSubmit }:
   };
 
   const handleSubmit = () => {
-    const users = DEMO_CREDENTIAL_CANDIDATES.filter((u) => selectedIds.has(u.id));
-    if (users.length === 0) return;
+    const users = candidates.filter((u) => selectedIds.has(u.id));
+    if (users.length === 0 || pending) return;
     onSubmit({ role, users });
-    resetState();
-    onOpenChange(false);
   };
 
   const patchFilters = (patch: Partial<AddCredsCandidateFilters>, resetSelection = true) => {
@@ -150,7 +174,7 @@ export function CredentialUsersDialog({ open, onOpenChange, variant, onSubmit }:
                   <SelectValue placeholder="Select role" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Teacher">Teacher</SelectItem>
+                  {!hideTeacherRole ? <SelectItem value="Teacher">Teacher</SelectItem> : null}
                   <SelectItem value="Student">Student</SelectItem>
                 </SelectContent>
               </Select>
@@ -166,9 +190,11 @@ export function CredentialUsersDialog({ open, onOpenChange, variant, onSubmit }:
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Grades</SelectItem>
-                      <SelectItem value="6">Grade 6</SelectItem>
-                      <SelectItem value="7">Grade 7</SelectItem>
-                      <SelectItem value="8">Grade 8</SelectItem>
+                      {grades.map((grade) => (
+                        <SelectItem key={grade} value={grade}>
+                          Grade {grade}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -180,9 +206,11 @@ export function CredentialUsersDialog({ open, onOpenChange, variant, onSubmit }:
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Sections</SelectItem>
-                      <SelectItem value="A">Section A</SelectItem>
-                      <SelectItem value="B">Section B</SelectItem>
-                      <SelectItem value="C">Section C</SelectItem>
+                      {sections.map((section) => (
+                        <SelectItem key={section} value={section}>
+                          Section {section}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -262,8 +290,9 @@ export function CredentialUsersDialog({ open, onOpenChange, variant, onSubmit }:
 
             <div className="mt-3 flex items-center justify-between gap-2">
               <p className="text-sm text-muted-foreground">
-                {visibleUsers.length} {role.toLowerCase()}
-                {visibleUsers.length === 1 ? "" : "s"} · {selectedIds.size} selected
+                {candidatesQuery.isLoading
+                  ? "Loading…"
+                  : `${visibleUsers.length} ${role.toLowerCase()}${visibleUsers.length === 1 ? "" : "s"} · ${selectedIds.size} selected`}
               </p>
               <div className="flex gap-2">
                 <Button
@@ -290,7 +319,11 @@ export function CredentialUsersDialog({ open, onOpenChange, variant, onSubmit }:
             </div>
 
             <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto rounded-lg border border-border/70 p-2">
-              {visibleUsers.length === 0 ? (
+              {candidatesQuery.isError ? (
+                <p className="py-8 text-center text-sm text-destructive">
+                  {String(candidatesQuery.error)}
+                </p>
+              ) : visibleUsers.length === 0 && !candidatesQuery.isLoading ? (
                 <p className="py-8 text-center text-sm text-muted-foreground">
                   No {role.toLowerCase()}s match your filters.
                 </p>
@@ -340,8 +373,12 @@ export function CredentialUsersDialog({ open, onOpenChange, variant, onSubmit }:
           <Button type="button" variant="outline" onClick={() => handleClose(false)}>
             Cancel
           </Button>
-          <Button type="button" disabled={selectedIds.size === 0} onClick={handleSubmit}>
-            {config.submitLabel} {selectedIds.size > 0 ? `(${selectedIds.size})` : ""}
+          <Button type="button" disabled={selectedIds.size === 0 || pending} onClick={handleSubmit}>
+            {pending
+              ? variant === "add"
+                ? "Generating…"
+                : "Sending…"
+              : `${config.submitLabel}${selectedIds.size > 0 ? ` (${selectedIds.size})` : ""}`}
           </Button>
         </DialogFooter>
       </DialogContent>
