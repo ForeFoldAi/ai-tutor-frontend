@@ -3,6 +3,10 @@
  */
 
 const PRE_ROLL_MS_DEFAULT = 2800;
+/** Barge gate clip — no tutor pre-roll (mic was playing TTS) */
+export const BARGE_GATE_PRE_ROLL_MS = 0;
+/** Post-interrupt question — short tail only */
+export const POST_INTERRUPT_PRE_ROLL_MS = 800;
 
 export function shouldUseServerStt(_subjectName: string): boolean {
   const flag = import.meta.env.VITE_VOICE_SERVER_STT;
@@ -10,11 +14,15 @@ export function shouldUseServerStt(_subjectName: string): boolean {
   return true;
 }
 
-/** Server Whisper is primary for listening when available (cross-device). */
+/** Opt-in: Whisper captures listen-mode utterances (mobile / weak browser STT). Default off. */
+export function useWhisperListenPrimary(): boolean {
+  return import.meta.env.VITE_WHISPER_LISTEN_PRIMARY === "true";
+}
+
+/** Whisper primary for listen only when explicitly enabled; barge always uses server STT. */
 export function useWhisperVoiceCapture(serverSttActive: boolean): boolean {
-  const flag = import.meta.env.VITE_VOICE_SERVER_STT;
-  if (flag === "false") return false;
-  return serverSttActive;
+  if (!serverSttActive) return false;
+  return useWhisperListenPrimary();
 }
 
 /** @deprecated Whisper is preferred for all voice capture when available. */
@@ -99,7 +107,7 @@ export type VoiceRecorderController = {
 export type ContinuousMicRecorder = {
   ensureRunning: () => void;
   stop: () => void;
-  beginUtteranceCapture: () => void;
+  beginUtteranceCapture: (opts?: { preRollMs?: number }) => void;
   endUtteranceCapture: () => Blob;
   isCapturingUtterance: () => boolean;
 };
@@ -168,10 +176,11 @@ export function createContinuousMicRecorder(
       utteranceChunks = [];
       initSegment = null;
     },
-    beginUtteranceCapture() {
+    beginUtteranceCapture(opts?: { preRollMs?: number }) {
       this.ensureRunning();
       captureStartedAt = Date.now();
-      const cutoff = captureStartedAt - preRollMs;
+      const roll = opts?.preRollMs ?? preRollMs;
+      const cutoff = captureStartedAt - roll;
       utteranceChunks = withInitSegment(ring.filter((x) => x.t >= cutoff).map((x) => x.blob));
       capturing = true;
     },

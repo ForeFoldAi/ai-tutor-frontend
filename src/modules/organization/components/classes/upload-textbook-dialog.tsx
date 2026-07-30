@@ -201,7 +201,7 @@ export function UploadTextbookDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[92vh] max-w-[min(1180px,96vw)] flex-col gap-0 overflow-hidden p-6">
+      <DialogContent className="flex max-h-[min(92dvh,46rem)] w-[min(1100px,calc(100vw-1.5rem))] max-w-none flex-col gap-0 overflow-hidden p-4 sm:p-6">
         <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <UploadCloud className="h-5 w-5" />
@@ -214,8 +214,8 @@ export function UploadTextbookDialog({
         <Form {...form}>
           <form className="flex min-h-0 flex-1 flex-col gap-3 pt-3" onSubmit={form.handleSubmit(onSubmit)}>
             <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
-              <div className="min-w-[1040px]">
-                <div className={`${ROW_GRID} border-b border-black/20 pb-2 dark:border-border/60`}>
+              <div className="flex h-full min-h-0 min-w-[760px] flex-col">
+                <div className={`${ROW_GRID} shrink-0 border-b border-black/20 pb-2 dark:border-border/60`}>
                   {["Class", "Subject", "Type", "Number", "Title", "File"].map((label) => (
                     <span key={label} className={COL_HEADER}>
                       {label}
@@ -224,7 +224,7 @@ export function UploadTextbookDialog({
                   <span className="sr-only">Remove</span>
                 </div>
 
-                <div className="max-h-[min(52vh,520px)] space-y-2 overflow-y-auto py-2 pr-1">
+                <div className="min-h-0 flex-1 space-y-2 overflow-y-auto py-2 pr-1">
                   {fields.map((field, index) => {
                     const contentType = form.watch(`uploads.${index}.contentType`);
                     const classId = form.watch(`uploads.${index}.classId`);

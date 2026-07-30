@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { PageShell } from "@/components/page-shell";
 import { cn } from "@/lib/utils";
 import type { ActivityItem, AssignmentItem, TutorStudentProfile } from "@/modules/tutor/types/student-profile";
 import { LiaInsightsPanel } from "@/modules/tutor/components/students/lia-insights-panel";
@@ -204,7 +205,7 @@ export function StudentProfileView({ student }: StudentProfileViewProps) {
   const notesSpan = student.assignments.length >= 3 ? "lg:col-span-1" : "lg:col-span-2";
 
   return (
-    <div className="dashboard-fit flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-4 md:p-5">
+    <PageShell>
       <div className="flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <nav className="flex items-center gap-1 text-sm">
           <Link href="/tutor/students" className="font-medium text-primary hover:underline">
@@ -503,6 +504,6 @@ export function StudentProfileView({ student }: StudentProfileViewProps) {
 
         <LiaInsightsPanel studentId={student.id} className={CARD_CLASS} />
       </div>
-    </div>
+    </PageShell>
   );
 }

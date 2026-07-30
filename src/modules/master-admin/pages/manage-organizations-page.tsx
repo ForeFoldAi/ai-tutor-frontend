@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { PageShell } from "@/components/page-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -106,7 +107,7 @@ export default function ManageOrganizationsPage() {
 
   if (loading) {
     return (
-      <div className="p-6 space-y-6">
+      <PageShell>
         <Skeleton className="h-7 w-[240px]" />
         <Card>
           <CardContent className="p-6 space-y-4">
@@ -114,12 +115,12 @@ export default function ManageOrganizationsPage() {
             <Skeleton className="h-80 w-full" />
           </CardContent>
         </Card>
-      </div>
+      </PageShell>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <PageShell>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Organizations</h1>
@@ -294,7 +295,7 @@ export default function ManageOrganizationsPage() {
           </div>
 
           <div className="rounded-lg border overflow-hidden">
-            <Table>
+            <Table className="min-w-[1120px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>
@@ -383,6 +384,6 @@ export default function ManageOrganizationsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </PageShell>
   );
 }

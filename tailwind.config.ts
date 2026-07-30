@@ -122,6 +122,20 @@ export default {
         serif: ["var(--font-serif)"],
         mono: ["var(--font-mono)"],
       },
+      maxWidth: {
+        "content-standard": "var(--content-max-standard)",
+        "content-wide": "var(--content-max-wide)",
+      },
+      spacing: {
+        "page-x": "var(--page-padding-x)",
+        "page-y": "var(--page-padding-y)",
+        "section": "var(--page-section-gap)",
+        "sidebar-app": "var(--app-sidebar-width)",
+        "card-pad": "var(--card-padding)",
+        "control-sm": "var(--control-height-sm)",
+        control: "var(--control-height)",
+        "control-lg": "var(--control-height-lg)",
+      },
       keyframes: {
         "accordion-down": {
           from: { height: "0" },

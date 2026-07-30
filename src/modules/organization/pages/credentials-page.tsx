@@ -20,6 +20,7 @@ import { CredentialsTable } from "@/modules/organization/components/credentials/
 import { CredentialsToolbar } from "@/modules/organization/components/credentials/credentials-toolbar";
 import type { CredentialFilters, CredentialMetrics } from "@/modules/organization/types/credentials";
 import { DEFAULT_CREDENTIAL_FILTERS } from "@/modules/organization/utils/credentials-helpers";
+import { PageShell } from "@/components/page-shell";
 import { DataState } from "@/modules/shared/components/data-state";
 import { useEntitySearch } from "@/modules/search";
 import { invalidateManyAndBroadcast } from "@/lib/query-broadcast";
@@ -181,7 +182,7 @@ export default function OrganizationCredentialsPage() {
   const metrics = statsQuery.data ? mapCredentialMetrics(statsQuery.data) : EMPTY_METRICS;
 
   return (
-    <div className="dashboard-fit flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3 md:p-4">
+    <PageShell>
       <div className="flex shrink-0 flex-col gap-2">
         <CredentialsToolbar
           title={
@@ -265,6 +266,6 @@ export default function OrganizationCredentialsPage() {
         pending={sendMutation.isPending}
         hideTeacherRole={individual}
       />
-    </div>
+    </PageShell>
   );
 }

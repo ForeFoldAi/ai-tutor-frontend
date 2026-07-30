@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { PageShell } from "@/components/page-shell";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -93,7 +94,7 @@ export default function MasterAdminAIEmbeddingsPage() {
 
   if (loading) {
     return (
-      <div className="p-6 space-y-6">
+      <PageShell>
         <Skeleton className="h-7 w-[240px]" />
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -101,12 +102,12 @@ export default function MasterAdminAIEmbeddingsPage() {
           ))}
         </div>
         <Skeleton className="h-96 w-full" />
-      </div>
+      </PageShell>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <PageShell>
       <div className="flex items-center justify-between">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight">AI Embeddings</h1>
@@ -172,7 +173,7 @@ export default function MasterAdminAIEmbeddingsPage() {
         </CardHeader>
         <CardContent>
           <div className="rounded-lg border overflow-hidden">
-            <Table>
+            <Table className="min-w-[1180px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>File Name</TableHead>
@@ -273,6 +274,6 @@ export default function MasterAdminAIEmbeddingsPage() {
           </div>
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   );
 }

@@ -13,6 +13,7 @@ import { OnboardingProgressCard } from "@/modules/organization/components/dashbo
 import { PendingItemsCard } from "@/modules/organization/components/dashboard/pending-items-card";
 import { SchoolAdminDashboardHeader } from "@/modules/organization/components/dashboard/school-admin-dashboard-header";
 import { SchoolBoardsCard } from "@/modules/organization/components/dashboard/school-boards-card";
+import { PageShell } from "@/components/page-shell";
 import { DataState } from "@/modules/shared/components/data-state";
 import type { SchoolDashboardMetrics } from "@/modules/organization/types/dashboard";
 
@@ -48,7 +49,7 @@ export default function OrganizationDashboardPage() {
   const curricula = dashboardQuery.data?.curricula ?? [];
 
   return (
-    <div className="dashboard-fit flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-4 md:p-5">
+    <PageShell>
       <div className="shrink-0">
         <SchoolAdminDashboardHeader welcomeName={welcomeName} />
       </div>
@@ -114,6 +115,6 @@ export default function OrganizationDashboardPage() {
           <SchoolBoardsCard curricula={curricula} />
         </div>
       </DataState>
-    </div>
+    </PageShell>
   );
 }

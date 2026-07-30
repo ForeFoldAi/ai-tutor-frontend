@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { DataState } from "@/modules/shared/components/data-state";
+import { PageShell } from "@/components/page-shell";
 import { cn } from "@/lib/utils";
 import {
   Calendar,
@@ -211,7 +212,10 @@ export default function AssignmentsPage() {
   }, [items, tab, search]);
 
   return (
-    <div className="dashboard-fit flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto p-3 md:p-4 lg:overflow-hidden">
+    <PageShell
+      className="overflow-x-hidden lg:overflow-hidden"
+      contentClassName="min-h-0 flex-1"
+    >
       <div className="flex shrink-0 flex-col gap-2">
         <div className="min-w-0 space-y-0.5">
           <h1 className="text-xl font-bold text-blue-900 dark:text-blue-100 sm:text-2xl">
@@ -451,6 +455,6 @@ export default function AssignmentsPage() {
           </Card>
         </aside>
       </div>
-    </div>
+    </PageShell>
   );
 }

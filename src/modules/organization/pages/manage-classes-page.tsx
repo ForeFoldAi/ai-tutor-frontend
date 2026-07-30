@@ -40,6 +40,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { PageShell } from "@/components/page-shell";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DataState } from "@/modules/shared/components/data-state";
@@ -320,7 +321,7 @@ export default function OrganizationManageClassesPage() {
   const classesError = classesQuery.error ?? optionsQuery.error ?? null;
 
   return (
-    <div className="dashboard-fit flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 md:p-5">
+    <PageShell>
       <Tabs defaultValue="classes" className="flex flex-col gap-4">
         <TabsList className="h-auto w-fit gap-6 rounded-none border-b border-border/60 bg-transparent p-0">
           {TABS.map((tab) => (
@@ -525,6 +526,6 @@ export default function OrganizationManageClassesPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </PageShell>
   );
 }

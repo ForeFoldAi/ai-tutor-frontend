@@ -97,8 +97,8 @@ export function AssignSubjectsDialog({
 
   return (
     <Dialog open={open} onOpenChange={resetOnClose}>
-      <DialogContent className="flex max-h-[90dvh] w-[calc(100%-1.5rem)] max-w-4xl flex-col gap-0 overflow-hidden p-0 sm:h-[min(90dvh,42rem)]">
-        <DialogHeader className="shrink-0 border-b border-border px-6 py-5">
+      <DialogContent className="flex max-w-4xl flex-col gap-0 overflow-hidden p-0 sm:h-[min(88dvh,40rem)]">
+        <DialogHeader className="shrink-0 border-b border-border px-6 py-4">
           <DialogTitle className="flex items-center gap-2">
             <BookMarked className="h-5 w-5 text-primary" />
             Assign Subjects
@@ -123,7 +123,7 @@ export function AssignSubjectsDialog({
                 />
               </div>
             </div>
-            <div className="mt-3 h-[20rem] space-y-2 overflow-y-auto overscroll-contain pr-1 sm:h-[22rem] md:h-auto md:min-h-0 md:flex-1">
+            <div className="mt-3 max-h-[20rem] space-y-2 overflow-y-auto overscroll-contain pr-1 sm:max-h-[22rem] md:min-h-0 md:max-h-none md:flex-1">
               {activeTeachers.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No teachers match your search.</p>
               ) : (
@@ -163,7 +163,7 @@ export function AssignSubjectsDialog({
                 />
               </div>
             </div>
-            <div className="mt-3 h-[20rem] space-y-2 overflow-y-auto overscroll-contain pr-1 sm:h-[22rem] md:h-auto md:min-h-0 md:flex-1">
+            <div className="mt-3 max-h-[20rem] space-y-2 overflow-y-auto overscroll-contain pr-1 sm:max-h-[22rem] md:min-h-0 md:max-h-none md:flex-1">
               {filteredSubjects.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
                   No subjects available yet. Add subjects from the Classes → Subjects tab first.

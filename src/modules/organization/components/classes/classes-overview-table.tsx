@@ -36,8 +36,8 @@ export function ClassesOverviewTable({
   onDelete,
 }: ClassesOverviewTableProps) {
   return (
-    <div className="overflow-auto rounded-xl border border-border/70 bg-card">
-      <Table className="min-w-[560px] text-xs sm:min-w-[720px] sm:text-sm lg:min-w-[800px]">
+    <div className="overflow-hidden rounded-xl border border-border/70 bg-card">
+      <Table className="min-w-[560px] text-xs sm:min-w-[680px] sm:text-sm">
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <TableHead className={headClass}>Class ID</TableHead>

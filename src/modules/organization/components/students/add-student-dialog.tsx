@@ -50,6 +50,11 @@ const emptyRow = (): AddStudentRowValues => ({
   parent_email: "",
 });
 
+// ponytail: one grid template for header + rows; real column minimums so narrow
+// viewports scroll the dialog instead of crushing the inputs.
+const ROW_GRID =
+  "grid grid-cols-[minmax(5rem,0.75fr)_minmax(9rem,1.2fr)_minmax(8rem,1fr)_minmax(9rem,1.2fr)_auto] gap-x-3";
+
 interface AddStudentDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -97,7 +102,7 @@ export function AddStudentDialog({ open, onOpenChange, onSubmit }: AddStudentDia
               });
             })}
           >
-            <div className="grid grid-cols-[minmax(0,0.75fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto] gap-x-3 gap-y-1 border-b border-border/60 pb-2">
+            <div className={`${ROW_GRID} gap-y-1 border-b border-border/60 pb-2`}>
               <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                 Roll no.
               </span>
@@ -116,7 +121,7 @@ export function AddStudentDialog({ open, onOpenChange, onSubmit }: AddStudentDia
               {fields.map((field, index) => (
                 <div
                   key={field.id}
-                  className="grid grid-cols-[minmax(0,0.75fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto] items-start gap-x-3"
+                  className={`${ROW_GRID} items-start`}
                 >
                   <FormField
                     control={form.control}

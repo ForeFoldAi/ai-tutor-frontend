@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { DataState } from "@/modules/shared/components/data-state";
+import { PageShell } from "@/components/page-shell";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowLeft, CheckCircle2, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -28,7 +29,7 @@ function ResultView({ detail }: { detail: StudentAssignmentDetail }) {
   const showScore =
     isQuiz && detail.score != null && detail.max_score != null;
   return (
-    <div className="space-y-4">
+    <div className="mx-auto max-w-2xl space-y-4">
       <div className="rounded-xl border border-border/70 bg-card p-4">
         <p className="text-sm font-semibold text-foreground">{detail.title}</p>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -120,7 +121,7 @@ export default function AssignmentTakePage() {
   const title = useMemo(() => detail?.title ?? "Assignment", [detail?.title]);
 
   return (
-    <div className="dashboard-fit flex min-h-0 flex-1 flex-col gap-2 overflow-hidden p-3 md:p-4">
+    <PageShell size="standard" contentClassName="min-h-0 flex-1">
       <div className="flex shrink-0 flex-col gap-2">
         <Button asChild variant="ghost" size="sm" className="h-8 w-fit gap-1.5 px-2">
           <Link href="/assignments">
@@ -233,6 +234,6 @@ export default function AssignmentTakePage() {
           ) : null}
         </div>
       </DataState>
-    </div>
+    </PageShell>
   );
 }

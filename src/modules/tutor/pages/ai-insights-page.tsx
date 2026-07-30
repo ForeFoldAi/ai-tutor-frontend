@@ -8,6 +8,7 @@ import { AI_INSIGHTS_PREVIEW_LIMIT } from "@/modules/tutor/components/ai-insight
 import { DEMO_QUICK_ACTIONS } from "@/modules/tutor/data/demo-ai-insights";
 import { mapLiaClassInsights } from "@/modules/tutor/utils/lia-helpers";
 import { DataState } from "@/modules/shared/components/data-state";
+import { PageShell } from "@/components/page-shell";
 
 export default function TutorAIInsightsPage() {
   const insightsQuery = useQuery({
@@ -22,13 +23,16 @@ export default function TutorAIInsightsPage() {
   const quickActionPreview = DEMO_QUICK_ACTIONS.slice(0, AI_INSIGHTS_PREVIEW_LIMIT);
 
   return (
-    <div className="dashboard-fit relative flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto bg-gradient-to-br from-violet-50 via-indigo-50/80 to-violet-100 p-3 md:p-4 dark:from-slate-950 dark:via-indigo-950/40 dark:to-violet-950/30">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
+    <PageShell
+      className="relative bg-gradient-to-br from-violet-50 via-indigo-50/80 to-violet-100 dark:from-slate-950 dark:via-indigo-950/40 dark:to-violet-950/30"
+      contentClassName="relative z-10 min-h-0 flex-1"
+    >
+      <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden" aria-hidden>
         <div className="absolute right-0 top-1/4 h-64 w-64 rounded-full bg-violet-300/45 blur-3xl" />
         <div className="absolute bottom-0 left-1/3 h-56 w-56 rounded-full bg-indigo-300/40 blur-3xl" />
       </div>
 
-      <div className="relative z-10 flex min-h-0 flex-1 flex-col gap-3">
+      <div className="flex min-h-0 flex-1 flex-col gap-3">
         <div className="shrink-0 space-y-0.5">
           <h1 className="text-xl font-bold leading-tight text-blue-900 dark:text-blue-100 sm:text-2xl">
             AI Insights
@@ -63,6 +67,6 @@ export default function TutorAIInsightsPage() {
           </div>
         </DataState>
       </div>
-    </div>
+    </PageShell>
   );
 }

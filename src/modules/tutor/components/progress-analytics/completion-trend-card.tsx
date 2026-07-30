@@ -27,7 +27,7 @@ export function CompletionTrendCard({ data }: CompletionTrendCardProps) {
           config={{
             completion: { label: "Completion", color: "hsl(243 75% 59%)" },
           }}
-          className="h-[220px] w-full"
+          className="h-[13.75rem] w-full"
         >
           <LineChart data={data} margin={{ left: -8, right: 12, top: 8, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" vertical={false} />

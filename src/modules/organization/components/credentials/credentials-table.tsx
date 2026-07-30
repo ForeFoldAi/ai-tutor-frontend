@@ -40,92 +40,90 @@ function gradeLabel(record: CredentialRecord) {
 
 export function CredentialsTable({ records }: CredentialsTableProps) {
   return (
-    <div className="overflow-x-auto">
-      <Table className="min-w-[980px] text-xs sm:min-w-[1080px] sm:text-sm">
-        <TableHeader>
-          <TableRow className="hover:bg-transparent">
-            <TableHead className={headClass}>Name</TableHead>
-            <TableHead className={headClass}>Role</TableHead>
-            <TableHead className={headClass}>User ID</TableHead>
-            <TableHead className={headClass}>Grade</TableHead>
-            <TableHead className={`${headClass} whitespace-normal leading-snug`}>
-              Credential Generated
-            </TableHead>
-            <TableHead className={`${headClass} whitespace-normal leading-snug`}>
-              Credential Shared
-            </TableHead>
-            <TableHead className={`${headClass} whitespace-normal leading-snug`}>First Login</TableHead>
-            <TableHead className={headClass}>Last Login</TableHead>
-            <TableHead className={`${headClass} whitespace-normal leading-snug`}>
-              Delivery Status
-            </TableHead>
+    <Table className="min-w-[860px] text-xs sm:min-w-[920px] sm:text-sm">
+      <TableHeader>
+        <TableRow className="hover:bg-transparent">
+          <TableHead className={headClass}>Name</TableHead>
+          <TableHead className={headClass}>Role</TableHead>
+          <TableHead className={headClass}>User ID</TableHead>
+          <TableHead className={headClass}>Grade</TableHead>
+          <TableHead className={`${headClass} whitespace-normal leading-snug`}>
+            Credential Generated
+          </TableHead>
+          <TableHead className={`${headClass} whitespace-normal leading-snug`}>
+            Credential Shared
+          </TableHead>
+          <TableHead className={`${headClass} whitespace-normal leading-snug`}>First Login</TableHead>
+          <TableHead className={`${headClass} whitespace-normal leading-snug`}>Last Login</TableHead>
+          <TableHead className={`${headClass} whitespace-normal leading-snug`}>
+            Delivery Status
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {records.length === 0 ? (
+          <TableRow>
+            <TableCell colSpan={9} className={`${cellClass} py-6 text-center text-muted-foreground`}>
+              No credential records match your filters.
+            </TableCell>
           </TableRow>
-        </TableHeader>
-        <TableBody>
-          {records.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={9} className={`${cellClass} py-6 text-center text-muted-foreground`}>
-                No credential records match your filters.
+        ) : (
+          records.map((record) => (
+            <TableRow key={record.id}>
+              <TableCell className={`${cellClass} font-semibold text-blue-900 dark:text-blue-100`}>
+                {record.name}
+              </TableCell>
+              <TableCell className={`${cellClass} whitespace-nowrap`}>{record.role}</TableCell>
+              <TableCell className={`${cellClass} whitespace-nowrap text-muted-foreground`}>
+                {record.userId}
+              </TableCell>
+              <TableCell className={`${cellClass} text-muted-foreground`}>
+                {gradeLabel(record)}
+              </TableCell>
+              <TableCell className={cellClass}>
+                {record.hasCredentials ? (
+                  <Badge
+                    variant="outline"
+                    className="inline-flex items-center gap-1 whitespace-nowrap border-emerald-200 bg-emerald-50 px-2 py-0 text-xs text-emerald-700"
+                  >
+                    <Check className="h-3 w-3" />
+                    Yes
+                  </Badge>
+                ) : (
+                  <Badge
+                    variant="outline"
+                    className="inline-flex items-center whitespace-nowrap border-slate-200 bg-slate-50 px-2 py-0 text-xs text-muted-foreground"
+                  >
+                    No
+                  </Badge>
+                )}
+              </TableCell>
+              <TableCell className={`${cellClass} text-muted-foreground`}>
+                {record.credentialShared ?? "—"}
+              </TableCell>
+              <TableCell className={cellClass}>
+                <Badge
+                  variant="outline"
+                  className={`whitespace-nowrap px-2 py-0 text-xs ${LOGIN_STATUS_STYLES[record.firstLoginStatus]}`}
+                >
+                  {record.firstLoginStatus}
+                </Badge>
+              </TableCell>
+              <TableCell className={`${cellClass} text-muted-foreground`}>
+                {record.lastLogin ?? "—"}
+              </TableCell>
+              <TableCell className={cellClass}>
+                <Badge
+                  variant="outline"
+                  className={`whitespace-nowrap px-2 py-0 text-xs ${DELIVERY_STATUS_STYLES[record.deliveryStatus] ?? DELIVERY_STATUS_STYLES["Not Sent"]}`}
+                >
+                  {record.deliveryStatus}
+                </Badge>
               </TableCell>
             </TableRow>
-          ) : (
-            records.map((record) => (
-              <TableRow key={record.id}>
-                <TableCell className={`${cellClass} whitespace-nowrap font-semibold text-blue-900 dark:text-blue-100`}>
-                  {record.name}
-                </TableCell>
-                <TableCell className={`${cellClass} whitespace-nowrap`}>{record.role}</TableCell>
-                <TableCell className={`${cellClass} whitespace-nowrap text-muted-foreground`}>
-                  {record.userId}
-                </TableCell>
-                <TableCell className={`${cellClass} whitespace-nowrap text-muted-foreground`}>
-                  {gradeLabel(record)}
-                </TableCell>
-                <TableCell className={cellClass}>
-                  {record.hasCredentials ? (
-                    <Badge
-                      variant="outline"
-                      className="inline-flex items-center gap-1 whitespace-nowrap border-emerald-200 bg-emerald-50 px-2 py-0 text-xs text-emerald-700"
-                    >
-                      <Check className="h-3 w-3" />
-                      Yes
-                    </Badge>
-                  ) : (
-                    <Badge
-                      variant="outline"
-                      className="inline-flex items-center whitespace-nowrap border-slate-200 bg-slate-50 px-2 py-0 text-xs text-muted-foreground"
-                    >
-                      No
-                    </Badge>
-                  )}
-                </TableCell>
-                <TableCell className={`${cellClass} whitespace-nowrap text-muted-foreground`}>
-                  {record.credentialShared ?? "—"}
-                </TableCell>
-                <TableCell className={cellClass}>
-                  <Badge
-                    variant="outline"
-                    className={`whitespace-nowrap px-2 py-0 text-xs ${LOGIN_STATUS_STYLES[record.firstLoginStatus]}`}
-                  >
-                    {record.firstLoginStatus}
-                  </Badge>
-                </TableCell>
-                <TableCell className={`${cellClass} whitespace-nowrap text-muted-foreground`}>
-                  {record.lastLogin ?? "—"}
-                </TableCell>
-                <TableCell className={cellClass}>
-                  <Badge
-                    variant="outline"
-                    className={`whitespace-nowrap px-2 py-0 text-xs ${DELIVERY_STATUS_STYLES[record.deliveryStatus] ?? DELIVERY_STATUS_STYLES["Not Sent"]}`}
-                  >
-                    {record.deliveryStatus}
-                  </Badge>
-                </TableCell>
-              </TableRow>
-            ))
-          )}
-        </TableBody>
-      </Table>
-    </div>
+          ))
+        )}
+      </TableBody>
+    </Table>
   );
 }

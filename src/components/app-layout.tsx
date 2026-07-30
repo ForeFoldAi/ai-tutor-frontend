@@ -15,16 +15,12 @@ interface AppLayoutProps {
 export function AppLayout({ children }: AppLayoutProps) {
   const { user } = useAuthStore();
   const [location] = useLocation();
-  const style = {
-    "--sidebar-width": "16rem",
-    "--sidebar-width-icon": "3rem",
-  };
   const isStudent = !user || user.role === UserRole.STUDENT;
   const showFloatingSettings =
     isStudent && (location === "/dashboard" || location === "/settings");
 
   return (
-    <SidebarProvider style={style as React.CSSProperties}>
+    <SidebarProvider>
       <div className="flex h-dvh max-h-dvh w-full flex-col overflow-hidden lg:flex-row">
         <AppSidebar />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">

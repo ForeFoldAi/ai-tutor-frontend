@@ -70,3 +70,72 @@ export function detectInterruptIntent(
 
   return { isInterruptIntent: false, matchedPhrase: null, kind: null, confidence: 0 };
 }
+
+/** Drop leading "wait/stop/…" so barge STT keeps the actual question. */
+export function stripInterruptLeadIn(transcript: string): string {
+  let t = (transcript || "").trim();
+  if (!t) return "";
+  for (let pass = 0; pass < 4; pass++) {
+    const norm = normalize(t);
+    let stripped = false;
+    for (const phrase of [...INTERRUPT_PHRASES].sort((a, b) => b.length - a.length)) {
+      if (norm === phrase) return "";
+      if (norm.startsWith(`${phrase} `)) {
+        t = t.slice(t.toLowerCase().indexOf(phrase) + phrase.length).trim();
+        stripped = true;
+        break;
+      }
+    }
+    if (!stripped) break;
+  }
+  return t.replace(/^[,.\s-]+/, "").trim();
+}
+
+const CONVERSATIONAL_LEAD_INS = [
+  "all right",
+  "alright",
+  "okay",
+  "ok",
+  "yeah",
+  "yes",
+  "well",
+  "so",
+  "um",
+  "uh",
+] as const;
+
+/** Strip polite openers ("okay, …") without removing the question. */
+export function stripConversationalLeadIn(transcript: string): string {
+  let t = stripInterruptLeadIn(transcript);
+  if (!t) return "";
+  for (let pass = 0; pass < 4; pass++) {
+    const norm = normalize(t);
+    let stripped = false;
+    for (const phrase of [...CONVERSATIONAL_LEAD_INS].sort((a, b) => b.length - a.length)) {
+      if (norm === phrase) return "";
+      if (norm.startsWith(`${phrase} `) || norm.startsWith(`${phrase},`)) {
+        const idx = t.toLowerCase().indexOf(phrase);
+        t = t.slice(idx + phrase.length).trim();
+        stripped = true;
+        break;
+      }
+    }
+    if (!stripped) break;
+  }
+  return t.replace(/^[,.\s-]+/, "").trim();
+}
+
+/** True when the student is asking something (not just "wait"/"stop"). */
+export function looksLikeStudentQuestion(text: string): boolean {
+  const norm = normalize(text);
+  if (!norm || norm.length < 8) return false;
+  if (/\?/.test(text)) return true;
+  if (
+    /\b(what|why|how|when|where|who|which|tell me|explain|describe|can you|could you|would you)\b/.test(
+      norm,
+    )
+  ) {
+    return true;
+  }
+  return norm.split(/\s+/).length >= 6;
+}

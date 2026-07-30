@@ -1,3 +1,4 @@
+import { PageShell } from "@/components/page-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useMasterAdminOverview } from "@/modules/master-admin/hooks/use-master-admin-data";
 import { DataState } from "@/modules/shared/components/data-state";
@@ -8,7 +9,7 @@ export default function MasterAdminReportsPage() {
   const entries = Object.entries(summary?.byRole || {});
 
   return (
-    <div className="p-6 space-y-6">
+    <PageShell>
       <h1 className="text-2xl font-semibold">Reports & Insights</h1>
       <DataState
         loading={reportsQuery.isLoading}
@@ -29,6 +30,6 @@ export default function MasterAdminReportsPage() {
           </CardContent>
         </Card>
       </DataState>
-    </div>
+    </PageShell>
   );
 }

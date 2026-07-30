@@ -25,35 +25,41 @@ export const AUTH_FEATURES = [
 function AuthBrandingPanel() {
   return (
     <aside className="relative hidden h-full min-h-0 shrink-0 overflow-hidden lg:flex lg:w-[48%] xl:w-1/2">
+      {/* Below ~610px of viewport height the copy runs out of room, so let the illustration bleed off
+          the bottom edge instead of colliding with the text. */}
       <img
         src="/login-left.png"
         alt=""
         aria-hidden
         className="absolute inset-0 h-full w-full object-cover object-left-bottom"
+        style={{ objectPosition: "left calc(100% + max(0px, (610px - 100vh) * 0.9))" }}
       />
-      <div className="relative z-10 flex h-full min-h-0 flex-col px-8 py-8 xl:px-12">
-        <AuthBrandMark className="shrink-0" />
+      {/* object-cover scales this portrait artwork by panel width, so the illustration always ends up
+          ~42.5% of the panel width tall at the bottom. Reserve that band and drive the copy from viewport
+          height so short laptop viewports (Windows at 125-150% OS scaling) never overlap the artwork. */}
+      <div className="relative z-10 flex h-full min-h-0 flex-col overflow-hidden px-8 pb-[43%] pt-[clamp(1rem,3.2vh,2rem)] text-[clamp(0.6875rem,calc(3.2vh_-_0.65rem),0.875rem)] xl:px-12 xl:text-[clamp(0.6875rem,calc(3.2vh_-_0.65rem),1rem)]">
+        <AuthBrandMark className="shrink-0 [&_img]:h-[4em] [&_img]:w-[4em] [&_p:first-child]:text-[1.75em] [&_p:last-child]:text-[1.15em]" />
 
-        <div className="mt-8 flex min-h-0 flex-1 flex-col justify-start xl:mt-10">
-          <h1 className="max-w-md text-2xl font-bold leading-tight tracking-tight text-[#1a1040] dark:text-foreground xl:text-3xl">
+        <div className="mt-[2em] flex min-h-0 flex-1 flex-col justify-start">
+          <h1 className="max-w-md text-[1.75em] font-bold leading-tight tracking-tight text-[#1a1040] dark:text-foreground">
             Smarter Learning With{" "}
             <span className="bg-gradient-brand bg-clip-text text-transparent">AI Tutors</span>
           </h1>
-          <p className="mt-3 max-w-sm text-sm leading-relaxed text-[#4a4070] dark:text-body-foreground xl:text-base">
+          <p className="mt-[0.85em] max-w-md text-[1em] leading-relaxed text-[#4a4070] dark:text-body-foreground">
             Personalized learning, real-time support and progress that matters.
           </p>
 
-          <ul className="mt-6 space-y-4 xl:mt-8 xl:space-y-5">
+          <ul className="mt-[1.5em] space-y-[1.05em]">
             {AUTH_FEATURES.map(({ icon: Icon, label, description }) => (
-              <li key={label} className="flex items-start gap-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white shadow-sm xl:h-10 xl:w-10">
-                  <Icon className="h-4 w-4 text-primary xl:h-5 xl:w-5" aria-hidden />
+              <li key={label} className="flex items-start gap-[0.85em]">
+                <div className="flex h-[2.6em] w-[2.6em] shrink-0 items-center justify-center rounded-full bg-white shadow-sm">
+                  <Icon className="h-[1.15em] w-[1.15em] text-primary" aria-hidden />
                 </div>
-                <div className="min-w-0 pt-0.5">
-                  <p className="text-sm font-semibold text-[#2d2060] dark:text-foreground xl:text-base">
+                <div className="min-w-0 pt-[0.15em]">
+                  <p className="text-[1em] font-semibold text-[#2d2060] dark:text-foreground">
                     {label}
                   </p>
-                  <p className="mt-0.5 text-xs leading-relaxed text-[#5c4d8a] dark:text-muted-foreground xl:text-sm">
+                  <p className="mt-[0.15em] text-[0.86em] leading-relaxed text-[#5c4d8a] dark:text-muted-foreground">
                     {description}
                   </p>
                 </div>
@@ -69,10 +75,9 @@ function AuthBrandingPanel() {
 interface AuthLayoutProps {
   children: React.ReactNode;
   maxWidth?: string;
-  scrollable?: boolean;
 }
 
-export function AuthLayout({ children, maxWidth = "max-w-[420px]", scrollable = false }: AuthLayoutProps) {
+export function AuthLayout({ children, maxWidth = "max-w-[420px]" }: AuthLayoutProps) {
   useAuthLightTheme();
 
   useEffect(() => {
@@ -89,22 +94,21 @@ export function AuthLayout({ children, maxWidth = "max-w-[420px]", scrollable = 
       <AuthBrandingPanel />
 
       <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-4 py-4 sm:px-8">
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-4 py-[clamp(0.375rem,1.6vh,1rem)] sm:px-8">
           <div className="mb-4 flex shrink-0 items-center gap-3 lg:hidden">
             <AuthBrandMark variant="sidebar" />
           </div>
 
           <div
             className={cn(
-              "flex w-full shrink flex-col overflow-hidden rounded-card border border-border bg-card shadow-card hover:translate-y-0 hover:shadow-card",
-              maxWidth,
-              scrollable && "max-h-[calc(100dvh-5rem)] min-h-0"
+              "flex min-h-0 w-full shrink flex-col overflow-y-auto overflow-x-hidden rounded-card border border-border bg-card shadow-card hover:translate-y-0 hover:shadow-card",
+              maxWidth
             )}
           >
             {children}
           </div>
 
-          <p className="mt-3 flex shrink-0 items-center justify-center gap-1.5 text-[11px] text-muted-foreground sm:text-xs">
+          <p className="mt-[clamp(0.25rem,1vh,0.75rem)] flex shrink-0 items-center justify-center gap-1.5 text-[11px] text-muted-foreground sm:text-xs">
             <Shield className="h-3 w-3" aria-hidden />
             Secured with enterprise-grade encryption
           </p>
@@ -116,11 +120,11 @@ export function AuthLayout({ children, maxWidth = "max-w-[420px]", scrollable = 
 
 export function AuthCardIllustration() {
   return (
-    <div className="shrink-0 px-5 pt-4 sm:px-7">
+    <div className="shrink-0 px-5 pt-[clamp(0.5rem,2vh,1rem)] sm:px-7">
       <img
         src="/login-right.png"
         alt="Student learning with AI tutor"
-        className="mx-auto h-auto w-full max-h-[100px] object-contain sm:max-h-[120px]"
+        className="mx-auto h-auto w-full max-h-[clamp(2.5rem,11vh,7.5rem)] object-contain"
       />
     </div>
   );
@@ -128,7 +132,7 @@ export function AuthCardIllustration() {
 
 export function AuthCardFooter() {
   return (
-    <div className="mt-4 flex items-center justify-center gap-2 rounded-button bg-muted/50 px-3 py-2.5 text-xs text-muted-foreground sm:text-sm">
+    <div className="mt-[clamp(0.5rem,1.8vh,1rem)] flex items-center justify-center gap-2 rounded-button bg-muted/50 px-3 py-[clamp(0.375rem,1.1vh,0.625rem)] text-xs text-muted-foreground sm:text-sm">
       <Shield className="h-4 w-4 shrink-0 text-primary" aria-hidden />
       <span>
         powered by{" "}

@@ -9,6 +9,7 @@ import { CompletionTrendCard } from "@/modules/tutor/components/progress-analyti
 import { TopicMasteryCard } from "@/modules/tutor/components/progress-analytics/topic-mastery-card";
 import { StudentResultsPanel } from "@/modules/tutor/components/student-results/student-results-panel";
 import { DataState } from "@/modules/shared/components/data-state";
+import { PageShell } from "@/components/page-shell";
 import { cn } from "@/lib/utils";
 
 type ProgressTab = "analytics" | "results";
@@ -39,11 +40,9 @@ export default function TutorProgressTrackingPage() {
   const atRiskStudents = analyticsQuery.data?.atRiskStudents ?? [];
 
   return (
-    <div
-      className={cn(
-        "dashboard-fit flex min-h-0 flex-1 flex-col gap-2 p-3 md:p-4",
-        tab === "results" ? "overflow-hidden" : "overflow-y-auto",
-      )}
+    <PageShell
+      className={cn(tab === "results" && "lg:overflow-hidden")}
+      contentClassName="min-h-0 flex-1"
     >
       <div className="shrink-0 space-y-2">
         <div className="space-y-0.5">
@@ -96,10 +95,10 @@ export default function TutorProgressTrackingPage() {
           ) : null}
         </DataState>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="flex flex-col lg:min-h-0 lg:flex-1 lg:overflow-hidden">
           <StudentResultsPanel />
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

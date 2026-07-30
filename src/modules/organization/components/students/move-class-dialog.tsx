@@ -202,7 +202,7 @@ export function MoveClassDialog({
 
   return (
     <Dialog open={open} onOpenChange={resetOnClose}>
-      <DialogContent className="flex !h-[92vh] !max-h-[92vh] w-[min(1100px,96vw)] !max-w-[1100px] flex-col gap-0 overflow-hidden !p-0">
+      <DialogContent className="flex h-[min(88dvh,44rem)] w-[min(1100px,calc(100vw-1.5rem))] max-w-none flex-col gap-0 overflow-hidden p-0">
         <DialogHeader className="shrink-0 space-y-0 border-b border-border px-4 py-2.5">
           <DialogTitle className="flex items-center gap-2 text-base">
             <ArrowRightLeft className="h-4 w-4 text-primary" />
@@ -213,7 +213,7 @@ export function MoveClassDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid min-h-0 flex-1 gap-0 overflow-hidden md:grid-cols-2">
+        <div className="grid min-h-0 flex-1 grid-rows-2 gap-0 overflow-hidden md:grid-cols-2 md:grid-rows-1">
           <section className="flex min-h-0 flex-col border-b border-border px-3 py-2 md:border-b-0 md:border-r">
             <div className="flex shrink-0 items-center justify-between gap-2">
               <h3 className="text-xs font-semibold text-foreground">Select Students</h3>

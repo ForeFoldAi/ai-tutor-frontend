@@ -278,7 +278,7 @@ export function LessonPlanForm({ values, onChange, onGenerate, isGenerating }: L
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-card p-3 shadow-card">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/70 bg-card p-3 shadow-card">
       <h2 className="shrink-0 pb-2 text-base font-bold text-blue-900 dark:text-blue-100">
         Plan Your Lesson with AI
       </h2>

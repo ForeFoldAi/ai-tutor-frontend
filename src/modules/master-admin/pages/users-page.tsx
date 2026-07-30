@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { PageShell } from "@/components/page-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -57,20 +58,20 @@ export default function MasterAdminUsersPage() {
     [filtered, page],
   );
 
-  if (usersQuery.isLoading) return <div className="p-6"><Skeleton className="h-80 w-full" /></div>;
+  if (usersQuery.isLoading) return <PageShell><Skeleton className="h-80 w-full" /></PageShell>;
   if (usersQuery.isError) {
     return (
-      <div className="p-6 space-y-3">
+      <PageShell>
         <p className="text-sm text-muted-foreground">Failed to load users.</p>
-        <Button variant="outline" onClick={() => void usersQuery.refetch()}>
+        <Button variant="outline" className="self-start" onClick={() => void usersQuery.refetch()}>
           Try again
         </Button>
-      </div>
+      </PageShell>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <PageShell>
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Users</h1>
@@ -153,7 +154,7 @@ export default function MasterAdminUsersPage() {
             </div>
           </div>
           <div className="rounded-lg border overflow-hidden">
-            <Table>
+            <Table className="min-w-[860px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
@@ -203,6 +204,6 @@ export default function MasterAdminUsersPage() {
           <Pagination page={page} pageSize={pageSize} total={filtered.length} onPageChange={setPage} />
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   );
 }

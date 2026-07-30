@@ -19,6 +19,7 @@ import {
   Video,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PageShell } from "@/components/page-shell";
 import { AskAiTutorButton } from "@/components/ask-ai-tutor-button";
 import {
   fetchStudentLiveSessions,
@@ -204,7 +205,10 @@ export default function LiveClassesPage() {
   }, [sessions]);
 
   return (
-    <div className="dashboard-fit flex min-h-0 flex-1 flex-col gap-2 overflow-hidden p-3 md:p-4">
+    <PageShell
+      className="overflow-x-hidden lg:overflow-hidden"
+      contentClassName="min-h-0 flex-1"
+    >
       <div className="flex min-w-0 shrink-0 flex-col gap-2">
         <div className="flex min-w-0 items-start justify-between gap-2 sm:gap-3 lg:items-center lg:gap-4">
           <div className="min-w-0 flex-1 space-y-0.5">
@@ -237,8 +241,8 @@ export default function LiveClassesPage() {
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-3 lg:gap-4">
-        <div className="flex min-h-0 flex-col gap-3 overflow-y-auto lg:col-span-2 lg:overflow-hidden">
+      <div className="grid min-w-0 gap-3 lg:min-h-0 lg:flex-1 lg:grid-cols-3 lg:gap-4">
+        <div className="flex min-w-0 flex-col gap-3 lg:col-span-2 lg:min-h-0 lg:overflow-hidden">
           {liveSession && (
             <Card className="shrink-0 overflow-hidden border-0 shadow-card">
               <div className="relative bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-4 sm:p-5">
@@ -310,8 +314,8 @@ export default function LiveClassesPage() {
             </Card>
           )}
 
-          <Card className="flex min-h-0 flex-1 flex-col shadow-card">
-            <CardContent className="flex min-h-0 flex-1 flex-col p-3 sm:p-4">
+          <Card className="flex min-w-0 flex-col shadow-card lg:min-h-0 lg:flex-1">
+            <CardContent className="flex min-w-0 flex-col p-3 sm:p-4 lg:min-h-0 lg:flex-1">
               <div className="mb-2 flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <h2 className="text-sm font-semibold text-foreground sm:text-base">
                   Upcoming Sessions
@@ -335,7 +339,7 @@ export default function LiveClassesPage() {
                 </div>
               </div>
 
-              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
+              <div className="max-h-96 min-w-0 space-y-2 overflow-y-auto pr-0.5 lg:max-h-none lg:min-h-0 lg:flex-1">
                 {isLoading ? (
                   <p className="py-6 text-center text-sm text-muted-foreground">Loading sessions…</p>
                 ) : isError ? (
@@ -403,7 +407,7 @@ export default function LiveClassesPage() {
           </Card>
         </div>
 
-        <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
+        <div className="flex min-w-0 flex-col gap-3 lg:min-h-0 lg:overflow-y-auto">
           <Card className="shadow-card">
             <CardContent className="p-3 sm:p-4">
               <h2 className="mb-3 text-sm font-semibold text-foreground sm:text-base">
@@ -464,6 +468,6 @@ export default function LiveClassesPage() {
           )}
         </div>
       </div>
-    </div>
+    </PageShell>
   );
 }

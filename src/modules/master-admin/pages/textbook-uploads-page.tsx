@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { StatusPill } from "../components/status-pill";
 import { exportCsv } from "@/modules/master-admin/utils/export-csv";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { PageShell } from "@/components/page-shell";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -215,14 +216,14 @@ export default function MasterAdminTextbookUploadsPage() {
 
   if (loading) {
     return (
-      <div className="p-6">
+      <PageShell>
         <Skeleton className="h-80 w-full" />
-      </div>
+      </PageShell>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <PageShell>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Textbook Uploads</h1>
@@ -281,7 +282,7 @@ export default function MasterAdminTextbookUploadsPage() {
                   onSubmit={form.handleSubmit(handleUploadSubmit)}
                 >
                   {/* Board / Class / Subject — fixed at top */}
-                  <div className="shrink-0 grid grid-cols-3 gap-3">
+                  <div className="shrink-0 grid grid-cols-1 gap-3 sm:grid-cols-3">
                     <FormField
                       control={form.control}
                       name="board"
@@ -554,7 +555,7 @@ export default function MasterAdminTextbookUploadsPage() {
           </div>
 
           <div className="rounded-lg border overflow-hidden">
-            <Table>
+            <Table className="min-w-[1180px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>File</TableHead>
@@ -675,6 +676,6 @@ export default function MasterAdminTextbookUploadsPage() {
           </div>
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   );
 }

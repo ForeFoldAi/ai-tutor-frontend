@@ -594,14 +594,16 @@ export function StatisticsLabViz(_props: TopicVizProps) {
         <div className="rounded-lg border p-2"><p className="text-[10px] text-muted-foreground">Median</p><p className="font-semibold">{median}</p></div>
         <div className="rounded-lg border p-2"><p className="text-[10px] text-muted-foreground">Mode</p><p className="font-semibold">{mode}</p></div>
       </div>
-      <ResponsiveContainer width="100%" height={140}>
-        <BarChart data={chartData}>
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="i" tick={{ fontSize: 10 }} />
-          <YAxis tick={{ fontSize: 10 }} />
-          <Bar dataKey="marks" fill="#3B82F6" radius={[4, 4, 0, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
+      <div className="h-[8.75rem] w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="i" tick={{ fontSize: 10 }} />
+            <YAxis tick={{ fontSize: 10 }} />
+            <Bar dataKey="marks" fill="#3B82F6" radius={[4, 4, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }
@@ -685,13 +687,15 @@ export function ProbabilityDiceViz(_props: TopicVizProps) {
         <Button type="button" size="sm" variant="outline" onClick={() => { setCounts([0, 0, 0, 0, 0, 0]); setTotal(0); }}>Reset</Button>
       </div>
       <p className="text-xs text-center">Rolls: {total} · Expected each face ≈ 16.7%</p>
-      <ResponsiveContainer width="100%" height={120}>
-        <BarChart data={chartData}>
-          <XAxis dataKey="face" tick={{ fontSize: 10 }} />
-          <YAxis tick={{ fontSize: 10 }} />
-          <Bar dataKey="count" fill="#3B82F6" />
-        </BarChart>
-      </ResponsiveContainer>
+      <div className="h-[7.5rem] w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={chartData}>
+            <XAxis dataKey="face" tick={{ fontSize: 10 }} />
+            <YAxis tick={{ fontSize: 10 }} />
+            <Bar dataKey="count" fill="#3B82F6" />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }
@@ -731,12 +735,14 @@ export function ProbabilityCoinViz(_props: TopicVizProps) {
         <Button type="button" size="sm" onClick={() => flipMany(100)}>Flip 100×</Button>
         <Button type="button" size="sm" variant="outline" onClick={() => { setHeads(0); setTails(0); }}>Reset</Button>
       </div>
-      <ResponsiveContainer width="100%" height={100}>
-        <LineChart data={history}>
-          <Line type="monotone" dataKey="p" stroke="#3B82F6" dot={false} />
-          <YAxis domain={[0, 100]} tick={{ fontSize: 9 }} />
-        </LineChart>
-      </ResponsiveContainer>
+      <div className="h-[6.25rem] w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={history}>
+            <Line type="monotone" dataKey="p" stroke="#3B82F6" dot={false} />
+            <YAxis domain={[0, 100]} tick={{ fontSize: 9 }} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }

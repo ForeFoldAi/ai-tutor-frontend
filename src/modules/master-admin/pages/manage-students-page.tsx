@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { patchUserStatus } from "@/api/masterAdmin";
 import type { ApiUser } from "@/api/types";
+import { PageShell } from "@/components/page-shell";
 import { useMasterAdminOverview } from "@/modules/master-admin/hooks/use-master-admin-data";
 import { UserTable } from "@/modules/master-admin/components/user-table";
 import { DataState } from "@/modules/shared/components/data-state";
@@ -17,7 +18,7 @@ export default function ManageStudentsPage() {
   });
 
   return (
-    <div className="p-6 space-y-6">
+    <PageShell>
       <h1 className="text-2xl font-semibold">Manage Students</h1>
       <DataState
         loading={usersQuery.isLoading}
@@ -28,6 +29,6 @@ export default function ManageStudentsPage() {
       >
         <UserTable title="Students" users={students} onToggleStatus={(u) => toggleMutation.mutate(u)} />
       </DataState>
-    </div>
+    </PageShell>
   );
 }

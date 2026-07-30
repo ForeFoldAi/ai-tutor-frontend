@@ -63,7 +63,7 @@ export function GeneratedLessonPanel({
   onAssignArtifact,
 }: GeneratedLessonPanelProps) {
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-card shadow-card">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/70 bg-card shadow-card">
       <div className="flex shrink-0 flex-col gap-3 border-b border-border/60 px-5 py-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-lg font-bold text-blue-900 dark:text-blue-100">Generated Lesson Plan</h2>

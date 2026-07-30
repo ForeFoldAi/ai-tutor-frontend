@@ -17,6 +17,7 @@ import { isIndividualTutor } from "@/lib/app-nav-items";
 import { useToast } from "@/hooks/use-toast";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { PageShell } from "@/components/page-shell";
 import { DataState } from "@/modules/shared/components/data-state";
 import {
   AddStudentDialog,
@@ -250,7 +251,7 @@ export default function TutorAssignedStudentsPage() {
   };
 
   return (
-    <div className="dashboard-fit flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3 md:p-4">
+    <PageShell>
       <div className="flex shrink-0 flex-col gap-2">
         <StudentsToolbar
           title={
@@ -354,6 +355,6 @@ export default function TutorAssignedStudentsPage() {
         pending={moveMutation.isPending}
         onMove={({ studentIds, classId }) => moveMutation.mutate({ studentIds, classId })}
       />
-    </div>
+    </PageShell>
   );
 }

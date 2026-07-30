@@ -20,6 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { PageShell } from "@/components/page-shell";
 import { TutorDashboardHeader } from "@/modules/tutor/components/tutor-dashboard-header";
 import type { TutorAiRecommendationApi } from "@/api/tutor-dashboard";
 import type { LucideIcon } from "lucide-react";
@@ -102,7 +103,7 @@ export default function TutorDashboardModulePage() {
   const aiRecommendations = data?.ai_recommendations ?? [];
 
   return (
-    <div className="dashboard-fit flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3 md:gap-4 md:p-4">
+    <PageShell>
       <TutorDashboardHeader firstName={firstName} />
 
       <DataState
@@ -152,7 +153,7 @@ export default function TutorDashboardModulePage() {
         </div>
       </DataState>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2 lg:gap-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
             <CardTitle className="flex items-center gap-2 text-lg font-semibold text-blue-700">
@@ -294,6 +295,6 @@ export default function TutorDashboardModulePage() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   );
 }

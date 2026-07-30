@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { PageShell } from "@/components/page-shell";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -74,19 +75,19 @@ export default function MasterAdminSubscriptionsPage() {
 
   if (loading) {
     return (
-      <div className="p-6 space-y-6">
+      <PageShell>
         <Skeleton className="h-7 w-[220px]" />
         <div className="grid gap-4 lg:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => (
             <Skeleton key={i} className="h-80 w-full" />
           ))}
         </div>
-      </div>
+      </PageShell>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <PageShell>
       <div className="flex items-center justify-between gap-4">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight">Subscriptions</h1>
@@ -243,7 +244,7 @@ export default function MasterAdminSubscriptionsPage() {
           </Form>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageShell>
   );
 }
 

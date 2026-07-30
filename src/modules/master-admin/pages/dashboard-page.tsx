@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Building2, Users, GraduationCap, TrendingUp, Upload, Sparkles, Landmark } from "lucide-react";
+import { PageShell } from "@/components/page-shell";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -121,7 +122,7 @@ export default function MasterAdminDashboardModulePage() {
 
   if (loading) {
     return (
-      <div className="p-6 space-y-6">
+      <PageShell>
         <div className="flex items-center justify-between gap-4">
           <div className="space-y-2">
             <Skeleton className="h-7 w-[280px]" />
@@ -176,13 +177,13 @@ export default function MasterAdminDashboardModulePage() {
             </Card>
           ))}
         </div>
-      </div>
+      </PageShell>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <PageShell className="master-admin-dashboard">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold tracking-tight">
             Welcome, {welcomeName}
@@ -208,7 +209,7 @@ export default function MasterAdminDashboardModulePage() {
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {kpiCards10.map((kpi) => {
           const Icon = kpi.icon;
           return (
@@ -216,11 +217,11 @@ export default function MasterAdminDashboardModulePage() {
               key={kpi.label}
               className="transition-transform hover:-translate-y-0.5 hover:shadow-md overflow-hidden"
             >
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="space-y-1">
+              <CardContent className="pt-4 lg:pt-6">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="space-y-0.5">
                     <p className="text-sm text-muted-foreground">{kpi.label}</p>
-                    <p className="text-2xl font-bold">{kpi.value}</p>
+                    <p className="text-xl font-bold lg:text-2xl">{kpi.value}</p>
                     <p className="text-xs text-muted-foreground">{kpi.hint}</p>
                   </div>
                   <div className="p-3 rounded-lg bg-primary/10">
@@ -233,34 +234,34 @@ export default function MasterAdminDashboardModulePage() {
         })}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-3 lg:grid-cols-2 lg:gap-4">
         <Card className="overflow-hidden">
-          <CardHeader>
+          <CardHeader className="py-4">
             <CardTitle className="flex items-center gap-2">
               <TrendingUp className="h-5 w-5 text-primary" />
               User Growth Trend
             </CardTitle>
             <CardDescription>Monthly active users across the platform</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pb-4">
             <UserGrowthTrendChart data={userGrowthSeries.map((d) => ({ month: d.month, users: d.users }))} />
           </CardContent>
         </Card>
 
         <Card className="overflow-hidden">
-          <CardHeader>
+          <CardHeader className="py-4">
             <CardTitle className="flex items-center gap-2">
               <Landmark className="h-5 w-5 text-primary" />
               Revenue Trend
             </CardTitle>
             <CardDescription>Subscription revenue trend by month</CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="pb-4">
             <RevenueTrendChart data={revenueSeries} />
           </CardContent>
         </Card>
 
-        <Card className="overflow-hidden">
+        <Card className="viewport-compact-hidden overflow-hidden">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Building2 className="h-5 w-5 text-primary" />
@@ -273,7 +274,7 @@ export default function MasterAdminDashboardModulePage() {
           </CardContent>
         </Card>
 
-        <Card className="overflow-hidden">
+        <Card className="viewport-compact-hidden overflow-hidden">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Sparkles className="h-5 w-5 text-primary" />
@@ -287,7 +288,7 @@ export default function MasterAdminDashboardModulePage() {
         </Card>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="viewport-compact-hidden grid gap-6 lg:grid-cols-2">
         <Card className="overflow-hidden">
           <CardHeader>
             <CardTitle>Recent Organizations</CardTitle>
@@ -414,6 +415,6 @@ export default function MasterAdminDashboardModulePage() {
           </CardContent>
         </Card>
       </div>
-    </div>
+    </PageShell>
   );
 }

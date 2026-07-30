@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import type { User } from "@/types/schema";
 import { cn } from "@/lib/utils";
+import { PageShell } from "@/components/page-shell";
 import { AskAiTutorButton } from "@/components/ask-ai-tutor-button";
 import { DashboardHeaderActions } from "@/components/dashboard-header-actions";
 import { brandImages } from "@/lib/brand-images";
@@ -180,8 +181,8 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
   );
 
   return (
-    <div className="dashboard-fit overflow-x-hidden overflow-y-auto p-3 md:p-4">
-      <div className="mb-3 flex shrink-0 items-start justify-between gap-2 sm:gap-3 lg:items-center lg:gap-4">
+    <PageShell className="overflow-x-hidden student-dashboard">
+      <div className="flex shrink-0 items-start justify-between gap-2 sm:gap-3 lg:items-center lg:gap-4">
         <div className="min-w-0 flex-1 space-y-0.5">
           <h1 className="truncate text-xl font-bold text-foreground sm:text-2xl">
             Welcome back, {firstName}!
@@ -219,7 +220,7 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
         </div>
       </div>
 
-      <div className="mb-3 grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
         <StatCard>
           <p className="text-sm font-medium text-muted-foreground">Overall Progress</p>
           <div className="mt-2 flex flex-wrap items-center gap-3">
@@ -557,7 +558,7 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
         </div>
       </div>
 
-      <Card className="mt-3 overflow-hidden border-0 bg-gradient-to-r from-primary/10 via-accent/10 to-brand-secondary/10 hover:translate-y-0 hover:shadow-card shadow-card">
+      <Card className="viewport-compact-hidden overflow-hidden border-0 bg-gradient-to-r from-primary/10 via-accent/10 to-brand-secondary/10 hover:translate-y-0 hover:shadow-card shadow-card">
         <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:gap-4 lg:gap-3 lg:p-3">
           <div className="relative h-14 w-24 shrink-0 overflow-hidden rounded-lg sm:h-16 sm:w-28 lg:h-14 lg:w-24">
             <img
@@ -584,6 +585,6 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
           </Button>
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   );
 }

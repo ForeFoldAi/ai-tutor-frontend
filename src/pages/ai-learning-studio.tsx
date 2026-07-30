@@ -17,6 +17,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PageShell } from "@/components/page-shell";
 import { AskAiTutorButton } from "@/components/ask-ai-tutor-button";
 import { useAskAiTutorStore, type AskAiTutorMode } from "@/lib/ask-ai-tutor-store";
 import { AiTutorStudioSkeleton } from "@/components/skeletons/student-page-skeletons";
@@ -209,26 +210,28 @@ function StudioHomeView({
 
   if (error) {
     return (
-      <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 p-6 text-center">
-        <AlertCircle className="h-8 w-8 text-destructive" />
-        <p className="font-medium text-destructive">{MSG.subjectsLoad}</p>
-        <p className="max-w-md text-sm text-muted-foreground">{error}</p>
-        <Button
-          type="button"
-          variant="outline"
-          className="mt-1 gap-2"
-          onClick={onRetry}
-          disabled={retrying}
-        >
-          <RefreshCw className={cn("h-4 w-4", retrying && "animate-spin")} />
-          {retrying ? "Refreshing…" : MSG.refresh}
-        </Button>
-      </div>
+      <PageShell size="standard" contentClassName="min-h-[20rem] flex-1 items-center justify-center">
+        <div className="flex flex-col items-center justify-center gap-3 text-center">
+          <AlertCircle className="h-8 w-8 text-destructive" />
+          <p className="font-medium text-destructive">{MSG.subjectsLoad}</p>
+          <p className="max-w-md text-sm text-muted-foreground">{error}</p>
+          <Button
+            type="button"
+            variant="outline"
+            className="mt-1 gap-2"
+            onClick={onRetry}
+            disabled={retrying}
+          >
+            <RefreshCw className={cn("h-4 w-4", retrying && "animate-spin")} />
+            {retrying ? "Refreshing…" : MSG.refresh}
+          </Button>
+        </div>
+      </PageShell>
     );
   }
 
   return (
-    <div className="space-y-3 p-3 md:space-y-4 md:p-4">
+    <PageShell>
       <div className="flex min-w-0 items-start justify-between gap-2 sm:gap-3 lg:items-center lg:gap-4">
         <div className="min-w-0 flex-1 space-y-0.5">
           <h1 className="truncate text-xl font-bold text-foreground sm:text-2xl">Hi {firstName}!</h1>
@@ -418,7 +421,7 @@ function StudioHomeView({
           </div>
         </div>
       ) : null}
-    </div>
+    </PageShell>
   );
 }
 
@@ -457,7 +460,7 @@ export default function AILearningStudioPage() {
   }, [match, params?.subjectId, subjects.length, loading]);
 
   return (
-    <div className="dashboard-fit overflow-auto">
+    <>
       <StudioHomeView
         subjects={subjects}
         continueLearning={data?.continue_learning ?? null}
@@ -487,6 +490,6 @@ export default function AILearningStudioPage() {
             : undefined
         }
       />
-    </div>
+    </>
   );
 }

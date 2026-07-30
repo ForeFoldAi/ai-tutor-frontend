@@ -1,3 +1,4 @@
+import { PageShell } from "@/components/page-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useOrganizationData } from "@/modules/organization/hooks/use-organization-data";
 import { DataState } from "@/modules/shared/components/data-state";
@@ -7,8 +8,8 @@ export default function OrganizationReportsPage() {
   const report = reportsQuery.data;
 
   return (
-    <div className="p-6 space-y-6">
-      <h1 className="text-2xl font-semibold">Organization Reports</h1>
+    <PageShell>
+      <h1 className="text-xl font-semibold sm:text-2xl">Organization Reports</h1>
       <DataState
         loading={reportsQuery.isLoading}
         error={reportsQuery.error ? String(reportsQuery.error) : null}
@@ -22,6 +23,6 @@ export default function OrganizationReportsPage() {
           <Card><CardHeader><CardTitle>Active Users</CardTitle></CardHeader><CardContent>{report?.activeUsers ?? 0}</CardContent></Card>
         </div>
       </DataState>
-    </div>
+    </PageShell>
   );
 }

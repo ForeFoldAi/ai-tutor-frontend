@@ -1298,7 +1298,7 @@ export default function AITutorPage() {
           </div>
         ) : (
           <ScrollArea className="flex-1 px-2 py-3 sm:px-3">
-            <div className="w-full min-w-0 space-y-4 sm:space-y-6">
+            <div className="mx-auto w-full min-w-0 max-w-5xl space-y-4 sm:space-y-6">
               {activeConversation.messages.map((message) => (
                 <div
                   key={message.id}
@@ -1432,7 +1432,7 @@ export default function AITutorPage() {
               e.preventDefault();
               sendMessage(input);
             }}
-            className="w-full space-y-2"
+            className="mx-auto w-full max-w-5xl space-y-2"
           >
             {/* Uploaded file display */}
             {uploadedFile && (

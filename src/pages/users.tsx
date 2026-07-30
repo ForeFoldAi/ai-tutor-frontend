@@ -12,6 +12,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { PageShell } from "@/components/page-shell";
 import { cn } from "@/lib/utils";
 
 interface User {
@@ -51,20 +52,20 @@ export default function UsersPage() {
   });
 
   return (
-    <div className="p-6 space-y-6">
+    <PageShell>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">User Management</h1>
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold sm:text-2xl">User Management</h1>
           <p className="text-muted-foreground">Manage all platform users.</p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="relative">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-0 flex-1 sm:flex-none">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Search users..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 w-64"
+              className="w-full pl-9 sm:w-64"
               data-testid="input-search-users"
             />
           </div>
@@ -75,7 +76,7 @@ export default function UsersPage() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {Object.entries(roleConfig).map(([key, config]) => {
           const count = allUsers.filter((u) => u.role === key).length;
           const Icon = config.icon;
@@ -118,11 +119,11 @@ export default function UsersPage() {
                   return (
                     <div
                       key={user.id}
-                      className="flex items-center justify-between p-4 rounded-lg border bg-card hover-elevate transition-all"
+                      className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-lg border bg-card hover-elevate transition-all"
                       data-testid={`user-row-${user.id}`}
                     >
-                      <div className="flex items-center gap-4">
-                        <Avatar className="h-10 w-10">
+                      <div className="flex min-w-0 items-center gap-4">
+                        <Avatar className="h-10 w-10 shrink-0">
                           <AvatarFallback className={cn(config.color, "text-white")}>
                             {user.name
                               .split(" ")
@@ -130,8 +131,8 @@ export default function UsersPage() {
                               .join("")}
                           </AvatarFallback>
                         </Avatar>
-                        <div>
-                          <div className="flex items-center gap-2">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
                             <h3 className="font-medium">{user.name}</h3>
                             <Badge className={config.color}>{config.label}</Badge>
                             <Badge
@@ -141,10 +142,10 @@ export default function UsersPage() {
                               {user.status}
                             </Badge>
                           </div>
-                          <p className="text-sm text-muted-foreground">{user.email}</p>
+                          <p className="truncate text-sm text-muted-foreground">{user.email}</p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-4">
+                      <div className="flex shrink-0 items-center gap-4">
                         <span className="text-sm text-muted-foreground hidden sm:block">
                           Joined {new Date(user.createdAt).toLocaleDateString()}
                         </span>
@@ -172,6 +173,6 @@ export default function UsersPage() {
           </Tabs>
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   );
 }

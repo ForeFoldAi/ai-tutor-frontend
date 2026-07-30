@@ -139,7 +139,7 @@ function SettingRow({
 
 function SettingsContentSkeleton() {
   return (
-    <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[220px_1fr]">
+    <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[clamp(12rem,17vw,16rem)_minmax(0,1fr)]">
       <Card className="h-fit shadow-card">
         <CardContent className="space-y-2 p-3">
           {Array.from({ length: 4 }).map((_, i) => (
@@ -1240,7 +1240,7 @@ export function StudentSettingsContent({
         <h1 className="text-xl font-bold text-foreground sm:text-2xl">Settings</h1>
         <p className="text-sm text-muted-foreground">Manage your account and preferences</p>
       </div>
-      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[220px_1fr] lg:gap-4">
+      <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[clamp(12rem,17vw,16rem)_minmax(0,1fr)] lg:gap-4">
         <Card className="h-fit shrink-0 shadow-card lg:h-full lg:max-h-none">
           <CardContent className="p-2 sm:p-3">
             <nav

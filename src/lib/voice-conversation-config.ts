@@ -50,7 +50,7 @@ export const POST_PLAYBACK_LISTEN_MS = 80;
 export const AI_SPEECH_TAIL_MAX_CHARS = 500;
 
 /** Confirm barge candidate before calling /voice/barge-check */
-export const BARGE_IN_HOLD_MS = envNum("VITE_BARGE_IN_HOLD_MS", 120);
+export const BARGE_IN_HOLD_MS = envNum("VITE_BARGE_IN_HOLD_MS", 280);
 export const INTERRUPT_RESUME_LISTEN_MS = 80;
 export const INTERRUPT_COOLDOWN_MS = 280;
 export const BARGE_IN_ARM_DELAY_MS = 200;

@@ -116,8 +116,8 @@ export default function LoginPage() {
     <AuthLayout>
       <AuthCardIllustration />
 
-      <div className="px-5 pb-5 pt-3 sm:px-7 sm:pb-6">
-        <div className="mb-4 text-center">
+      <div className="px-5 pb-[clamp(0.75rem,2.6vh,1.5rem)] pt-[clamp(0.5rem,1.4vh,0.75rem)] sm:px-7">
+        <div className="mb-[clamp(0.5rem,1.8vh,1rem)] text-center">
           <h2 className="text-xl font-bold text-foreground sm:text-2xl">Welcome back</h2>
           <p className="mt-1 text-xs text-muted-foreground sm:text-sm">
             Sign in to your AI Virtual Tutor account
@@ -125,7 +125,7 @@ export default function LoginPage() {
         </div>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-[clamp(0.375rem,1.4vh,0.75rem)]">
             <FormField
               control={form.control}
               name="username"
@@ -222,7 +222,7 @@ export default function LoginPage() {
           </form>
         </Form>
 
-        <p className="mt-3 text-center text-sm text-muted-foreground">
+        <p className="mt-[clamp(0.375rem,1.4vh,0.75rem)] text-center text-sm text-muted-foreground">
           Don&apos;t have an account?{" "}
           <button
             type="button"

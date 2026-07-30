@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Search, Plus, ChevronRight, BookOpen, Layers, FileText, Edit, Trash2 } from "lucide-react";
+import { PageShell } from "@/components/page-shell";
 import { cn } from "@/lib/utils";
 
 interface Subject {
@@ -45,10 +46,10 @@ export default function SyllabusPage() {
   );
 
   return (
-    <div className="p-6 space-y-6">
+    <PageShell size="standard">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Syllabus Management</h1>
+        <div className="min-w-0">
+          <h1 className="text-xl font-semibold sm:text-2xl">Syllabus Management</h1>
           <p className="text-muted-foreground">Manage subjects, chapters, and topics.</p>
         </div>
         <Button data-testid="button-add-subject">
@@ -57,21 +58,21 @@ export default function SyllabusPage() {
         </Button>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2 lg:gap-6">
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <CardTitle className="flex items-center gap-2">
                 <BookOpen className="h-5 w-5" />
                 Subjects
               </CardTitle>
-              <div className="relative">
+              <div className="relative min-w-0 flex-1 sm:flex-none">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder="Search..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 w-48"
+                  className="w-full pl-9 sm:w-48"
                   data-testid="input-search-syllabus"
                 />
               </div>
@@ -112,10 +113,12 @@ export default function SyllabusPage() {
 
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <Layers className="h-5 w-5" />
-                {selectedSubject ? `${selectedSubject.name} - Chapters` : "Chapters"}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle className="flex min-w-0 items-center gap-2">
+                <Layers className="h-5 w-5 shrink-0" />
+                <span className="truncate">
+                  {selectedSubject ? `${selectedSubject.name} - Chapters` : "Chapters"}
+                </span>
               </CardTitle>
               {selectedSubject && (
                 <Button size="sm">
@@ -165,6 +168,6 @@ export default function SyllabusPage() {
           </CardContent>
         </Card>
       </div>
-    </div>
+    </PageShell>
   );
 }

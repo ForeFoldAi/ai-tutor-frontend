@@ -13,6 +13,7 @@ import {
 } from "@/api/organization";
 import { SchoolSummaryCard } from "@/modules/organization/components/school-summary-card";
 import { DataState } from "@/modules/shared/components/data-state";
+import { PageShell } from "@/components/page-shell";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -212,10 +213,10 @@ export default function OrganizationManageSchoolsPage() {
   const schools = schoolsQuery.data ?? [];
 
   return (
-    <div className="p-6 space-y-8">
+    <PageShell>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Manage Schools & School Admins</h1>
+          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">Manage Schools & School Admins</h1>
           <p className="text-sm text-muted-foreground mt-1">
             Onboard new schools, assign admins, and review tutors and students per campus.
           </p>
@@ -614,6 +615,6 @@ export default function OrganizationManageSchoolsPage() {
           ))}
         </div>
       </DataState>
-    </div>
+    </PageShell>
   );
 }

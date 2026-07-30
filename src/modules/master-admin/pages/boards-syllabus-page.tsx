@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
+import { PageShell } from "@/components/page-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -85,11 +86,11 @@ export default function MasterAdminBoardsSyllabusPage() {
   }, [syllabus]);
 
   if (loading) {
-    return <div className="p-6"><Skeleton className="h-80 w-full" /></div>;
+    return <PageShell><Skeleton className="h-80 w-full" /></PageShell>;
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <PageShell>
       <h1 className="text-2xl font-semibold tracking-tight">Boards & Syllabus</h1>
       <Tabs defaultValue="boards" className="space-y-4">
         <TabsList className="w-full justify-start">
@@ -244,6 +245,6 @@ export default function MasterAdminBoardsSyllabusPage() {
           <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><Button variant="destructive" onClick={async () => { if (!deleteTarget) return; await deleteCatalogBoard(deleteTarget.id); await refresh(); setDeleteTarget(null); toast({ title: "Board deleted" }); }}>Delete</Button></AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </PageShell>
   );
 }

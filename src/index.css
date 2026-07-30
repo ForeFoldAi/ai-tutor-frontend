@@ -90,6 +90,20 @@
   --font-serif: Georgia, serif;
   --font-mono: JetBrains Mono, Menlo, monospace;
 
+  /* Responsive layout */
+  --app-sidebar-width: clamp(14rem, calc(12vw + 4rem), 16rem);
+  --app-sidebar-width-icon: 3rem;
+  --page-padding-x: clamp(0.75rem, calc(0.5vw + 0.5rem), 1.25rem);
+  --page-padding-y: clamp(0.75rem, calc(0.35vw + 0.5rem), 1rem);
+  --page-section-gap: clamp(0.75rem, calc(0.5vw + 0.5rem), 1.25rem);
+  --content-max-standard: 80rem;
+  --content-max-wide: 96rem;
+  --dialog-gutter: 1.5rem;
+  --card-padding: clamp(1rem, calc(0.75rem + 0.5vw), 1.5rem);
+  --control-height-sm: 2rem;
+  --control-height: 2.5rem;
+  --control-height-lg: 2.75rem;
+
   /* Radius */
   --radius: 0.75rem;
   --radius-button: 0.75rem;
@@ -220,6 +234,12 @@
 }
 
 @layer base {
+  html {
+    /* Calibrated so the reference desktop (1440x790) renders at the designed 16px,
+       and shorter viewports scale the whole UI down instead of scrolling. */
+    font-size: clamp(10px, min(2.03vh, 1.11vw), 16px);
+  }
+
   * {
     @apply border-border;
   }
@@ -241,21 +261,50 @@
   }
 
   h1 {
-    @apply text-3xl font-bold tracking-tight;
+    @apply font-bold tracking-tight;
+    font-size: clamp(1.5rem, calc(1.1rem + 0.8vw), 1.875rem);
   }
 
   h2 {
-    @apply text-2xl font-semibold tracking-tight;
+    @apply font-semibold tracking-tight;
+    font-size: clamp(1.25rem, calc(1rem + 0.55vw), 1.5rem);
   }
 
   h3 {
-    @apply text-xl font-semibold;
+    @apply font-semibold;
+    font-size: clamp(1.125rem, calc(1rem + 0.3vw), 1.25rem);
   }
 }
 
 @layer components {
   .dashboard-fit {
     @apply flex w-full min-h-0 flex-1 flex-col;
+  }
+
+  .page-shell {
+    @apply dashboard-fit overflow-y-auto;
+    gap: var(--page-section-gap);
+    padding: var(--page-padding-y) var(--page-padding-x);
+  }
+
+  .page-container {
+    @apply mx-auto flex w-full min-w-0 flex-col;
+    gap: var(--page-section-gap);
+  }
+
+  /* ponytail: px-based — rem breakpoints shrink with fluid root and miss short viewports */
+  @media (max-height: 680px) {
+    .viewport-compact-hidden {
+      display: none;
+    }
+
+    .master-admin-dashboard .page-container {
+      gap: 0.5rem;
+    }
+
+    .student-dashboard .page-container {
+      gap: 0.5rem;
+    }
   }
 
   .bg-gradient-brand {

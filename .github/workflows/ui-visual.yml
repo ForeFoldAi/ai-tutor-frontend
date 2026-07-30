@@ -1,0 +1,39 @@
+name: UI visual viewport
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  visual:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Viewport smoke + screenshots
+        env:
+          # Optional: path to Playwright storageState JSON for authenticated routes.
+          E2E_STORAGE_STATE: ${{ vars.E2E_STORAGE_STATE }}
+          E2E_AUTH_ROUTES: ${{ vars.E2E_AUTH_ROUTES }}
+        run: npm run test:e2e
+
+      - name: Upload visual screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-viewports
+          path: test-results/visual/
+          if-no-files-found: ignore

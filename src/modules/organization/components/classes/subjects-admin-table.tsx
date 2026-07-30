@@ -58,8 +58,8 @@ export function SubjectsAdminTable({
   onDelete,
 }: SubjectsAdminTableProps) {
   return (
-    <div className="overflow-auto rounded-xl border border-border/70 bg-card">
-      <Table className="min-w-[480px] text-xs sm:min-w-[560px] sm:text-sm lg:min-w-[620px]">
+    <div className="overflow-hidden rounded-xl border border-border/70 bg-card">
+      <Table className="min-w-[480px] text-xs sm:min-w-[560px] sm:text-sm">
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <TableHead className={headClass}>Subject ID</TableHead>

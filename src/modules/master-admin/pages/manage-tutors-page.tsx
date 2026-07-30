@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createTutor, getMasterAdminSchools, patchUserStatus } from "@/api/masterAdmin";
 import type { ApiUser } from "@/api/types";
+import { PageShell } from "@/components/page-shell";
 import { useMasterAdminOverview } from "@/modules/master-admin/hooks/use-master-admin-data";
 import { UserTable } from "@/modules/master-admin/components/user-table";
 import { DataState } from "@/modules/shared/components/data-state";
@@ -41,7 +42,7 @@ export default function ManageTutorsPage() {
   });
 
   return (
-    <div className="p-6 space-y-6">
+    <PageShell>
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Manage Tutors</h1>
         <Button
@@ -60,6 +61,6 @@ export default function ManageTutorsPage() {
       >
         <UserTable title="Tutors" users={tutors} onToggleStatus={(u) => toggleMutation.mutate(u)} />
       </DataState>
-    </div>
+    </PageShell>
   );
 }

@@ -103,15 +103,15 @@ export function AppSidebar() {
         </div>
         <Button
           variant="ghost"
-          size="icon"
-          className="absolute -right-3 top-[calc(50%+1.25rem+20px)] z-20 hidden h-7 w-7 -translate-y-1/2 rounded-md border border-border bg-background shadow-sm hover:bg-accent lg:inline-flex"
+          size={null}
+          className="absolute -right-2.5 top-[calc(50%+1.25rem+20px)] z-20 hidden h-6 w-6 -translate-y-1/2 rounded-md border border-border bg-background shadow-sm hover:bg-accent lg:inline-flex [&_svg]:size-3.5"
           onClick={toggleSidebar}
           data-testid="button-sidebar-toggle"
         >
           {state === "expanded" ? (
-            <ChevronLeft className="h-4 w-4" />
+            <ChevronLeft strokeWidth={3} />
           ) : (
-            <ChevronRight className="h-4 w-4" />
+            <ChevronRight strokeWidth={3} />
           )}
           <span className="sr-only">Toggle Sidebar</span>
         </Button>

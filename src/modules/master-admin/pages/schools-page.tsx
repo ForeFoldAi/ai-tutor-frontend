@@ -3,6 +3,7 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { PageShell } from "@/components/page-shell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -126,7 +127,7 @@ export default function MasterAdminSchoolsPage() {
 
   if (loading) {
     return (
-      <div className="p-6 space-y-6">
+      <PageShell>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-2">
             <Skeleton className="h-7 w-[220px]" />
@@ -141,12 +142,12 @@ export default function MasterAdminSchoolsPage() {
             <Skeleton className="h-80 w-full" />
           </CardContent>
         </Card>
-      </div>
+      </PageShell>
     );
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <PageShell>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight">Schools</h1>
@@ -482,7 +483,7 @@ export default function MasterAdminSchoolsPage() {
           </div>
 
           <div className="rounded-lg border overflow-hidden">
-            <Table>
+            <Table className="min-w-[1120px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>
@@ -618,7 +619,7 @@ export default function MasterAdminSchoolsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </PageShell>
   );
 }
 

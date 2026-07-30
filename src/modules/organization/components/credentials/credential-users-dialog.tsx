@@ -274,7 +274,7 @@ export function CredentialUsersDialog({
             </Button>
           </aside>
 
-          <section className="flex min-h-[320px] flex-col p-4">
+          <section className="flex min-h-[20rem] flex-col p-4">
             <div className="relative space-y-1.5">
               <Label className="text-xs text-muted-foreground">Search</Label>
               <div className="relative">

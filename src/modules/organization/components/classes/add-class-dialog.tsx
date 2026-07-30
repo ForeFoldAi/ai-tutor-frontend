@@ -51,6 +51,11 @@ export type AddClassesFormValues = z.infer<typeof addClassesSchema>;
 
 const emptyRow = (curriculum = ""): AddClassRowValues => ({ grade: "", section: "", curriculum });
 
+// ponytail: one grid template for header + rows; real column minimums so narrow
+// viewports scroll the dialog instead of crushing the inputs.
+const ROW_GRID =
+  "grid grid-cols-[minmax(5rem,0.75fr)_minmax(5rem,0.75fr)_minmax(9rem,1.2fr)_auto] gap-x-3";
+
 interface AddClassDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -103,7 +108,7 @@ export function AddClassDialog({
               });
             })}
           >
-            <div className="grid grid-cols-[minmax(0,0.75fr)_minmax(0,0.75fr)_minmax(0,1.2fr)_auto] gap-x-3 gap-y-1 border-b border-border/60 pb-2">
+            <div className={`${ROW_GRID} gap-y-1 border-b border-border/60 pb-2`}>
               <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                 Class / Grade
               </span>
@@ -119,7 +124,7 @@ export function AddClassDialog({
               {fields.map((field, index) => (
                 <div
                   key={field.id}
-                  className="grid grid-cols-[minmax(0,0.75fr)_minmax(0,0.75fr)_minmax(0,1.2fr)_auto] items-start gap-x-3"
+                  className={`${ROW_GRID} items-start`}
                 >
                   <FormField
                     control={form.control}

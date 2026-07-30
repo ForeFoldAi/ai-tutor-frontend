@@ -19,6 +19,7 @@ import {
   Trophy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PageShell } from "@/components/page-shell";
 import { AskAiTutorButton } from "@/components/ask-ai-tutor-button";
 import { formatStudyTime, tutorResumeHref, type LearningSubjectApi } from "@/api/learning";
 import { useLearningOverview } from "@/hooks/use-learning-overview";
@@ -147,7 +148,10 @@ export default function MyLearningPage() {
   ];
 
   return (
-    <div className="dashboard-fit flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto p-3 md:p-4 lg:overflow-hidden">
+    <PageShell
+      className="overflow-x-hidden lg:overflow-hidden"
+      contentClassName="min-h-0 flex-1"
+    >
       <div className="flex min-w-0 shrink-0 flex-col gap-2">
         <div className="flex min-w-0 items-start justify-between gap-2 sm:gap-3 lg:items-center lg:gap-4">
           <div className="min-w-0 flex-1 space-y-0.5">
@@ -377,6 +381,6 @@ export default function MyLearningPage() {
           </AskAiTutorButton>
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   );
 }

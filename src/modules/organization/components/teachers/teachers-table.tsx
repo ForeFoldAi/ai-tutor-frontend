@@ -33,11 +33,11 @@ function GradeSubjectsCell({ teacher }: { teacher: TeacherRow }) {
       : [{ grade: teacher.grades || "—", subjects: teacher.subject || "—" }];
 
   return (
-    <div className="min-w-[12rem] space-y-1.5">
+    <div className="min-w-[10rem] space-y-1.5">
       {rows.map((row, i) => (
         <div
           key={`${teacher.id}-${row.grade}-${i}`}
-          className="grid grid-cols-[minmax(7rem,1fr)_minmax(6rem,1.2fr)] gap-x-3 gap-y-0.5"
+          className="grid grid-cols-[minmax(5rem,1fr)_minmax(5rem,1.2fr)] gap-x-3 gap-y-0.5"
         >
           <span className="whitespace-nowrap text-foreground">{row.grade}</span>
           <span className="min-w-0 break-words text-muted-foreground">{row.subjects}</span>
@@ -49,66 +49,64 @@ function GradeSubjectsCell({ teacher }: { teacher: TeacherRow }) {
 
 export function TeachersTable({ teachers, onView }: TeachersTableProps) {
   return (
-    <div className="overflow-x-auto">
-      <Table className="min-w-[820px] text-xs sm:min-w-[900px] sm:text-sm">
-        <TableHeader>
-          <TableRow className="hover:bg-transparent">
-            <TableHead className={`${headClass} w-[44px]`} />
-            <TableHead className={headClass}>Teacher Name</TableHead>
-            <TableHead className={`${headClass} text-left`}>User ID</TableHead>
-            <TableHead className={headClass}>
-              <div className="grid grid-cols-[minmax(7rem,1fr)_minmax(6rem,1.2fr)] gap-x-3">
-                <span>Grade</span>
-                <span>Subjects</span>
+    <Table className="min-w-[720px] text-xs sm:min-w-[800px] sm:text-sm">
+      <TableHeader>
+        <TableRow className="hover:bg-transparent">
+          <TableHead className={`${headClass} w-[44px]`} />
+          <TableHead className={headClass}>Teacher Name</TableHead>
+          <TableHead className={`${headClass} text-left`}>User ID</TableHead>
+          <TableHead className={headClass}>
+            <div className="grid grid-cols-[minmax(5rem,1fr)_minmax(5rem,1.2fr)] gap-x-3">
+              <span>Grade</span>
+              <span>Subjects</span>
+            </div>
+          </TableHead>
+          <TableHead className={`${headClass} whitespace-normal leading-snug`}>Assigned Students</TableHead>
+          <TableHead className={headClass}>Status</TableHead>
+          <TableHead className={`${headClass} text-right`}>Actions</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {teachers.map((teacher) => (
+          <TableRow key={teacher.id}>
+            <TableCell className={`${cellClass} align-middle`}>
+              <Avatar className="h-8 w-8">
+                <AvatarFallback className={`text-xs ${teacher.avatarColor}`}>
+                  {teacherInitials(teacher.fullName)}
+                </AvatarFallback>
+              </Avatar>
+            </TableCell>
+            <TableCell className={`${cellClass} align-middle font-semibold text-blue-900 dark:text-blue-100`}>
+              {teacher.fullName}
+            </TableCell>
+            <TableCell className={`${cellClass} align-middle text-left whitespace-nowrap text-muted-foreground`}>
+              {teacher.userId}
+            </TableCell>
+            <TableCell className={`${cellClass} align-middle`}>
+              <GradeSubjectsCell teacher={teacher} />
+            </TableCell>
+            <TableCell className={`${cellClass} align-middle whitespace-nowrap`}>{teacher.assignedStudents}</TableCell>
+            <TableCell className={`${cellClass} align-middle`}>
+              <Badge variant="outline" className={`px-2 py-0 text-xs ${STATUS_STYLES[teacher.status]}`}>
+                {teacher.status}
+              </Badge>
+            </TableCell>
+            <TableCell className={`${cellClass} align-middle`}>
+              <div className="flex justify-end">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-primary hover:bg-primary/10"
+                  aria-label={`View ${teacher.fullName}`}
+                  onClick={() => onView(teacher)}
+                >
+                  <Eye className="h-4 w-4" />
+                </Button>
               </div>
-            </TableHead>
-            <TableHead className={headClass}>Assigned Students</TableHead>
-            <TableHead className={headClass}>Status</TableHead>
-            <TableHead className={`${headClass} text-right`}>Actions</TableHead>
+            </TableCell>
           </TableRow>
-        </TableHeader>
-        <TableBody>
-          {teachers.map((teacher) => (
-            <TableRow key={teacher.id}>
-              <TableCell className={`${cellClass} align-middle`}>
-                <Avatar className="h-8 w-8">
-                  <AvatarFallback className={`text-xs ${teacher.avatarColor}`}>
-                    {teacherInitials(teacher.fullName)}
-                  </AvatarFallback>
-                </Avatar>
-              </TableCell>
-              <TableCell className={`${cellClass} align-middle whitespace-nowrap font-semibold text-blue-900 dark:text-blue-100`}>
-                {teacher.fullName}
-              </TableCell>
-              <TableCell className={`${cellClass} align-middle text-left whitespace-nowrap text-muted-foreground`}>
-                {teacher.userId}
-              </TableCell>
-              <TableCell className={`${cellClass} align-middle`}>
-                <GradeSubjectsCell teacher={teacher} />
-              </TableCell>
-              <TableCell className={`${cellClass} align-middle whitespace-nowrap`}>{teacher.assignedStudents}</TableCell>
-              <TableCell className={`${cellClass} align-middle`}>
-                <Badge variant="outline" className={`px-2 py-0 text-xs ${STATUS_STYLES[teacher.status]}`}>
-                  {teacher.status}
-                </Badge>
-              </TableCell>
-              <TableCell className={`${cellClass} align-middle`}>
-                <div className="flex justify-end">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-primary hover:bg-primary/10"
-                    aria-label={`View ${teacher.fullName}`}
-                    onClick={() => onView(teacher)}
-                  >
-                    <Eye className="h-4 w-4" />
-                  </Button>
-                </div>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+        ))}
+      </TableBody>
+    </Table>
   );
 }

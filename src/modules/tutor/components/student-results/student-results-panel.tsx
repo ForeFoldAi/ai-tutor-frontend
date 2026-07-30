@@ -294,7 +294,7 @@ export function StudentResultsPanel() {
   const donePct = selected ? completionPct(selected.counts) : 0;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className="flex flex-col lg:min-h-0 lg:flex-1 lg:overflow-hidden">
       <DataState
         loading={listQuery.isLoading}
         error={listQuery.error ? String(listQuery.error) : null}
@@ -302,8 +302,8 @@ export function StudentResultsPanel() {
         emptyText="No quizzes yet. Save a lesson and assign a Quiz."
         onRetry={() => void listQuery.refetch()}
       >
-        <div className="grid min-h-0 flex-1 gap-4 overflow-hidden lg:grid-cols-[300px_minmax(0,1fr)]">
-          <aside className={cn("flex min-h-0 flex-col overflow-hidden rounded-2xl bg-card shadow-sm", PANEL_BORDER)}>
+        <div className="grid gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[clamp(15rem,22vw,20rem)_minmax(0,1fr)] lg:overflow-hidden">
+          <aside className={cn("flex max-h-80 flex-col overflow-hidden rounded-2xl bg-card shadow-sm lg:max-h-none lg:min-h-0", PANEL_BORDER)}>
             <div className="shrink-0 border-b border-slate-300 p-3 dark:border-slate-600">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />

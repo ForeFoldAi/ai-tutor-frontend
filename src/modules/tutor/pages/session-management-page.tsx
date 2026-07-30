@@ -17,6 +17,7 @@ import {
   updateTutorSession,
 } from "@/api/tutor";
 import { Card, CardContent } from "@/components/ui/card";
+import { PageShell } from "@/components/page-shell";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -134,7 +135,7 @@ export default function TutorSessionManagementPage() {
     createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
 
   return (
-    <div className="dashboard-fit flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3 md:p-4">
+    <PageShell>
       <div className="flex shrink-0 items-start justify-between gap-2 lg:items-center lg:gap-4">
         <div className="min-w-0 flex-1 space-y-0.5">
           <h1 className="text-xl font-bold leading-tight text-blue-900 dark:text-blue-100 sm:text-2xl">
@@ -241,7 +242,7 @@ export default function TutorSessionManagementPage() {
         </Card>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(280px,340px)_1fr] lg:items-start">
+      <div className="grid gap-4 lg:grid-cols-[clamp(17rem,26vw,21rem)_minmax(0,1fr)] lg:items-start">
         <SessionsCalendarCard
           selected={selectedDate}
           sessions={all}
@@ -282,6 +283,6 @@ export default function TutorSessionManagementPage() {
         onDelete={setDeleteSession}
         actionsDisabled={actionsDisabled}
       />
-    </div>
+    </PageShell>
   );
 }

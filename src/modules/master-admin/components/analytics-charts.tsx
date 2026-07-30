@@ -26,7 +26,7 @@ export function UserGrowthTrendChart({
       config={{
         users: { label: "Users", color: "hsl(var(--chart-1))" },
       }}
-      className="h-64 w-full"
+      className="h-[clamp(6rem,18vh,16rem)] w-full"
     >
       <LineChart data={data} margin={{ left: 8, right: 8, top: 8, bottom: 8 }}>
         <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -50,7 +50,7 @@ export function RevenueTrendChart({
       config={{
         revenue: { label: "Revenue", color: "hsl(var(--chart-2))" },
       }}
-      className="h-64 w-full"
+      className="h-[clamp(6rem,18vh,16rem)] w-full"
     >
       <AreaChart data={data} margin={{ left: 8, right: 8, top: 8, bottom: 8 }}>
         <defs>
@@ -88,7 +88,7 @@ export function OrganizationGrowthChart({
       config={{
         orgs: { label: "Organizations", color: "hsl(var(--chart-3))" },
       }}
-      className="h-64 w-full"
+      className="h-[clamp(6rem,18vh,16rem)] w-full"
     >
       <BarChart data={data} margin={{ left: 8, right: 8, top: 8, bottom: 8 }}>
         <CartesianGrid strokeDasharray="3 3" vertical={false} />
@@ -112,7 +112,7 @@ export function AIUsageAnalyticsChart({
       config={{
         queries: { label: "AI Queries", color: "hsl(var(--chart-4))" },
       }}
-      className="h-64 w-full"
+      className="h-[clamp(6rem,18vh,16rem)] w-full"
     >
       <BarChart data={data} margin={{ left: 8, right: 8, top: 8, bottom: 8 }}>
         <CartesianGrid strokeDasharray="3 3" vertical={false} />

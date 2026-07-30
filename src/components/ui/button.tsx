@@ -21,10 +21,10 @@ const buttonVariants = cva(
           "border border-transparent text-foreground hover:bg-muted/60 active:bg-muted/80",
       },
       size: {
-        default: "min-h-10 px-5 py-2.5",
-        sm: "min-h-8 rounded-button px-3.5 text-xs",
-        lg: "min-h-11 rounded-button px-8 text-base",
-        icon: "h-10 w-10",
+        default: "min-h-control px-5 py-2.5",
+        sm: "min-h-control-sm rounded-button px-3.5 text-xs",
+        lg: "min-h-control-lg rounded-button px-8 text-base",
+        icon: "h-control w-control",
       },
     },
     defaultVariants: {

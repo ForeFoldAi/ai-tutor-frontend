@@ -284,7 +284,7 @@ export default function ForgotPasswordPage() {
         : "Enter and confirm your new password";
 
   return (
-    <AuthLayout scrollable>
+    <AuthLayout>
       <AuthCardIllustration />
 
       <div className="px-5 pb-5 pt-3 sm:px-7 sm:pb-6">
