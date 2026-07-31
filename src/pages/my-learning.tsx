@@ -206,181 +206,177 @@ export default function MyLearningPage() {
       </Card>
 
       <div className="grid min-w-0 gap-3 lg:min-h-0 lg:flex-1 lg:grid-cols-3 lg:gap-4 lg:overflow-hidden">
-        <div className="flex min-w-0 flex-col gap-3 lg:col-span-2 lg:min-h-0">
-          <Card className="flex min-w-0 flex-col shadow-card lg:min-h-0 lg:flex-1">
-            <CardContent className="flex min-w-0 flex-col p-3 sm:p-4 lg:min-h-0 lg:flex-1">
-              <div className="mb-2 flex min-w-0 shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <h2 className="text-sm font-semibold text-foreground sm:text-base">Your Subjects</h2>
-                <div className="flex min-w-0 flex-wrap gap-1.5">
-                  {FILTER_TABS.map((tab) => (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => setFilter(tab.id)}
-                      className={cn(
-                        "rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors",
-                        filter === tab.id
-                          ? "bg-gradient-brand text-primary-foreground"
-                          : "border border-border/60 bg-background text-muted-foreground hover:border-primary/30"
-                      )}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
+        <Card className="order-1 flex min-w-0 flex-col shadow-card lg:col-span-2 lg:min-h-0 lg:flex-1">
+          <CardContent className="flex min-w-0 flex-col p-3 sm:p-4 lg:min-h-0 lg:flex-1">
+            <div className="mb-2 flex min-w-0 shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <h2 className="text-sm font-semibold text-foreground sm:text-base">Your Subjects</h2>
+              <div className="flex min-w-0 flex-wrap gap-1.5">
+                {FILTER_TABS.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setFilter(tab.id)}
+                    className={cn(
+                      "rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors",
+                      filter === tab.id
+                        ? "bg-gradient-brand text-primary-foreground"
+                        : "border border-border/60 bg-background text-muted-foreground hover:border-primary/30"
+                    )}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
+            </div>
 
-              <div className="min-w-0 space-y-2 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-0.5">
-                {isLoading ? (
-                  <p className="py-6 text-center text-sm text-muted-foreground">Loading subjects…</p>
-                ) : isError ? (
-                  <p className="py-6 text-center text-sm text-muted-foreground">
-                    Could not load your subjects. Try again later.
-                  </p>
-                ) : filteredSubjects.length === 0 ? (
-                  <p className="py-6 text-center text-sm text-muted-foreground">
-                    {subjects.length === 0
-                      ? "No subjects assigned to your class yet. Ask your teacher or school admin."
-                      : "No subjects match your search or filter."}
-                  </p>
-                ) : (
-                  filteredSubjects.map((subject) => {
-                    const style = subjectStyle(subject.subject_name);
-                    const Icon = style.icon;
-                    return (
-                      <Link
-                        key={subject.id}
-                        href={chapterSelectionPath(String(subject.id))}
-                        className="block min-w-0"
-                      >
-                        <div className="group flex min-w-0 cursor-pointer items-center gap-2 rounded-xl border border-border/60 p-2.5 transition-all hover:border-primary/30 hover:bg-muted/20 sm:gap-3">
+            <div className="min-w-0 space-y-2 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-0.5">
+              {isLoading ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">Loading subjects…</p>
+              ) : isError ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  Could not load your subjects. Try again later.
+                </p>
+              ) : filteredSubjects.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  {subjects.length === 0
+                    ? "No subjects assigned to your class yet. Ask your teacher or school admin."
+                    : "No subjects match your search or filter."}
+                </p>
+              ) : (
+                filteredSubjects.map((subject) => {
+                  const style = subjectStyle(subject.subject_name);
+                  const Icon = style.icon;
+                  return (
+                    <Link
+                      key={subject.id}
+                        href={chapterSelectionPath(String(subject.id), { from: "my-learning" })}
+                      className="block min-w-0"
+                    >
+                      <div className="group flex min-w-0 cursor-pointer items-center gap-2 rounded-xl border border-border/60 p-2.5 transition-all hover:border-primary/30 hover:bg-muted/20 sm:gap-3">
+                        <div
+                          className={cn(
+                            "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white",
+                            style.color
+                          )}
+                        >
+                          <Icon className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex min-w-0 items-center justify-between gap-2">
+                            <p className="truncate text-sm font-semibold text-foreground">
+                              {subject.subject_name}
+                            </p>
+                            <span className="shrink-0 text-xs font-semibold text-foreground">
+                              {subject.progress}%
+                            </span>
+                          </div>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {topicLabel(subject)} · {subject.completed_chapters}/
+                            {subject.total_chapters} chapters done
+                          </p>
+                          <Progress
+                            value={subject.progress}
+                            className={cn("mt-1.5 h-1.5", style.barClass)}
+                          />
+                        </div>
+                        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      </div>
+                    </Link>
+                  );
+                })
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="order-2 flex min-w-0 flex-col shadow-card lg:row-span-2 lg:min-h-0 lg:flex-1">
+          <CardContent className="flex min-w-0 flex-col p-3 sm:p-4 lg:min-h-0 lg:flex-1">
+            <div className="mb-2 flex min-w-0 shrink-0 items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold text-foreground sm:text-base">
+                Recent Lessons
+              </h2>
+              <Link
+                href="/ai-learning-studio"
+                className="shrink-0 text-xs font-medium text-primary hover:underline"
+              >
+                View All
+              </Link>
+            </div>
+
+            <ul className="max-h-72 min-w-0 space-y-2 overflow-y-auto pr-0.5 sm:max-h-96 lg:max-h-none lg:min-h-0 lg:flex-1">
+              {recentLessons.length === 0 ? (
+                <li className="py-4 text-center text-sm text-muted-foreground">
+                  No recent lessons yet.
+                </li>
+              ) : (
+                recentLessons.map((lesson) => {
+                  const style = subjectStyle(lesson.subject_name);
+                  const Icon = style.icon;
+                  const href = tutorResumeHref({
+                    board: lesson.board,
+                    class_level: lesson.class_level,
+                    subject_name: lesson.subject_name,
+                    subject_id: lesson.subject_id,
+                    chapter_id: lesson.chapter_id,
+                    chapter_name: lesson.chapter_name,
+                  });
+                  return (
+                    <li key={`${lesson.subject_id}-${lesson.chapter_id}`} className="min-w-0">
+                      <Link href={href} className="block min-w-0">
+                        <div className="flex min-w-0 items-center gap-2.5 rounded-lg border border-border/60 bg-muted/20 px-2.5 py-2 transition-colors hover:border-primary/30">
                           <div
                             className={cn(
-                              "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white",
+                              "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white",
                               style.color
                             )}
                           >
-                            <Icon className="h-4 w-4" />
+                            <Icon className="h-3.5 w-3.5" />
                           </div>
                           <div className="min-w-0 flex-1">
-                            <div className="flex min-w-0 items-center justify-between gap-2">
-                              <p className="truncate text-sm font-semibold text-foreground">
-                                {subject.subject_name}
-                              </p>
-                              <span className="shrink-0 text-xs font-semibold text-foreground">
-                                {subject.progress}%
-                              </span>
-                            </div>
-                            <p className="truncate text-xs text-muted-foreground">
-                              {topicLabel(subject)} · {subject.completed_chapters}/
-                              {subject.total_chapters} chapters done
+                            <p className="truncate text-xs font-medium text-foreground sm:text-sm">
+                              {lesson.chapter_name || "Chapter"}
                             </p>
-                            <Progress
-                              value={subject.progress}
-                              className={cn("mt-1.5 h-1.5", style.barClass)}
-                            />
+                            <p className="truncate text-xs text-muted-foreground">
+                              {lesson.subject_name}
+                            </p>
                           </div>
-                          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          {lesson.status === "completed" ? (
+                            <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
+                          ) : (
+                            <Play className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          )}
                         </div>
                       </Link>
-                    );
-                  })
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+          </CardContent>
+        </Card>
 
-        <div className="flex min-w-0 flex-col gap-3 lg:min-h-0">
-          <Card className="flex min-w-0 flex-col shadow-card lg:min-h-0 lg:flex-1">
-            <CardContent className="flex min-w-0 flex-col p-3 sm:p-4 lg:min-h-0 lg:flex-1">
-              <div className="mb-2 flex min-w-0 shrink-0 items-center justify-between gap-2">
-                <h2 className="text-sm font-semibold text-foreground sm:text-base">
-                  Recent Lessons
-                </h2>
-                <Link
-                  href="/ai-learning-studio"
-                  className="shrink-0 text-xs font-medium text-primary hover:underline"
-                >
-                  View All
-                </Link>
-              </div>
-
-              <ul className="max-h-72 min-w-0 space-y-2 overflow-y-auto pr-0.5 sm:max-h-96 lg:max-h-none lg:min-h-0 lg:flex-1">
-                {recentLessons.length === 0 ? (
-                  <li className="py-4 text-center text-sm text-muted-foreground">
-                    No recent lessons yet.
-                  </li>
-                ) : (
-                  recentLessons.map((lesson) => {
-                    const style = subjectStyle(lesson.subject_name);
-                    const Icon = style.icon;
-                    const href = tutorResumeHref({
-                      board: lesson.board,
-                      class_level: lesson.class_level,
-                      subject_name: lesson.subject_name,
-                      subject_id: lesson.subject_id,
-                      chapter_id: lesson.chapter_id,
-                      chapter_name: lesson.chapter_name,
-                    });
-                    return (
-                      <li key={`${lesson.subject_id}-${lesson.chapter_id}`} className="min-w-0">
-                        <Link href={href} className="block min-w-0">
-                          <div className="flex min-w-0 items-center gap-2.5 rounded-lg border border-border/60 bg-muted/20 px-2.5 py-2 transition-colors hover:border-primary/30">
-                            <div
-                              className={cn(
-                                "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white",
-                                style.color
-                              )}
-                            >
-                              <Icon className="h-3.5 w-3.5" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-xs font-medium text-foreground sm:text-sm">
-                                {lesson.chapter_name || "Chapter"}
-                              </p>
-                              <p className="truncate text-xs text-muted-foreground">
-                                {lesson.subject_name}
-                              </p>
-                            </div>
-                            {lesson.status === "completed" ? (
-                              <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
-                            ) : (
-                              <Play className="h-4 w-4 shrink-0 text-muted-foreground" />
-                            )}
-                          </div>
-                        </Link>
-                      </li>
-                    );
-                  })
-                )}
-              </ul>
-            </CardContent>
-          </Card>
-        </div>
+        <Card className="order-3 min-w-0 shrink-0 overflow-hidden border-0 bg-gradient-to-r from-primary/10 via-accent/10 to-brand-secondary/10 shadow-card lg:col-span-2">
+          <CardContent className="flex min-w-0 flex-row items-center gap-3 p-3">
+            <img
+              src="/login-right.png"
+              alt=""
+              aria-hidden
+              className="h-14 w-14 shrink-0 object-contain"
+            />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-foreground">
+                Need help understanding a topic?
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Ask your AI Tutor for step-by-step explanations.
+              </p>
+            </div>
+            <AskAiTutorButton className="h-8 w-auto shrink-0 px-3 text-sm">
+              Ask AI Tutor
+            </AskAiTutorButton>
+          </CardContent>
+        </Card>
       </div>
-
-      <Card className="min-w-0 shrink-0 overflow-hidden border-0 bg-gradient-to-r from-primary/10 via-accent/10 to-brand-secondary/10 shadow-card">
-        <CardContent className="flex min-w-0 flex-col gap-3 p-3 sm:flex-row sm:items-center">
-          <img
-            src="/login-right.png"
-            alt=""
-            aria-hidden
-            className="h-14 w-14 shrink-0 object-contain"
-          />
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-foreground">
-              Need help understanding a topic?
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Ask your AI Tutor for step-by-step explanations.
-            </p>
-          </div>
-          <AskAiTutorButton className="h-8 w-full shrink-0 px-3 text-sm sm:w-auto">
-            Ask AI Tutor
-          </AskAiTutorButton>
-        </CardContent>
-      </Card>
     </PageShell>
   );
 }

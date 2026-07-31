@@ -34,6 +34,7 @@ import { useStudentDashboard } from "@/hooks/use-student-dashboard";
 import { GlobalSearchInput } from "@/modules/search";
 import { getTodaysLearningTip } from "@/data/learning-tips";
 import { useTheme } from "@/lib/theme-provider";
+import { isIndividualStudent } from "@/lib/app-nav-items";
 
 interface StudentDashboardProps {
   user: User;
@@ -60,45 +61,52 @@ function subjectStyle(name: string) {
   return SUBJECT_STYLE[name] ?? FALLBACK;
 }
 
-function CircularProgress({ value, size = 56 }: { value: number; size?: number }) {
-  const stroke = 5;
-  const radius = (size - stroke) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (value / 100) * circumference;
+function ProgressGauge({ value, size = 72 }: { value: number; size?: number }) {
+  const stroke = 8;
+  const clamped = Math.min(100, Math.max(0, value));
+  const width = size;
+  const height = size * 0.62;
+  const cx = width / 2;
+  const cy = height - stroke / 2;
+  const radius = (width - stroke) / 2;
+  // ponytail: semicircle gauge; swap to full ring if we need more than one KPI in this card
+  const arcLen = Math.PI * radius;
+  const offset = arcLen - (clamped / 100) * arcLen;
+  const gradId = "overallProgressGauge";
 
   return (
-    <div className="relative shrink-0" style={{ width: size, height: size }}>
-      <svg width={size} height={size} className="-rotate-90">
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={stroke}
-          className="text-muted/40"
-        />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke="url(#progressGradient)"
-          strokeWidth={stroke}
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
-        />
+    <div className="relative shrink-0" style={{ width, height }}>
+      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden>
         <defs>
-          <linearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+          <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="0%">
             <stop offset="0%" stopColor="#4F6EF7" />
-            <stop offset="50%" stopColor="#6C4CF7" />
+            <stop offset="55%" stopColor="#6C4CF7" />
             <stop offset="100%" stopColor="#8B4CF7" />
           </linearGradient>
         </defs>
+        <path
+          d={`M ${stroke / 2} ${cy} A ${radius} ${radius} 0 0 1 ${width - stroke / 2} ${cy}`}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          className="text-muted/35"
+        />
+        <path
+          d={`M ${stroke / 2} ${cy} A ${radius} ${radius} 0 0 1 ${width - stroke / 2} ${cy}`}
+          fill="none"
+          stroke={`url(#${gradId})`}
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={arcLen}
+          strokeDashoffset={offset}
+          className="transition-[stroke-dashoffset] duration-500"
+        />
       </svg>
-      <div className="absolute inset-0 flex items-center justify-center">
-        <span className="text-base font-bold text-foreground">{value}%</span>
+      <div className="absolute inset-x-0 bottom-0 flex flex-col items-center justify-end pb-0.5">
+        <span className="text-lg font-bold leading-none tabular-nums text-foreground">
+          {clamped}%
+        </span>
       </div>
     </div>
   );
@@ -138,16 +146,21 @@ function formatSessionWhen(dateStr: string, durationMinutes: number) {
 export default function StudentDashboard({ user }: StudentDashboardProps) {
   const firstName = user.fullName?.split(" ")[0] || "Student";
   const { theme, toggleTheme } = useTheme();
+  const individual = isIndividualStudent(user.role, user.schoolId, user.createdBy);
   const { data } = useStudentDashboard();
   const { data: sessions = [] } = useQuery({
     queryKey: ["student", "live-sessions"],
     queryFn: fetchStudentLiveSessions,
     staleTime: 60 * 1000,
+    enabled: !individual,
   });
   const stats = data?.stats;
   const subjects = data?.subjects ?? [];
   const continueLearning = data?.continue_learning ?? null;
-  const recentLessons = data?.recent_lessons ?? [];
+  // ponytail: cap at 10 on the client; bump if the summary API grows a limit param
+  const recentLessons = individual
+    ? (data?.recent_lessons ?? []).slice(0, 10)
+    : (data?.recent_lessons ?? []);
   const overallProgress = data?.overall_progress ?? 0;
   const totalChapters = data?.total_chapters ?? 0;
   const continueHref = continueLearning
@@ -223,9 +236,9 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
       <div className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
         <StatCard>
           <p className="text-sm font-medium text-muted-foreground">Overall Progress</p>
-          <div className="mt-2 flex flex-wrap items-center gap-3">
-            <CircularProgress value={overallProgress} />
-            <p className="flex items-center gap-1 text-xs font-medium text-muted-foreground sm:text-sm">
+          <div className="mt-1.5 flex flex-wrap items-end gap-3">
+            <ProgressGauge value={overallProgress} />
+            <p className="mb-1 flex items-center gap-1 text-xs font-medium text-muted-foreground sm:text-sm">
               <TrendingUp className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
               <span>
                 {stats?.enrolled_subjects ?? 0} enrolled subject
@@ -290,78 +303,63 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
       </div>
 
       <div className="grid items-start gap-3 lg:grid-cols-5 lg:gap-3">
-        <div className="grid gap-3 lg:col-span-3">
+        <div className="order-1 lg:col-span-3">
           <Card className="hover:translate-y-0 hover:shadow-card shadow-card">
             <CardContent className="p-4 lg:p-4">
-              <div className="mb-4 flex items-center justify-between gap-2 lg:mb-3">
-                <h2 className="text-sm font-semibold text-foreground sm:text-base">My Learning</h2>
-                <Link
-                  href="/my-learning"
-                  className="shrink-0 text-xs font-medium text-primary hover:underline sm:text-sm"
+              <h2 className="mb-3 text-sm font-semibold text-foreground sm:text-base">
+                Learning Progress
+              </h2>
+              {subjects.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No subjects assigned to your class yet.
+                </p>
+              ) : (
+                <div
+                  className="grid grid-cols-2 gap-2 sm:gap-3 sm:[grid-template-columns:repeat(var(--subject-count),minmax(0,1fr))]"
+                  style={
+                    {
+                      ["--subject-count" as string]: subjects.length,
+                    } as React.CSSProperties
+                  }
                 >
-                  View All
-                </Link>
-              </div>
-              <div className="grid gap-4 md:grid-cols-[10.5rem_1fr] md:items-center lg:grid-cols-[11.5rem_1fr]">
-                <div className="flex aspect-square w-full max-w-[11.5rem] shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-[#EEF2FF] dark:bg-primary/10">
-                  <img
-                    src={brandImages.book}
-                    alt="Learning illustration"
-                    className="h-[92%] w-[92%] object-contain"
-                  />
-                </div>
-                <div className="min-w-0">
-                  {continueLearning ? (
-                    <>
-                      <h3 className="text-sm font-bold leading-snug text-foreground sm:text-base">
-                        {continueLearning.chapter_name || "Continue chapter"}
-                      </h3>
-                      <Badge className="mt-2 w-fit border-0 bg-primary/10 text-primary hover:bg-primary/10">
-                        {continueLearning.subject_name}
-                      </Badge>
-                      <div className="mt-3 flex items-center gap-2.5">
-                        <span className="shrink-0 text-xs text-muted-foreground sm:text-sm">
-                          {continueLearning.progress}% complete
-                        </span>
+                  {subjects.map((subject) => {
+                    const style = subjectStyle(subject.subject_name);
+                    const Icon = style.icon;
+                    return (
+                      <div
+                        key={subject.id}
+                        className="flex min-w-0 flex-col items-center rounded-xl border border-border/60 bg-muted/20 p-2 text-center sm:p-2.5"
+                      >
+                        <div
+                          className={cn(
+                            "mb-1.5 flex h-8 w-8 items-center justify-center rounded-lg",
+                            style.color
+                          )}
+                        >
+                          <Icon className="h-4 w-4 text-white" />
+                        </div>
+                        <p className="w-full truncate text-[11px] font-medium text-foreground sm:text-xs">
+                          {subject.subject_name}
+                        </p>
+                        <p className={cn("mt-0.5 text-sm font-bold", style.text)}>
+                          {subject.progress}%
+                        </p>
                         <Progress
-                          value={continueLearning.progress}
-                          className="h-2 flex-1 [&>div]:bg-gradient-brand"
+                          value={subject.progress}
+                          className="mt-2 h-1.5 w-full"
                         />
+                        <p className="mt-1 text-[10px] text-muted-foreground">
+                          {subject.completed_chapters}/{subject.total_chapters}
+                        </p>
                       </div>
-                      <Button
-                        asChild
-                        className="mt-4 h-10 w-full rounded-xl bg-gradient-brand sm:w-auto sm:min-w-[11rem] sm:px-6"
-                      >
-                        <Link href={continueHref} className="inline-flex items-center gap-2">
-                          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/25">
-                            <Play className="h-3 w-3 fill-white text-white" />
-                          </span>
-                          Continue Lesson
-                        </Link>
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <h3 className="text-sm font-bold leading-snug text-foreground sm:text-base">
-                        Start learning with AI Tutor
-                      </h3>
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        Pick a subject from your class to begin.
-                      </p>
-                      <Button
-                        asChild
-                        className="mt-4 h-10 w-full rounded-xl bg-gradient-brand sm:w-auto sm:min-w-[11rem] sm:px-6"
-                      >
-                        <Link href="/ai-learning-studio">Go to AI Tutor</Link>
-                      </Button>
-                    </>
-                  )}
+                    );
+                  })}
                 </div>
-              </div>
+              )}
 
               <div className="mt-5 border-t border-border/60 pt-4 lg:mt-4 lg:pt-4">
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <h2 className="text-sm font-semibold text-foreground sm:text-base">Your Subjects</h2>
+                <div className="mb-4 flex items-center justify-between gap-2 lg:mb-3">
+                  <h2 className="text-sm font-semibold text-foreground sm:text-base">My Latest Learning</h2>
                   <Link
                     href="/my-learning"
                     className="shrink-0 text-xs font-medium text-primary hover:underline sm:text-sm"
@@ -369,52 +367,70 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
                     View All
                   </Link>
                 </div>
-                {subjects.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    No subjects assigned to your class yet.
-                  </p>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5 sm:gap-3">
-                    {subjects.map((subject) => {
-                      const style = subjectStyle(subject.subject_name);
-                      const Icon = style.icon;
-                      return (
-                        <div
-                          key={subject.id}
-                          className="flex min-w-0 flex-col items-center rounded-xl border border-border/60 bg-muted/20 p-2.5 text-center sm:p-3"
-                        >
-                          <div
-                            className={cn(
-                              "mb-1.5 flex h-8 w-8 items-center justify-center rounded-lg sm:h-9 sm:w-9",
-                              style.color
-                            )}
-                          >
-                            <Icon className="h-4 w-4 text-white" />
-                          </div>
-                          <p className="w-full truncate text-xs font-medium text-foreground">
-                            {subject.subject_name}
-                          </p>
-                          <p className={cn("mt-0.5 text-sm font-bold", style.text)}>
-                            {subject.progress}%
-                          </p>
-                          <Progress
-                            value={subject.progress}
-                            className="mt-2 h-1.5 w-full"
-                          />
-                          <p className="mt-1 text-[10px] text-muted-foreground">
-                            {subject.completed_chapters}/{subject.total_chapters}
-                          </p>
-                        </div>
-                      );
-                    })}
+                <div className="grid grid-cols-[6.5rem_1fr] items-center gap-3 sm:grid-cols-[10.5rem_1fr] sm:gap-4 lg:grid-cols-[11.5rem_1fr]">
+                  <div className="flex aspect-square w-full max-w-[11.5rem] shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-[#EEF2FF] dark:bg-primary/10">
+                    <img
+                      src={brandImages.book}
+                      alt="Learning illustration"
+                      className="h-[92%] w-[92%] object-contain"
+                    />
                   </div>
-                )}
+                  <div className="min-w-0">
+                    {continueLearning ? (
+                      <>
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                          <h3 className="min-w-0 flex-1 text-sm font-bold leading-snug text-foreground sm:text-base">
+                            {continueLearning.chapter_name || "Continue chapter"}
+                          </h3>
+                          <Button
+                            asChild
+                            className="h-8 shrink-0 rounded-xl bg-gradient-brand px-3 text-xs sm:h-9 sm:px-4 sm:text-sm"
+                          >
+                            <Link href={continueHref} className="inline-flex items-center gap-1.5 sm:gap-2">
+                              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/25">
+                                <Play className="h-2.5 w-2.5 fill-white text-white" />
+                              </span>
+                              Continue Lesson
+                            </Link>
+                          </Button>
+                        </div>
+                        <Badge className="mt-2 w-fit border-0 bg-primary/10 text-primary hover:bg-primary/10">
+                          {continueLearning.subject_name}
+                        </Badge>
+                        <div className="mt-3 flex items-center gap-2.5">
+                          <span className="shrink-0 text-xs text-muted-foreground sm:text-sm">
+                            {continueLearning.progress}% complete
+                          </span>
+                          <Progress
+                            value={continueLearning.progress}
+                            className="h-2 flex-1 [&>div]:bg-gradient-brand"
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <h3 className="text-sm font-bold leading-snug text-foreground sm:text-base">
+                          Start learning with AI Tutor
+                        </h3>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          Pick a subject from your class to begin.
+                        </p>
+                        <Button
+                          asChild
+                          className="mt-4 h-9 w-auto min-w-[9rem] rounded-xl bg-gradient-brand px-4 sm:h-10 sm:min-w-[11rem] sm:px-6"
+                        >
+                          <Link href="/ai-learning-studio">Go to AI Tutor</Link>
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        <div className="grid gap-3 lg:col-span-2">
+        <div className="order-2 grid gap-3 lg:col-span-2 lg:row-span-2">
           <Card className="hover:translate-y-0 hover:shadow-card shadow-card">
             <CardContent className="p-4 lg:p-3">
               <div className="mb-3 flex items-center justify-between gap-2 lg:mb-2">
@@ -465,24 +481,22 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
             </CardContent>
           </Card>
 
-          <Card className="hover:translate-y-0 hover:shadow-card shadow-card">
-            <CardContent className="p-4 lg:p-3">
-              <div className="mb-3 flex items-center justify-between gap-2 lg:mb-2">
-                <h2 className="text-sm font-semibold text-foreground sm:text-base">
-                  Sessions Today
-                </h2>
-                <Link
-                  href="/live-classes"
-                  className="shrink-0 text-xs font-medium text-primary hover:underline sm:text-sm"
-                >
-                  View All
-                </Link>
-              </div>
-              <ul className="space-y-2">
-                {sessionsToday.length === 0 ? (
-                  <li className="text-sm text-muted-foreground">No sessions today.</li>
-                ) : (
-                  sessionsToday.map((session) => (
+          {!individual && sessionsToday.length > 0 ? (
+            <Card className="hover:translate-y-0 hover:shadow-card shadow-card">
+              <CardContent className="p-4 lg:p-3">
+                <div className="mb-3 flex items-center justify-between gap-2 lg:mb-2">
+                  <h2 className="text-sm font-semibold text-foreground sm:text-base">
+                    Today&apos;s Session
+                  </h2>
+                  <Link
+                    href="/live-classes"
+                    className="shrink-0 text-xs font-medium text-primary hover:underline sm:text-sm"
+                  >
+                    View All
+                  </Link>
+                </div>
+                <ul className="space-y-2">
+                  {sessionsToday.map((session) => (
                     <li key={session.id}>
                       <Link href="/live-classes">
                         <div className="flex items-center gap-2.5 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5 transition-colors hover:border-primary/30">
@@ -508,83 +522,87 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
                         </div>
                       </Link>
                     </li>
-                  ))
-                )}
-              </ul>
-            </CardContent>
-          </Card>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          ) : null}
 
-          <Card className="hover:translate-y-0 hover:shadow-card shadow-card">
-            <CardContent className="p-4 lg:p-3">
-              <div className="mb-3 flex items-center justify-between gap-2 lg:mb-2">
-                <h2 className="text-sm font-semibold text-foreground sm:text-base">Upcoming</h2>
-                <Link
-                  href="/live-classes"
-                  className="shrink-0 text-xs font-medium text-primary hover:underline sm:text-sm"
-                >
-                  View All
-                </Link>
-              </div>
-              <ul className="space-y-2">
-                {upcomingSessions.length === 0 ? (
-                  <li className="text-sm text-muted-foreground">No upcoming sessions.</li>
-                ) : (
-                  upcomingSessions.map((session) => (
-                    <li key={session.id}>
-                      <Link href="/live-classes">
-                        <div className="flex items-center gap-2.5 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5 transition-colors hover:border-primary/30">
-                          <Video className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium text-foreground">
-                              {sessionLabel(session)}
-                            </p>
-                            <p className="truncate text-xs text-muted-foreground">
-                              {session.tutor_name}
-                              {session.subject ? ` · ${session.subject}` : ""}
-                            </p>
-                            <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                              <Clock className="h-3 w-3 shrink-0" />
-                              {formatSessionWhen(session.starts_at, session.duration_minutes)}
-                            </p>
+          {!individual ? (
+            <Card className="hover:translate-y-0 hover:shadow-card shadow-card">
+              <CardContent className="p-4 lg:p-3">
+                <div className="mb-3 flex items-center justify-between gap-2 lg:mb-2">
+                  <h2 className="text-sm font-semibold text-foreground sm:text-base">
+                    Upcoming Session
+                  </h2>
+                  <Link
+                    href="/live-classes"
+                    className="shrink-0 text-xs font-medium text-primary hover:underline sm:text-sm"
+                  >
+                    View All
+                  </Link>
+                </div>
+                <ul className="space-y-2">
+                  {upcomingSessions.length === 0 ? (
+                    <li className="text-sm text-muted-foreground">No upcoming sessions.</li>
+                  ) : (
+                    upcomingSessions.map((session) => (
+                      <li key={session.id}>
+                        <Link href="/live-classes">
+                          <div className="flex items-center gap-2.5 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5 transition-colors hover:border-primary/30">
+                            <Video className="h-4 w-4 shrink-0 text-muted-foreground" />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium text-foreground">
+                                {sessionLabel(session)}
+                              </p>
+                              <p className="truncate text-xs text-muted-foreground">
+                                {session.tutor_name}
+                                {session.subject ? ` · ${session.subject}` : ""}
+                              </p>
+                              <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                                <Clock className="h-3 w-3 shrink-0" />
+                                {formatSessionWhen(session.starts_at, session.duration_minutes)}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                      </Link>
-                    </li>
-                  ))
-                )}
-              </ul>
-            </CardContent>
-          </Card>
+                        </Link>
+                      </li>
+                    ))
+                  )}
+                </ul>
+              </CardContent>
+            </Card>
+          ) : null}
         </div>
-      </div>
 
-      <Card className="viewport-compact-hidden overflow-hidden border-0 bg-gradient-to-r from-primary/10 via-accent/10 to-brand-secondary/10 hover:translate-y-0 hover:shadow-card shadow-card">
-        <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:gap-4 lg:gap-3 lg:p-3">
-          <div className="relative h-14 w-24 shrink-0 overflow-hidden rounded-lg sm:h-16 sm:w-28 lg:h-14 lg:w-24">
-            <img
-              src={brandImages.chatbot}
-              alt=""
-              aria-hidden
-              className="h-full w-full object-contain object-center p-1"
-            />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
-              <Sparkles className="h-3.5 w-3.5 shrink-0 text-primary" />
-              Today&apos;s Learning Tip
-            </p>
-            <p className="mt-1 line-clamp-2 text-xs text-muted-foreground sm:text-sm">
-              {getTodaysLearningTip()}
-            </p>
-          </div>
-          <Button asChild variant="outline" className="h-9 w-full shrink-0 bg-card/80 sm:w-auto">
-            <Link href="/ai-learning-studio">
-              Start Now
-              <ChevronRight className="ml-1 h-3.5 w-3.5" />
-            </Link>
-          </Button>
-        </CardContent>
-      </Card>
+        <Card className="order-3 overflow-hidden border-0 bg-gradient-to-r from-primary/10 via-accent/10 to-brand-secondary/10 hover:translate-y-0 hover:shadow-card shadow-card lg:col-span-3">
+          <CardContent className="flex flex-row items-center gap-3 p-3 sm:gap-4 sm:p-4 lg:gap-3 lg:p-3">
+            <div className="relative h-12 w-20 shrink-0 overflow-hidden rounded-lg sm:h-16 sm:w-28 lg:h-14 lg:w-24">
+              <img
+                src={brandImages.chatbot}
+                alt=""
+                aria-hidden
+                className="h-full w-full object-contain object-center p-1"
+              />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                <Sparkles className="h-3.5 w-3.5 shrink-0 text-primary" />
+                Today&apos;s Learning Tip
+              </p>
+              <p className="mt-1 line-clamp-2 text-xs text-muted-foreground sm:text-sm">
+                {getTodaysLearningTip()}
+              </p>
+            </div>
+            <Button asChild variant="outline" className="h-9 w-auto shrink-0 bg-card/80 px-3">
+              <Link href="/ai-learning-studio">
+                Start Now
+                <ChevronRight className="ml-1 h-3.5 w-3.5" />
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
     </PageShell>
   );
 }

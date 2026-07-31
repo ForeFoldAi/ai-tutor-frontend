@@ -93,7 +93,7 @@ const QUICK_START: Array<{
 }> = [
   {
     title: "Ask Textbook Q&A",
-    description: "Ask questions about the textbook",
+    description: "Ask about the textbook",
     icon: MessageCircle,
     iconColor: "text-blue-600",
     bg: "bg-blue-50 dark:bg-blue-950/30",
@@ -131,24 +131,8 @@ function toStudentSubject(s: LearningSubjectApi): StudentSubjectApi {
   };
 }
 
-function formatLastStudied(iso: string | null | undefined): string {
-  if (!iso) return "";
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  } catch {
-    return "";
-  }
-}
-
 function StudioHomeView({
   subjects,
-  continueLearning,
   recommendedTopics,
   loading,
   error,
@@ -157,11 +141,6 @@ function StudioHomeView({
   retrying,
 }: {
   subjects: LearningSubjectApi[];
-  continueLearning: ReturnType<typeof useLearningOverview>["data"] extends infer D
-    ? D extends { continue_learning: infer C }
-      ? C
-      : null
-    : null;
   recommendedTopics: RecommendedTopicApi[];
   loading: boolean;
   error: string | null;
@@ -173,21 +152,6 @@ function StudioHomeView({
   const openAskAiTutor = useAskAiTutorStore((s) => s.openAskAiTutor);
   const { user } = useAuthStore();
   const firstName = user?.fullName?.split(" ")[0] || "Student";
-
-  const handleResume = () => {
-    if (!continueLearning) return;
-    setLocation(
-      tutorResumeHref({
-        board: continueLearning.board,
-        class_level: continueLearning.class_level,
-        subject_name: continueLearning.subject_name,
-        subject_id: continueLearning.subject_id,
-        chapter_id: continueLearning.chapter_id,
-        chapter_name: continueLearning.chapter_name,
-        greet: true,
-      })
-    );
-  };
 
   const openRecommended = (topic: RecommendedTopicApi) => {
     setLocation(
@@ -244,92 +208,6 @@ function StudioHomeView({
         </AskAiTutorButton>
       </div>
 
-      <Card className="overflow-hidden shadow-card">
-        <CardContent className="p-0">
-          <div className="flex flex-col sm:flex-row">
-            <div className="flex shrink-0 items-center justify-center bg-gradient-to-br from-primary/5 to-accent/10 p-4 sm:w-44 md:w-52">
-              <img
-                src="/book.png"
-                alt=""
-                aria-hidden
-                className="h-28 w-full object-contain sm:h-32"
-              />
-            </div>
-            <div className="relative flex flex-1 flex-col justify-center gap-3 p-4 sm:p-5">
-              {continueLearning ? (
-                <>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="absolute right-4 top-4 h-8 border-primary/20 bg-primary/5 text-primary hover:bg-primary/10"
-                    onClick={handleResume}
-                  >
-                    Resume
-                  </Button>
-                  <div className="pr-20">
-                    <p className="text-base font-bold text-foreground">
-                      {continueLearning.subject_name}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {continueLearning.chapter_name || "Continue chapter"}
-                    </p>
-                  </div>
-                  <div className="space-y-1.5">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Progress</span>
-                      <span className="font-semibold text-foreground">
-                        {continueLearning.progress}%
-                      </span>
-                    </div>
-                    <Progress value={continueLearning.progress} className="h-2" />
-                    {continueLearning.last_accessed_at && (
-                      <p className="text-xs text-muted-foreground">
-                        Last studied: {formatLastStudied(continueLearning.last_accessed_at)}
-                      </p>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <div className="py-2">
-                  <p className="text-base font-bold text-foreground">Start your learning journey</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Your subjects will appear here once they are assigned to your class.
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div>
-        <h2 className="text-base font-semibold text-foreground sm:text-lg">
-          Quick Start with AI Tutor
-        </h2>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          Ask, practice, or get an explanation — subject is detected from your question
-        </p>
-        <div className="mt-3 grid gap-3 sm:grid-cols-3">
-          {QUICK_START.map((item) => (
-            <button
-              key={item.title}
-              type="button"
-              onClick={() => openAskAiTutor(item.mode)}
-              className={cn(
-                "h-full rounded-2xl border border-border/60 p-4 text-left transition-all hover:border-primary/30 hover:shadow-card",
-                item.bg
-              )}
-            >
-              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-background/80 shadow-sm">
-                <item.icon className={cn("h-5 w-5", item.iconColor)} />
-              </div>
-              <p className="text-sm font-semibold text-foreground">{item.title}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{item.description}</p>
-            </button>
-          ))}
-        </div>
-      </div>
-
       <div>
         <h2 className="mb-3 text-base font-semibold text-foreground sm:text-lg">Your Subjects</h2>
 
@@ -377,6 +255,34 @@ function StudioHomeView({
             })}
           </div>
         )}
+      </div>
+
+      <div>
+        <h2 className="text-base font-semibold text-foreground sm:text-lg">
+          Quick Start with AI Tutor
+        </h2>
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          Ask, practice, or get an explanation — subject is detected from your question
+        </p>
+        <div className="mt-3 grid grid-cols-3 gap-2 sm:gap-3">
+          {QUICK_START.map((item) => (
+            <button
+              key={item.title}
+              type="button"
+              onClick={() => openAskAiTutor(item.mode)}
+              className={cn(
+                "h-full rounded-2xl border border-border/60 p-2.5 text-left shadow-card transition-all hover:border-primary/30 hover:shadow-card-hover sm:p-4",
+                item.bg
+              )}
+            >
+              <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-xl bg-background/80 shadow-sm sm:mb-3 sm:h-10 sm:w-10">
+                <item.icon className={cn("h-4 w-4 sm:h-5 sm:w-5", item.iconColor)} />
+              </div>
+              <p className="text-[11px] font-semibold leading-snug text-foreground sm:text-sm">{item.title}</p>
+              <p className="mt-0.5 truncate text-[9px] leading-snug text-muted-foreground sm:mt-1 sm:text-xs">{item.description}</p>
+            </button>
+          ))}
+        </div>
       </div>
 
       {recommendedTopics.length > 0 ? (
@@ -435,6 +341,8 @@ export default function AILearningStudioPage() {
   const retrying = isFetching && !isLoading;
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardSubjectId, setWizardSubjectId] = useState<string | null>(null);
+  // ponytail: query ?from= is enough until chapter pick gets its own route
+  const [wizardReturnTo, setWizardReturnTo] = useState("/ai-learning-studio");
 
   const wizardSubjectApi =
     subjects.find((s) => String(s.id) === wizardSubjectId) ?? null;
@@ -449,12 +357,14 @@ export default function AILearningStudioPage() {
     setWizardOpen(open);
     if (!open) {
       setWizardSubjectId(null);
-      if (match) setLocation("/ai-learning-studio");
+      if (match) setLocation(wizardReturnTo);
     }
   };
 
   useEffect(() => {
     if (match && params?.subjectId && subjects.length > 0 && !loading) {
+      const from = new URLSearchParams(window.location.search).get("from");
+      setWizardReturnTo(from === "my-learning" ? "/my-learning" : "/ai-learning-studio");
       openWizard(params.subjectId);
     }
   }, [match, params?.subjectId, subjects.length, loading]);
@@ -463,7 +373,6 @@ export default function AILearningStudioPage() {
     <>
       <StudioHomeView
         subjects={subjects}
-        continueLearning={data?.continue_learning ?? null}
         recommendedTopics={data?.recommended_topics ?? []}
         loading={loading}
         error={error ? studentFriendlyError(error, MSG.subjectsLoad) : null}

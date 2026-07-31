@@ -56,13 +56,12 @@ const MODE_META: Record<
     fallbackPrompts: [],
   },
   ask: {
-    title: "Ask Anything",
+    title: "Ask Textbook Q&A",
     subtitle: "Short textbook Q&A — out-of-book? Use Ask AI Tutor",
     placeholder: "Ask a question from your textbook subjects…",
     icon: MessageCircle,
     fallbackPrompts: [
       "What is photosynthesis?",
-      "What are fractions?",
       "How do I find the area of a triangle?",
     ],
   },
@@ -73,7 +72,6 @@ const MODE_META: Record<
     icon: PencilLine,
     fallbackPrompts: [
       "Give me a practice problem on fractions",
-      "Quiz me on the water cycle",
       "Practice linear equations",
     ],
   },
@@ -85,7 +83,6 @@ const MODE_META: Record<
     fallbackPrompts: [
       "Explain photosynthesis step by step",
       "Explain how to add fractions",
-      "Explain the water cycle",
     ],
   },
 };
@@ -125,7 +122,10 @@ function AskAiTutorChat({
         const data = await getStudentAssistantSuggestions(mode);
         if (cancelled) return;
         setSuggestedPrompts(
-          data.suggested_prompts.length ? data.suggested_prompts : MODE_META[mode].fallbackPrompts
+          (data.suggested_prompts.length
+            ? data.suggested_prompts
+            : MODE_META[mode].fallbackPrompts
+          ).slice(0, 2)
         );
       } catch (e) {
         if (!cancelled) {

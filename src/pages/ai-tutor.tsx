@@ -1253,47 +1253,9 @@ export default function AITutorPage() {
               </div>
               <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
                 <Sparkles className="h-4 w-4 text-accent" />
-                <span>Powered by advanced AI</span>
+                <span>Powered by AI Tutor</span>
               </div>
-              <div className="grid gap-2 sm:gap-3 grid-cols-1 sm:grid-cols-2">
-                {(chapterCtx?.agentMode === "practice"
-                  ? [
-                      "Give me a practice problem from this chapter",
-                      "Quiz me with 3 short questions",
-                      "Check my answer and give the next problem",
-                      "Give me a harder problem on the same topic",
-                    ]
-                  : chapterCtx?.agentMode === "explain"
-                    ? [
-                        "Explain the main ideas of this chapter step by step",
-                        "Explain this like I'm new to the topic",
-                        "Give a clear example from the textbook",
-                        "Summarize the key points, then go deeper",
-                      ]
-                    : chapterCtx?.agentMode === "ask"
-                      ? [
-                          "What are the key concepts in this chapter?",
-                          "I have a doubt — can you clarify?",
-                          "How does this topic connect to what I already know?",
-                          "What should I focus on while studying this?",
-                        ]
-                      : chapterCtx
-                        ? chapterCtx.chapterNames
-                            .slice(0, 4)
-                            .map((name) => `Explain the key concepts in ${name}`)
-                        : suggestedTopics
-                ).map((topic, i) => (
-                  <Button
-                    key={i}
-                    variant="outline"
-                    className="h-auto p-3 sm:p-4 text-left justify-start hover-elevate text-sm"
-                    onClick={() => sendMessage(topic)}
-                    data-testid={`suggested-topic-${i}`}
-                  >
-                    <span className="line-clamp-2">{topic}</span>
-                  </Button>
-                ))}
-              </div>
+             
             </div>
           </div>
         ) : (
