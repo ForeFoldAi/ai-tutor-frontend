@@ -132,13 +132,6 @@ const quickActions = [
   { label: "Summarize", icon: MessageSquare, prompt: "Can you summarize the key points?" },
 ];
 
-const suggestedTopics = [
-  "Help me understand quadratic equations",
-  "Explain photosynthesis step by step",
-  "What are the key themes in Shakespeare's Hamlet?",
-  "How does Newton's third law work?",
-];
-
 // API URL from environment variable
 const API_URL = getHttpApiBase();
 

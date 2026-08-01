@@ -271,11 +271,11 @@ function StudioHomeView({
               type="button"
               onClick={() => openAskAiTutor(item.mode)}
               className={cn(
-                "h-full rounded-2xl border border-border/60 p-2.5 text-left shadow-card transition-all hover:border-primary/30 hover:shadow-card-hover sm:p-4",
+                "h-full rounded-2xl border border-border/60 p-2.5 text-left shadow-card transition-all hover:border-primary/30 hover:shadow-card-hover sm:p-4 lg:text-center",
                 item.bg
               )}
             >
-              <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-xl bg-background/80 shadow-sm sm:mb-3 sm:h-10 sm:w-10">
+              <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-xl bg-background/80 shadow-sm sm:mb-3 sm:h-10 sm:w-10 lg:mx-auto">
                 <item.icon className={cn("h-4 w-4 sm:h-5 sm:w-5", item.iconColor)} />
               </div>
               <p className="text-[11px] font-semibold leading-snug text-foreground sm:text-sm">{item.title}</p>

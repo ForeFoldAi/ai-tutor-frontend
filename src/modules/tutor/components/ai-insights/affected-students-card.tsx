@@ -60,9 +60,9 @@ export function AffectedStudentsCard({ students, allStudents }: AffectedStudents
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <>
       <Card className={AI_INSIGHTS_GLASS_CARD_CLASS}>
-        <CardHeader className="shrink-0 space-y-1 pb-3">
+        <CardHeader className="space-y-1 pb-3">
           <div className="flex items-center justify-between gap-2">
             <CardTitle className="text-base font-bold text-blue-900 dark:text-blue-100">
               Affected Students
@@ -73,14 +73,12 @@ export function AffectedStudentsCard({ students, allStudents }: AffectedStudents
           </div>
           <CardDescription>Students struggling with top weak topics</CardDescription>
         </CardHeader>
-        <CardContent className="flex min-h-0 flex-1 flex-col pt-0">
-          <div className="min-h-0 flex-1 space-y-1">
-            {students.length === 0 ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">No at-risk students right now.</p>
-            ) : (
-              students.map((student) => <AffectedStudentRow key={student.id} student={student} />)
-            )}
-          </div>
+        <CardContent className="space-y-1 pb-5 pt-0">
+          {students.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No at-risk students right now.</p>
+          ) : (
+            students.map((student) => <AffectedStudentRow key={student.id} student={student} />)
+          )}
         </CardContent>
       </Card>
 
@@ -94,6 +92,6 @@ export function AffectedStudentsCard({ students, allStudents }: AffectedStudents
           <AffectedStudentRow key={student.id} student={student} />
         ))}
       </ViewMoreDialog>
-    </div>
+    </>
   );
 }

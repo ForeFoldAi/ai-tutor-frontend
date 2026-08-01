@@ -50,8 +50,8 @@ const MODE_META: Record<
 > = {
   free: {
     title: "Ask AI Tutor",
-    subtitle: "Your personal guide — subjects, progress & platform help",
-    placeholder: "Ask about your subjects, progress, school, or the platform…",
+    subtitle: "Platform help + school questions — including outside the textbook",
+    placeholder: "Ask about school topics, homework, progress, or the platform…",
     icon: MessageCircle,
     fallbackPrompts: [],
   },

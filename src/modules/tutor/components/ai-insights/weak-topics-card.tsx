@@ -21,9 +21,9 @@ function struggleBarColor(percent: number) {
 function WeakTopicRow({ item }: { item: WeakTopic }) {
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center justify-between text-sm">
-        <span className="font-medium text-foreground">{item.topic}</span>
-        <span className="font-semibold text-blue-900 dark:text-blue-100">
+      <div className="flex items-center justify-between gap-2 text-sm">
+        <span className="min-w-0 truncate font-medium text-foreground">{item.topic}</span>
+        <span className="shrink-0 font-semibold text-blue-900 dark:text-blue-100">
           {item.strugglePercent}%
         </span>
       </div>
@@ -41,9 +41,9 @@ export function WeakTopicsCard({ topics, allTopics }: WeakTopicsCardProps) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <>
       <Card className={AI_INSIGHTS_GLASS_CARD_CLASS}>
-        <CardHeader className="shrink-0 space-y-1 pb-3">
+        <CardHeader className="space-y-1 pb-3">
           <div className="flex items-center justify-between gap-2">
             <CardTitle className="text-base font-bold text-blue-900 dark:text-blue-100">
               Weak Topics Detected
@@ -54,14 +54,12 @@ export function WeakTopicsCard({ topics, allTopics }: WeakTopicsCardProps) {
           </div>
           <CardDescription>Topics where students are struggling the most</CardDescription>
         </CardHeader>
-        <CardContent className="flex min-h-0 flex-1 flex-col pt-0">
-          <div className="min-h-0 flex-1 space-y-3">
-            {topics.length === 0 ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">No weak topics detected yet.</p>
-            ) : (
-              topics.map((item) => <WeakTopicRow key={item.topic} item={item} />)
-            )}
-          </div>
+        <CardContent className="space-y-5 pb-5 pt-0">
+          {topics.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No weak topics detected yet.</p>
+          ) : (
+            topics.map((item) => <WeakTopicRow key={item.topic} item={item} />)
+          )}
         </CardContent>
       </Card>
 
@@ -71,10 +69,12 @@ export function WeakTopicsCard({ topics, allTopics }: WeakTopicsCardProps) {
         title="All Weak Topics"
         description="Topics where students are struggling the most"
       >
-        {allTopics.map((item) => (
-          <WeakTopicRow key={item.topic} item={item} />
-        ))}
+        <div className="space-y-5">
+          {allTopics.map((item) => (
+            <WeakTopicRow key={item.topic} item={item} />
+          ))}
+        </div>
       </ViewMoreDialog>
-    </div>
+    </>
   );
 }

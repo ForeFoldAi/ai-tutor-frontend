@@ -66,7 +66,6 @@ function ProgressGauge({ value, size = 72 }: { value: number; size?: number }) {
   const clamped = Math.min(100, Math.max(0, value));
   const width = size;
   const height = size * 0.62;
-  const cx = width / 2;
   const cy = height - stroke / 2;
   const radius = (width - stroke) / 2;
   // ponytail: semicircle gauge; swap to full ring if we need more than one KPI in this card

@@ -70,9 +70,9 @@ export function QuickActionsCard({ actions, allActions }: QuickActionsCardProps)
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <>
       <Card className={AI_INSIGHTS_GLASS_CARD_CLASS}>
-        <CardHeader className="shrink-0 pb-3">
+        <CardHeader className="pb-3">
           <div className="flex items-center justify-between gap-2">
             <CardTitle className="text-base font-bold text-blue-900 dark:text-blue-100">
               Quick Actions
@@ -82,7 +82,7 @@ export function QuickActionsCard({ actions, allActions }: QuickActionsCardProps)
             ) : null}
           </div>
         </CardHeader>
-        <CardContent className="flex min-h-0 flex-1 gap-3 pb-4 pt-0">
+        <CardContent className="flex gap-3 pb-5 pt-0">
           <div className="min-w-0 flex-1 space-y-2">
             {actions.map((action) => (
               <QuickActionButton key={action.id} action={action} />
@@ -102,6 +102,6 @@ export function QuickActionsCard({ actions, allActions }: QuickActionsCardProps)
           <QuickActionButton key={action.id} action={action} />
         ))}
       </ViewMoreDialog>
-    </div>
+    </>
   );
 }

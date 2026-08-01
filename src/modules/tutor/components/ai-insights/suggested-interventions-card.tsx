@@ -62,9 +62,9 @@ export function SuggestedInterventionsCard({
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <>
       <Card className={AI_INSIGHTS_GLASS_CARD_CLASS}>
-        <CardHeader className="shrink-0 space-y-1 pb-3">
+        <CardHeader className="space-y-1 pb-3">
           <div className="flex items-center justify-between gap-2">
             <CardTitle className="text-base font-bold text-blue-900 dark:text-blue-100">
               AI Suggested Interventions
@@ -75,16 +75,12 @@ export function SuggestedInterventionsCard({
           </div>
           <CardDescription>Recommended actions based on student performance</CardDescription>
         </CardHeader>
-        <CardContent className="flex min-h-0 flex-1 flex-col pt-0">
-          <div className="min-h-0 flex-1 space-y-2">
-            {interventions.length === 0 ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">
-                No interventions suggested yet.
-              </p>
-            ) : (
-              interventions.map((item) => <InterventionRow key={item.id} item={item} />)
-            )}
-          </div>
+        <CardContent className="space-y-2 pb-5 pt-0">
+          {interventions.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No interventions suggested yet.</p>
+          ) : (
+            interventions.map((item) => <InterventionRow key={item.id} item={item} />)
+          )}
         </CardContent>
       </Card>
 
@@ -98,6 +94,6 @@ export function SuggestedInterventionsCard({
           <InterventionRow key={item.id} item={item} />
         ))}
       </ViewMoreDialog>
-    </div>
+    </>
   );
 }
