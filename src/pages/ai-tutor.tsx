@@ -775,22 +775,32 @@ export default function AITutorPage() {
               patchAssistant(fullContent, images);
             },
             onCleanAnswer: (clean) => {
+              if (!clean.trim()) return;
               fullContent = clean;
               patchAssistant(clean, relatedImages, mathLesson, scienceExperiment);
             },
             onMathLesson: (lesson, cleanAnswer) => {
               mathLesson = lesson;
-              fullContent = cleanAnswer;
-              patchAssistant(cleanAnswer, relatedImages, lesson, scienceExperiment);
+              // Don't wipe a streamed answer with an empty clean_answer.
+              if (cleanAnswer.trim()) {
+                fullContent = cleanAnswer;
+              }
+              patchAssistant(fullContent, relatedImages, lesson, scienceExperiment);
             },
             onScienceExperiment: (experiment, cleanAnswer) => {
               scienceExperiment = experiment;
-              fullContent = cleanAnswer;
-              patchAssistant(cleanAnswer, relatedImages, mathLesson, experiment);
+              if (cleanAnswer.trim()) {
+                fullContent = cleanAnswer;
+              }
+              patchAssistant(fullContent, relatedImages, mathLesson, experiment);
             },
           },
           history,
         );
+        if (!fullContent.trim()) {
+          fullContent = MSG.tutorError;
+          patchAssistant(fullContent);
+        }
         if (relatedImages.length === 0 && fullContent.trim()) {
           try {
             const fallback = await sendChapterChatMessage(content, chapterCtx, history, {

@@ -355,7 +355,7 @@ export default function MyLearningPage() {
           </CardContent>
         </Card>
 
-        <Card className="order-3 min-w-0 shrink-0 overflow-hidden border-0 bg-gradient-to-r from-primary/10 via-accent/10 to-brand-secondary/10 shadow-card lg:col-span-2">
+        <Card className="order-3 min-w-0 shrink-0 self-start overflow-hidden border-0 bg-gradient-to-r from-primary/10 via-accent/10 to-brand-secondary/10 shadow-card lg:col-span-2">
           <CardContent className="flex min-w-0 flex-row items-center gap-3 p-3">
             <img
               src="/login-right.png"
