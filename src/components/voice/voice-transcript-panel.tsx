@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { renderTutorText } from "@/lib/render-tutor-text";
+import { TutorMessageProse } from "@/lib/render-tutor-text";
 import {
   TextbookImageGallery,
   TextbookImagesRetrieving,
@@ -109,10 +109,12 @@ export function VoiceTranscriptPanel({
               ) : null}
               {streamingAssistantText ? (
                 <div className="flex flex-col w-full min-w-0" data-layout="text-top-images-row">
-                  <div className="text-sm text-slate-200 leading-relaxed break-words tutor-message-content">
-                    {renderTutorText(streamingAssistantText)}
+                  <TutorMessageProse
+                    text={streamingAssistantText}
+                    className="text-slate-200 break-words tutor-message-content"
+                  >
                     <span className="inline-block w-1.5 h-3.5 bg-indigo-400 ml-0.5 animate-pulse align-middle" />
-                  </div>
+                  </TutorMessageProse>
                   {showStreamingImages ? (
                     <TextbookImageGallery
                       images={streamingImages}
@@ -233,7 +235,7 @@ function TranscriptBubble({
           ) : (
             <div className="flex flex-col w-full min-w-0" data-layout="text-top-images-row">
               {entry.text ? (
-                <div className="break-words tutor-message-content">{renderTutorText(entry.text)}</div>
+                <TutorMessageProse text={entry.text} className="break-words tutor-message-content" />
               ) : null}
               {hasImages ? (
                 <TextbookImageGallery

@@ -31,6 +31,7 @@ import {
   type ConversationTurn,
 } from "@/api/student-assistant";
 import { studentFriendlyError } from "@/lib/student-messages";
+import { AssistantMessageContent } from "@/components/assistant-message-content";
 
 interface Message {
   id: string;
@@ -223,13 +224,20 @@ function AskAiTutorChat({
                         : "border border-border/60 bg-card text-foreground shadow-sm"
                     )}
                   >
-                    <p className="whitespace-pre-wrap">{msg.content}</p>
-                    {msg.role === "assistant" &&
-                      streaming &&
-                      msg.id === messages[messages.length - 1]?.id &&
-                      !msg.content && (
+                    {msg.role === "assistant" ? (
+                      msg.content ? (
+                        <AssistantMessageContent
+                          content={msg.content}
+                          isStreaming={
+                            streaming && msg.id === messages[messages.length - 1]?.id
+                          }
+                        />
+                      ) : streaming && msg.id === messages[messages.length - 1]?.id ? (
                         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                      )}
+                      ) : null
+                    ) : (
+                      <p className="whitespace-pre-wrap leading-[1.5]">{msg.content}</p>
+                    )}
                   </div>
                   {msg.role === "user" && (
                     <Avatar className="mt-0.5 h-8 w-8 shrink-0">

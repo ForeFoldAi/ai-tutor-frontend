@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 import katex from "katex";
 import "katex/dist/katex.min.css";
+import { cn } from "@/lib/utils";
 
 const BOLD_RE = /\*\*(.+?)\*\*/g;
 const DISPLAY_MATH_RE = /\$\$([\s\S]*?)\$\$/g;
@@ -205,6 +206,99 @@ function renderBoldSegments(text: string, keyPrefix: string): ReactNode[] {
   return parts.length === 0 ? [text] : parts;
 }
 
+const TOPIC_HEADING_RE = /^\*\*[^*\n]+?\*\*:?\s*$/;
+
+function countTopicHeadingLines(text: string): number {
+  return text.split("\n").filter((line) => isTopicHeadingLine(line)).length;
+}
+
+/** Standalone **Subtopic:** line — not inline bold inside a sentence. */
+export function isTopicHeadingLine(line: string): boolean {
+  return TOPIC_HEADING_RE.test(line.trim());
+}
+
+/** Split tutor prose into paragraph/topic blocks (blank lines + standalone headings). */
+export function splitTutorProseBlocks(text: string): string[] {
+  const allowHeadingSplit = countTopicHeadingLines(text) >= 2;
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const blocks: string[] = [];
+  let current: string[] = [];
+
+  const flush = () => {
+    const joined = current.join("\n").trim();
+    if (joined) blocks.push(joined);
+    current = [];
+  };
+
+  for (const line of lines) {
+    if (!line.trim()) {
+      flush();
+      continue;
+    }
+    if (allowHeadingSplit && isTopicHeadingLine(line) && current.length > 0) {
+      flush();
+    }
+    current.push(line);
+  }
+  flush();
+  return blocks;
+}
+
+function renderProseBlock(block: string, key: number, allowHeadingSplit: boolean): ReactNode {
+  const lines = block.split("\n");
+  const firstLine = lines[0] ?? "";
+
+  if (allowHeadingSplit && lines.length > 1 && isTopicHeadingLine(firstLine)) {
+    const rest = lines.slice(1).join("\n").trim();
+    return (
+      <div key={key} className="flex flex-col gap-[0.5em]">
+        <p className="m-0 whitespace-pre-wrap font-semibold">{renderTutorText(firstLine.trim())}</p>
+        {rest ? <p className="m-0 whitespace-pre-wrap">{renderTutorText(rest)}</p> : null}
+      </div>
+    );
+  }
+
+  return (
+    <p key={key} className="m-0 whitespace-pre-wrap">
+      {renderTutorText(block)}
+    </p>
+  );
+}
+
+/** Tutor response body: 1.5 line height, enter-gap between topics/sub-headings. */
+export function TutorMessageProse({
+  text,
+  className,
+  children,
+}: {
+  text: string;
+  className?: string;
+  children?: ReactNode;
+}) {
+  const blocks = splitTutorProseBlocks(text);
+  const allowHeadingSplit = countTopicHeadingLines(text) >= 2;
+
+  if (blocks.length === 0) {
+    return children ? <div className={cn("tutor-message-prose", className)}>{children}</div> : null;
+  }
+
+  if (blocks.length === 1) {
+    return (
+      <div className={cn("tutor-message-prose text-sm leading-[1.5]", className)}>
+        {renderProseBlock(blocks[0], 0, allowHeadingSplit)}
+        {children}
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn("tutor-message-prose flex flex-col gap-[0.5em] text-sm leading-[1.5]", className)}>
+      {blocks.map((block, idx) => renderProseBlock(block, idx, allowHeadingSplit))}
+      {children}
+    </div>
+  );
+}
+
 /** Render tutor prose: **bold**, $inline math$, and $$display math$$. */
 export function renderTutorText(text: string): ReactNode {
   const normalized = normalizeTutorMathDelimiters(text);
@@ -234,4 +328,13 @@ export function renderTutorText(text: string): ReactNode {
     return parts[0];
   }
   return parts;
+}
+
+// ponytail: dev-only guard — split on blank lines and **heading** lines
+if (import.meta.env.DEV) {
+  const sample = splitTutorProseBlocks("Intro line.\n\n**Key points:**\n• one\n• two");
+  console.assert(
+    sample.length === 2 && sample[1].startsWith("**Key points:**"),
+    "splitTutorProseBlocks: expected intro + key-points blocks",
+  );
 }

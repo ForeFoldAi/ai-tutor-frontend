@@ -1,16 +1,14 @@
 import { useEffect, useRef } from "react";
 import {
   endLearningSession,
-  heartbeatLearningSession,
   startLearningSession,
   type AgentMode,
   type StudyMode,
 } from "@/api/learning";
 
-const HEARTBEAT_MS = 30_000;
-
 /**
- * Starts a learning session when chapter context is ready; heartbeats while mounted; ends on unmount.
+ * Starts a learning session when chapter context is ready; ends on unmount.
+ * Duration is computed server-side on /end (no 30s heartbeat polling).
  */
 export function useStudySession(opts: {
   enabled: boolean;
@@ -50,23 +48,8 @@ export function useStudySession(opts: {
       }
     })();
 
-    const timer = window.setInterval(() => {
-      const id = sessionIdRef.current;
-      if (id != null) void heartbeatLearningSession(id).catch(() => {});
-    }, HEARTBEAT_MS);
-
-    const onHide = () => {
-      const id = sessionIdRef.current;
-      if (id != null && document.visibilityState === "hidden") {
-        void heartbeatLearningSession(id).catch(() => {});
-      }
-    };
-    document.addEventListener("visibilitychange", onHide);
-
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", onHide);
       const id = sessionIdRef.current;
       sessionIdRef.current = null;
       if (id != null) void endLearningSession(id).catch(() => {});

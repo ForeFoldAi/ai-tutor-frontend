@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { MSG } from "@/lib/student-messages";
 import { API_BASE } from "@/api";
 import { isSafeImageInjectionPoint } from "@/lib/stream-safe-images";
-import { renderTutorText } from "@/lib/render-tutor-text";
+import { renderTutorText, TutorMessageProse } from "@/lib/render-tutor-text";
 import { MathLessonPanel } from "@/components/math-lesson/math-lesson-panel";
 import { ScienceExperimentPanel } from "@/components/science-experiment/science-experiment-panel";
 import type { MathLesson } from "@/types/math-lesson";
@@ -299,25 +299,23 @@ function MainSectionBlocks({
     return (
       <section
         key={`${block.title}-${idx}`}
-        className="rounded-lg border border-border/40 bg-muted/20 p-3 sm:p-4"
+        className="rounded-lg border border-border/40 bg-muted/20 p-2 sm:p-2.5"
       >
-        <h4 className="text-sm font-semibold text-foreground mb-2">{block.title}</h4>
-        <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground/90">
-          {renderTutorText(body)}
+        <h4 className="text-sm font-semibold text-foreground mb-1">{block.title}</h4>
+        <TutorMessageProse text={body} className="text-foreground/90">
           {isLast && !closingQuestion ? cursor : null}
-        </div>
+        </TutorMessageProse>
       </section>
     );
   });
 
   return (
-    <div className="flex flex-col gap-5 w-full min-w-0" data-layout="subtopic-sections">
+    <div className="flex flex-col gap-2 w-full min-w-0" data-layout="subtopic-sections">
       {sections}
       {closingQuestion ? (
-        <p className="text-sm leading-relaxed whitespace-pre-wrap text-foreground/90 pt-1">
-          {renderTutorText(closingQuestion)}
+        <TutorMessageProse text={closingQuestion} className="text-foreground/90 pt-1">
           {cursor}
-        </p>
+        </TutorMessageProse>
       ) : null}
     </div>
   );
@@ -561,10 +559,9 @@ export function AssistantMessageContent({
 
   return (
     <div className="flex flex-col w-full min-w-0" data-layout="text-top-images-row">
-      <div className="text-sm leading-relaxed whitespace-pre-wrap tutor-message-prose">
-        {renderTutorText(prose)}
+      <TutorMessageProse text={prose}>
         {cursor}
-      </div>
+      </TutorMessageProse>
       {resolvedLesson && !isStreaming ? <MathLessonPanel lesson={resolvedLesson} /> : null}
       {resolvedExperiment && !isStreaming ? (
         <ScienceExperimentPanel experiment={resolvedExperiment} />
