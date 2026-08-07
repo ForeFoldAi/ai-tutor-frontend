@@ -5,7 +5,7 @@ import { studentFriendlyApiError } from "@/lib/student-messages";
 // Empty VITE_API_URL = same-origin (Vite dev proxy → backend); set full URL on Vercel.
 const API_BASE = getHttpApiBase();
 assertProdApiConfigured();
-const FETCH_TIMEOUT_MS = 20_000;
+const FETCH_TIMEOUT_MS = 120_000;
 
 function getAuthHeader(): Record<string, string> {
   const token = useAuthStore.getState().token;
