@@ -23,7 +23,7 @@ import {
   Video,
 } from "lucide-react";
 import type { User } from "@/types/schema";
-import { cn } from "@/lib/utils";
+import { cn, cleanDisplayText } from "@/lib/utils";
 import { PageShell } from "@/components/page-shell";
 import { AskAiTutorButton } from "@/components/ask-ai-tutor-button";
 import { DashboardHeaderActions } from "@/components/dashboard-header-actions";
@@ -158,7 +158,7 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
   const continueLearning = data?.continue_learning ?? null;
   // ponytail: cap at 10 on the client; bump if the summary API grows a limit param
   const recentLessons = individual
-    ? (data?.recent_lessons ?? []).slice(0, 10)
+    ? (data?.recent_lessons ?? []).slice(0, 7)
     : (data?.recent_lessons ?? []);
   const overallProgress = data?.overall_progress ?? 0;
   const totalChapters = data?.total_chapters ?? 0;
@@ -384,7 +384,7 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
                       <>
                         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
                           <h3 className="min-w-0 flex-1 text-sm font-bold leading-snug text-foreground sm:text-base">
-                            {continueLearning.chapter_name || "Continue chapter"}
+                            {cleanDisplayText(continueLearning.chapter_name) || "Continue chapter"}
                           </h3>
                           <Button
                             asChild
@@ -490,7 +490,7 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
                           )}
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-sm font-medium text-foreground">
-                              {lesson.chapter_name || lesson.file_name || lesson.subject_name}
+                              {cleanDisplayText(lesson.chapter_name || lesson.file_name || lesson.subject_name)}
                             </p>
                             <p className="truncate text-xs text-muted-foreground">
                               {lesson.subject_name}

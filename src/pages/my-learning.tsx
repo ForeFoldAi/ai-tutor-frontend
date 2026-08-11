@@ -18,7 +18,7 @@ import {
   TrendingUp,
   Trophy,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, cleanDisplayText } from "@/lib/utils";
 import { PageShell } from "@/components/page-shell";
 import { AskAiTutorButton } from "@/components/ask-ai-tutor-button";
 import { formatStudyTime, tutorResumeHref, type LearningSubjectApi } from "@/api/learning";
@@ -84,12 +84,12 @@ function topicLabel(subject: LearningSubjectApi): string {
   const inProgress = subject.chapters.find((c) => c.status === "in_progress");
   if (inProgress) {
     const pct = inProgress.progress ?? 0;
-    const name = inProgress.chapter || "Current chapter";
+    const name = cleanDisplayText(inProgress.chapter) || "Current chapter";
     return pct > 0 ? `${name} · ${pct}%` : name;
   }
   const next = subject.chapters.find((c) => c.status === "not_started");
-  if (next?.chapter) return next.chapter;
-  return subject.chapters[0]?.chapter || "No chapters yet";
+  if (next?.chapter) return cleanDisplayText(next.chapter);
+  return cleanDisplayText(subject.chapters[0]?.chapter) || "No chapters yet";
 }
 
 export default function MyLearningPage() {
@@ -334,7 +334,7 @@ export default function MyLearningPage() {
                           </div>
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-xs font-medium text-foreground sm:text-sm">
-                              {lesson.chapter_name || "Chapter"}
+                              {cleanDisplayText(lesson.chapter_name) || "Chapter"}
                             </p>
                             <p className="truncate text-xs text-muted-foreground">
                               {lesson.subject_name}

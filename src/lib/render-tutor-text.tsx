@@ -268,6 +268,66 @@ function headingLabel(line: string): string {
   return match ? match[1].trim().replace(/:+$/, "") : trimmed;
 }
 
+const BULLET_LINE_RE = /^\s*[•\-*]\s+(.*)$/;
+
+function parseBulletLine(line: string): string | null {
+  const match = line.match(BULLET_LINE_RE);
+  return match ? match[1] : null;
+}
+
+/** Render prose lines; bullets use hanging indent so wrap stays under the text, not under •. */
+function renderLinesWithBullets(text: string, keyPrefix: string): ReactNode {
+  const lines = text.split("\n");
+  const nodes: ReactNode[] = [];
+  let para: string[] = [];
+  let bullets: string[] = [];
+  let part = 0;
+
+  const flushPara = () => {
+    if (para.length === 0) return;
+    nodes.push(
+      <p key={`${keyPrefix}-p${part++}`} className="m-0 whitespace-pre-wrap">
+        {renderTutorText(para.join("\n"))}
+      </p>,
+    );
+    para = [];
+  };
+
+  const flushBullets = () => {
+    if (bullets.length === 0) return;
+    nodes.push(
+      <ul key={`${keyPrefix}-ul${part++}`} className="m-0 list-none space-y-1 p-0">
+        {bullets.map((item, i) => (
+          <li key={`${keyPrefix}-li${i}`} className="flex gap-2">
+            <span className="shrink-0 select-none" aria-hidden>
+              •
+            </span>
+            <span className="min-w-0 flex-1">{renderTutorText(item)}</span>
+          </li>
+        ))}
+      </ul>,
+    );
+    bullets = [];
+  };
+
+  for (const line of lines) {
+    const bulletBody = parseBulletLine(line);
+    if (bulletBody !== null) {
+      flushPara();
+      bullets.push(bulletBody);
+      continue;
+    }
+    flushBullets();
+    para.push(line);
+  }
+  flushPara();
+  flushBullets();
+
+  if (nodes.length === 0) return null;
+  if (nodes.length === 1) return nodes[0];
+  return <div className="flex flex-col gap-1.5">{nodes}</div>;
+}
+
 function renderProseBlock(block: string, key: number, allowHeadingSplit: boolean): ReactNode {
   const lines = block.split("\n");
   const firstLine = lines[0] ?? "";
@@ -281,15 +341,15 @@ function renderProseBlock(block: string, key: number, allowHeadingSplit: boolean
         <p className="m-0 font-semibold text-foreground tracking-tight">
           {headingLabel(firstLine)}
         </p>
-        <p className="m-0 whitespace-pre-wrap text-foreground/90">{renderTutorText(rest)}</p>
+        <div className="text-foreground/90">{renderLinesWithBullets(rest, `h${key}`)}</div>
       </div>
     );
   }
 
   return (
-    <p key={key} className="m-0 whitespace-pre-wrap">
-      {renderTutorText(block)}
-    </p>
+    <div key={key}>
+      {renderLinesWithBullets(block, `b${key}`)}
+    </div>
   );
 }
 
@@ -375,5 +435,10 @@ if (import.meta.env.DEV) {
       !sanitized.startsWith(":") &&
       sanitized.includes("The Mamluks ruled first."),
     "sanitizeTutorDisplayText: strip empty bullets and leading colons",
+  );
+  console.assert(
+    parseBulletLine("• Mamluks (Slave dynasty): first") === "Mamluks (Slave dynasty): first" &&
+      parseBulletLine("plain text") === null,
+    "parseBulletLine: strip bullet marker for hanging indent",
   );
 }

@@ -1,5 +1,6 @@
 import { apiFetch } from "@/api/index";
 import type { BoardEnumApi, ClassEnumApi } from "@/api/types";
+import { cleanDisplayText } from "@/lib/utils";
 
 export type LearningChapterStatus = "not_started" | "in_progress" | "completed";
 
@@ -191,7 +192,10 @@ export function tutorResumeHref(opts: {
   params.set("subject", opts.subject_name);
   params.set("subjectId", String(opts.subject_id));
   params.set("chapters", String(opts.chapter_id));
-  if (opts.chapter_name) params.set("chapterNames", opts.chapter_name);
+  if (opts.chapter_name) {
+    const name = cleanDisplayText(opts.chapter_name);
+    if (name) params.set("chapterNames", name);
+  }
   if (opts.agent_mode && opts.agent_mode !== "free") params.set("agentMode", opts.agent_mode);
   if (opts.greet) params.set("greet", "1");
   return `/ai-tutor?${params}`;

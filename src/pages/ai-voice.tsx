@@ -480,6 +480,11 @@ export default function AIVoicePage() {
     voiceScienceExperimentRef.current = null;
   }, [getCallSeconds, syncAssistantText]);
 
+  const finalizeAssistantTurnRef = useRef(finalizeAssistantTurn);
+  useEffect(() => {
+    finalizeAssistantTurnRef.current = finalizeAssistantTurn;
+  }, [finalizeAssistantTurn]);
+
   const appendUserTranscript = useCallback(
     (text: string, extra?: Partial<TranscriptEntry>) => {
       const trimmed = text.trim();
@@ -879,12 +884,10 @@ export default function AIVoicePage() {
           stopAudioPlayback();
           micListenAllowedRef.current = true;
           setPhase("listening");
-          syncAssistantText("");
+          // Keep whatever the tutor already said — commit partial reply, don't wipe history.
+          finalizeAssistantTurnRef.current();
           setSpokenUnitText(null);
           setSpokenUnitIndex(-1);
-          setVoiceRelatedImages([]);
-          setStreamingMathLesson(null);
-          voiceMathLessonRef.current = null;
           if (micEnabledRef.current) scheduleVoiceCaptureRef.current();
           break;
         case "tutor_state":
@@ -1194,7 +1197,7 @@ export default function AIVoicePage() {
           subjectName: subjectLabel,
           token: getAccessToken() || null,
           language: "en",
-          rejectIfSimilarTo: "",
+          rejectIfSimilarTo: recentAiSpeechRef.current || "",
           voiceSessionId: voiceSessionIdRef.current,
         });
         let cleaned = stripConversationalLeadIn(
@@ -1210,9 +1213,7 @@ export default function AIVoicePage() {
           !cleaned ||
           cleaned.length < 2 ||
           result.rejected ||
-          (mode !== "barge" &&
-            !looksLikeStudentQuestion(cleaned) &&
-            rejectTranscriptCandidateRef.current(cleaned, rejectSource))
+          rejectTranscriptCandidateRef.current(cleaned, rejectSource)
         ) {
           if (mode === "barge") {
             beginPostInterruptCapture();
@@ -1316,11 +1317,15 @@ export default function AIVoicePage() {
     if (
       !BARGE_CONFIRMED ||
       !VOICE_PROTECTION_ENABLED ||
-      !BARGE_CHECK_REQUIRED ||
-      !snapshot ||
-      snapshot.size < 200
+      !BARGE_CHECK_REQUIRED
     ) {
       handleInterruptRef.current();
+      return;
+    }
+    // No usable mic snapshot → do not stop the tutor (speaker bleed often triggers volume without speech evidence).
+    if (!snapshot || snapshot.size < 200) {
+      protectionMetricsRef.current.bump("interrupt_rejected_count");
+      console.debug("[INTERRUPT_REJECTED]", { reason: "no_barge_snapshot" });
       return;
     }
 
@@ -1339,9 +1344,7 @@ export default function AIVoicePage() {
         if (!result.allow_interrupt) {
           protectionMetricsRef.current.bump("interrupt_rejected_count");
           console.debug("[INTERRUPT_REJECTED]", result);
-          // ponytail: volume hold already confirmed intent — interrupt anyway; server gate is soft
-          handleInterruptRef.current({ skipBargeCapture: true });
-          beginPostInterruptCapture();
+          // Fail closed: TTS into an open mic must not stop the tutor when the server rejects.
           return;
         }
 
@@ -1354,9 +1357,9 @@ export default function AIVoicePage() {
         handleInterruptRef.current({ skipBargeCapture: true });
         beginPostInterruptCapture();
       } catch (err) {
+        protectionMetricsRef.current.bump("interrupt_rejected_count");
         console.debug("[INTERRUPT_CHECK]", { reason: "barge_check_error", err });
-        handleInterruptRef.current({ skipBargeCapture: true });
-        beginPostInterruptCapture();
+        // Fail closed on network/check errors — do not interrupt on TTS echo.
       }
     })();
   };
@@ -1595,8 +1598,8 @@ export default function AIVoicePage() {
     stopAudioPlayback();
     setTutorPlaybackVolume(mp3PlayerRef.current, fallbackMp3Ref.current, 1);
     bargeEchoGuardRef.current = recentAiSpeechRef.current || assistantTextRef.current.trim();
-    syncAssistantText("");
-    setVoiceRelatedImages([]);
+    // Save partial tutor reply into the chat before clearing the live stream.
+    finalizeAssistantTurn();
     bargeVolumeHistoryRef.current = [];
     bargeInHoldSinceRef.current = null;
     echoBaselineRef.current = 0;
@@ -1621,7 +1624,7 @@ export default function AIVoicePage() {
     window.setTimeout(() => {
       interruptingRef.current = false;
     }, INTERRUPT_COOLDOWN_MS);
-  }, [syncAssistantText]);
+  }, [finalizeAssistantTurn]);
 
   handleInterruptRef.current = handleInterrupt;
 
@@ -1670,7 +1673,6 @@ export default function AIVoicePage() {
 
     if (
       !opts?.skipPlaybackCheck &&
-      !looksLikeStudentQuestion(trimmed) &&
       rejectTranscriptCandidate(trimmed, "user-turn")
     ) {
       if (phaseRef.current === "listening") scheduleVoiceCaptureRef.current();
@@ -1966,6 +1968,19 @@ export default function AIVoicePage() {
         }
         const t = chunk.trim();
         if (t.length >= 2) {
+          // Mic often hears Edge TTS — never barge on tutor echo (even if it looks like a question).
+          const { verdict, similarity } = evaluateIncomingTranscript(
+            t,
+            recentAiSpeechRef.current,
+          );
+          if (verdict === "echo_rejected") {
+            protectionMetricsRef.current.bump("echo_rejected_count");
+            protectionMetricsRef.current.set("echo_similarity_score", similarity);
+            logSttVerdict("echo_rejected", t, { source: "browser-speaking", similarity });
+            return;
+          }
+          if (verdict === "discarded") return;
+
           const intent = detectInterruptIntent(t);
           const question = stripConversationalLeadIn(t);
           if (intent.isInterruptIntent || looksLikeStudentQuestion(question)) {
