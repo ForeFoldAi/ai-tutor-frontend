@@ -207,6 +207,24 @@ function renderBoldSegments(text: string, keyPrefix: string): ReactNode[] {
 }
 
 const TOPIC_HEADING_RE = /^\*\*[^*\n]+?\*\*:?\s*$/;
+const EMPTY_BULLET_RE = /^\s*[•\-*]\s*$/;
+const LEADING_COLON_RE = /^\s*:\s*/;
+
+/** Drop empty bullets and leftover `:` from `**Heading**:` so study notes render cleanly. */
+export function sanitizeTutorDisplayText(text: string): string {
+  if (!text) return text;
+  const out: string[] = [];
+  for (const line of text.replace(/\r\n/g, "\n").split("\n")) {
+    if (EMPTY_BULLET_RE.test(line) || /^\s*:\s*$/.test(line)) continue;
+    const cleaned = line.replace(LEADING_COLON_RE, "");
+    if (!cleaned.trim()) {
+      if (out.length > 0 && out[out.length - 1].trim() !== "") out.push("");
+      continue;
+    }
+    out.push(cleaned);
+  }
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
 
 function countTopicHeadingLines(text: string): number {
   return text.split("\n").filter((line) => isTopicHeadingLine(line)).length;
@@ -244,16 +262,26 @@ export function splitTutorProseBlocks(text: string): string[] {
   return blocks;
 }
 
+function headingLabel(line: string): string {
+  const trimmed = line.trim();
+  const match = trimmed.match(/^\*\*([^*]+)\*\*:?\s*$/);
+  return match ? match[1].trim().replace(/:+$/, "") : trimmed;
+}
+
 function renderProseBlock(block: string, key: number, allowHeadingSplit: boolean): ReactNode {
   const lines = block.split("\n");
   const firstLine = lines[0] ?? "";
 
-  if (allowHeadingSplit && lines.length > 1 && isTopicHeadingLine(firstLine)) {
+  if (allowHeadingSplit && isTopicHeadingLine(firstLine)) {
     const rest = lines.slice(1).join("\n").trim();
+    // Skip bare headings left after empty bullets were stripped (e.g. **Key Points** alone).
+    if (!rest) return null;
     return (
-      <div key={key} className="flex flex-col gap-[0.5em]">
-        <p className="m-0 whitespace-pre-wrap font-semibold">{renderTutorText(firstLine.trim())}</p>
-        {rest ? <p className="m-0 whitespace-pre-wrap">{renderTutorText(rest)}</p> : null}
+      <div key={key} className="flex flex-col gap-1">
+        <p className="m-0 font-semibold text-foreground tracking-tight">
+          {headingLabel(firstLine)}
+        </p>
+        <p className="m-0 whitespace-pre-wrap text-foreground/90">{renderTutorText(rest)}</p>
       </div>
     );
   }
@@ -275,25 +303,29 @@ export function TutorMessageProse({
   className?: string;
   children?: ReactNode;
 }) {
-  const blocks = splitTutorProseBlocks(text);
-  const allowHeadingSplit = countTopicHeadingLines(text) >= 2;
+  const cleaned = sanitizeTutorDisplayText(text);
+  const blocks = splitTutorProseBlocks(cleaned);
+  const allowHeadingSplit = countTopicHeadingLines(cleaned) >= 2;
+  const rendered = blocks
+    .map((block, idx) => renderProseBlock(block, idx, allowHeadingSplit))
+    .filter(Boolean);
 
-  if (blocks.length === 0) {
+  if (rendered.length === 0) {
     return children ? <div className={cn("tutor-message-prose", className)}>{children}</div> : null;
   }
 
-  if (blocks.length === 1) {
+  if (rendered.length === 1) {
     return (
       <div className={cn("tutor-message-prose text-sm leading-[1.5]", className)}>
-        {renderProseBlock(blocks[0], 0, allowHeadingSplit)}
+        {rendered[0]}
         {children}
       </div>
     );
   }
 
   return (
-    <div className={cn("tutor-message-prose flex flex-col gap-[0.5em] text-sm leading-[1.5]", className)}>
-      {blocks.map((block, idx) => renderProseBlock(block, idx, allowHeadingSplit))}
+    <div className={cn("tutor-message-prose flex flex-col gap-3 text-sm leading-[1.5]", className)}>
+      {rendered}
       {children}
     </div>
   );
@@ -336,5 +368,12 @@ if (import.meta.env.DEV) {
   console.assert(
     sample.length === 2 && sample[1].startsWith("**Key points:**"),
     "splitTutorProseBlocks: expected intro + key-points blocks",
+  );
+  const sanitized = sanitizeTutorDisplayText("**Key Points**\n•\n: The Mamluks ruled first.\n•");
+  console.assert(
+    !sanitized.includes("\n•\n") &&
+      !sanitized.startsWith(":") &&
+      sanitized.includes("The Mamluks ruled first."),
+    "sanitizeTutorDisplayText: strip empty bullets and leading colons",
   );
 }

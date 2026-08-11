@@ -4,7 +4,11 @@ import { cn } from "@/lib/utils";
 import { MSG } from "@/lib/student-messages";
 import { API_BASE } from "@/api";
 import { isSafeImageInjectionPoint } from "@/lib/stream-safe-images";
-import { renderTutorText, TutorMessageProse } from "@/lib/render-tutor-text";
+import {
+  renderTutorText,
+  sanitizeTutorDisplayText,
+  TutorMessageProse,
+} from "@/lib/render-tutor-text";
 import { MathLessonPanel } from "@/components/math-lesson/math-lesson-panel";
 import { ScienceExperimentPanel } from "@/components/science-experiment/science-experiment-panel";
 import type { MathLesson } from "@/types/math-lesson";
@@ -205,7 +209,7 @@ function splitSubtopicBlocks(
   content: string,
   knownTitles: string[] = [],
 ): { title: string; body: string }[] {
-  const trimmed = content.trim();
+  const trimmed = sanitizeTutorDisplayText(content);
 
   const plainTitles = knownTitles
     .map((t) => t.trim())
@@ -215,7 +219,7 @@ function splitSubtopicBlocks(
     const indices: { title: string; lineIdx: number }[] = [];
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
-      const lineKey = normalizeSubtopicKey(line.replace(/\*\*/g, ""));
+      const lineKey = normalizeSubtopicKey(line.replace(/\*\*/g, "").replace(/:+$/, ""));
       const hit = plainTitles.find((t) => normalizeSubtopicKey(t) === lineKey);
       if (hit) {
         indices.push({ title: hit, lineIdx: i });
@@ -226,7 +230,7 @@ function splitSubtopicBlocks(
       for (let j = 0; j < indices.length; j++) {
         const startLine = indices[j].lineIdx + 1;
         const endLine = j + 1 < indices.length ? indices[j + 1].lineIdx : lines.length;
-        const body = lines.slice(startLine, endLine).join("\n").trim();
+        const body = sanitizeTutorDisplayText(lines.slice(startLine, endLine).join("\n"));
         blocks.push({ title: indices[j].title, body });
       }
       if (blocks.length > 0) {
@@ -238,17 +242,18 @@ function splitSubtopicBlocks(
   if (!trimmed.includes("**")) {
     return [{ title: "", body: trimmed }];
   }
-  const re = /\*\*([^*]+)\*\*/g;
+  // Consume optional trailing `:` so `**Heading**:` does not leave a colon as body.
+  const re = /\*\*([^*]+)\*\*:?/g;
   const matches = [...trimmed.matchAll(re)];
   if (matches.length < 2) {
     return [{ title: "", body: trimmed }];
   }
   const blocks: { title: string; body: string }[] = [];
   for (let i = 0; i < matches.length; i++) {
-    const title = matches[i][1].trim();
+    const title = matches[i][1].trim().replace(/:+$/, "");
     const start = (matches[i].index ?? 0) + matches[i][0].length;
     const end = i + 1 < matches.length ? (matches[i + 1].index ?? trimmed.length) : trimmed.length;
-    const body = trimmed.slice(start, end).trim();
+    const body = sanitizeTutorDisplayText(trimmed.slice(start, end));
     if (title) {
       blocks.push({ title, body });
     }
@@ -256,7 +261,7 @@ function splitSubtopicBlocks(
   return blocks.length > 0 ? blocks : [{ title: "", body: trimmed }];
 }
 
-/** True when we can render per-subtopic sections (tagged images and/or **bold** blocks in text). */
+/** True when figures are tagged to subtopics — nested cards; study-notes prose stays flat. */
 export function shouldUseSubtopicSectionLayout(
   content: string,
   images: RelatedTextbookImage[],
@@ -267,6 +272,9 @@ export function shouldUseSubtopicSectionLayout(
     return false;
   }
   const knownTitles = images.map((i) => i.subtopic?.trim() || "").filter(Boolean);
+  if (knownTitles.length === 0) {
+    return false;
+  }
   const blocks = splitSubtopicBlocks(trimmed, knownTitles);
   return blocks.length >= 2 && blocks.every((b) => b.title.length > 0);
 }
@@ -290,27 +298,34 @@ function MainSectionBlocks({
 
   let closingQuestion = "";
 
-  const sections = blocks.map((block, idx) => {
+  const sections = blocks.flatMap((block, idx) => {
     const { body, closing } = splitClosingQuestion(block.body);
     if (closing) {
       closingQuestion = closing;
     }
     const isLast = idx === blocks.length - 1;
-    return (
+    if (!body.trim() && !isLast) {
+      return [];
+    }
+    return [
       <section
         key={`${block.title}-${idx}`}
-        className="rounded-lg border border-border/40 bg-muted/20 p-2 sm:p-2.5"
+        className="flex flex-col gap-1 border-b border-border/30 pb-3 last:border-b-0 last:pb-0"
       >
-        <h4 className="text-sm font-semibold text-foreground mb-1">{block.title}</h4>
-        <TutorMessageProse text={body} className="text-foreground/90">
-          {isLast && !closingQuestion ? cursor : null}
-        </TutorMessageProse>
-      </section>
-    );
+        <h4 className="text-sm font-semibold text-foreground tracking-tight">{block.title}</h4>
+        {body.trim() ? (
+          <TutorMessageProse text={body} className="text-foreground/90">
+            {isLast && !closingQuestion ? cursor : null}
+          </TutorMessageProse>
+        ) : isLast && !closingQuestion ? (
+          cursor
+        ) : null}
+      </section>,
+    ];
   });
 
   return (
-    <div className="flex flex-col gap-2 w-full min-w-0" data-layout="subtopic-sections">
+    <div className="flex flex-col gap-3 w-full min-w-0" data-layout="subtopic-sections">
       {sections}
       {closingQuestion ? (
         <TutorMessageProse text={closingQuestion} className="text-foreground/90 pt-1">
@@ -529,7 +544,8 @@ export function AssistantMessageContent({
     <span className="inline-block w-2 h-4 ml-1 bg-current animate-pulse align-middle" />
   ) : null;
 
-  const useSubtopicSections = shouldUseSubtopicSectionLayout(cleanContent, images);
+  const displayContent = sanitizeTutorDisplayText(cleanContent);
+  const useSubtopicSections = shouldUseSubtopicSectionLayout(displayContent, images);
   const uniqueImages = images.filter((img, idx) => {
     if (!img.url) return true;
     return images.findIndex((o) => o.url === img.url) === idx;
@@ -539,7 +555,7 @@ export function AssistantMessageContent({
     return (
       <div className="flex flex-col w-full min-w-0">
         <MainSectionBlocks
-          content={cleanContent.trim()}
+          content={displayContent}
           images={images}
           cursor={cursor}
         />
@@ -555,7 +571,7 @@ export function AssistantMessageContent({
     );
   }
 
-  const prose = stripKnownFigureCaptions(cleanContent.trim(), images);
+  const prose = stripKnownFigureCaptions(displayContent, images);
 
   return (
     <div className="flex flex-col w-full min-w-0" data-layout="text-top-images-row">

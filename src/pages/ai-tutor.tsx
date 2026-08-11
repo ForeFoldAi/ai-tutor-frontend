@@ -1268,12 +1268,12 @@ export default function AITutorPage() {
                 <div
                   key={message.id}
                   className={cn(
-                    "flex gap-2 sm:gap-3 min-w-0",
+                    "flex items-start gap-2 sm:gap-3 min-w-0",
                     message.role === "user" ? "justify-end" : "justify-start"
                   )}
                 >
                   {message.role === "assistant" && (
-                    <Avatar className="h-7 w-7 sm:h-8 sm:w-8 flex-shrink-0">
+                    <Avatar className="h-7 w-7 sm:h-8 sm:w-8 flex-shrink-0 mt-0.5">
                       <AvatarFallback className="bg-gradient-to-br from-primary to-accent text-white">
                         <Bot className="h-3 w-3 sm:h-4 sm:w-4" />
                       </AvatarFallback>
@@ -1281,11 +1281,11 @@ export default function AITutorPage() {
                   )}
                   <div
                     className={cn(
-                      "rounded-2xl px-3 py-2 sm:px-4 sm:py-3 min-w-0",
+                      "rounded-2xl px-3.5 py-2.5 sm:px-4 sm:py-3.5 min-w-0",
                       message.role === "user"
-                        ? "max-w-[92%] bg-primary text-primary-foreground"
+                        ? "max-w-[min(92%,36rem)] bg-primary text-primary-foreground"
                         : cn(
-                            "border border-primary/25 bg-[hsl(var(--ai-purple-light))] text-foreground shadow-sm w-full max-w-[96%] min-w-0 overflow-hidden",
+                            "border border-primary/25 bg-[hsl(var(--ai-purple-light))] text-foreground shadow-sm w-full max-w-[min(96%,42rem)] min-w-0 overflow-hidden",
                             (message.relatedImages?.length ?? 0) > 0 || message.mathLesson
                               ? "sm:max-w-full"
                               : "",
@@ -1326,7 +1326,7 @@ export default function AITutorPage() {
                     )}
                   </div>
                   {message.role === "user" && (
-                    <Avatar className="h-7 w-7 sm:h-8 sm:w-8 flex-shrink-0">
+                    <Avatar className="h-7 w-7 sm:h-8 sm:w-8 flex-shrink-0 mt-0.5">
                       <AvatarFallback className="bg-primary text-primary-foreground text-xs sm:text-sm">
                         {user?.fullName?.charAt(0) || "U"}
                       </AvatarFallback>

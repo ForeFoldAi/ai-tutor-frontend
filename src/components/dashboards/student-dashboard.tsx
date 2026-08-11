@@ -301,7 +301,12 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
         </StatCard>
       </div>
 
-      <div className="grid items-start gap-3 lg:grid-cols-5 lg:gap-3">
+      <div
+        className={cn(
+          "grid gap-3 lg:grid-cols-5 lg:gap-3",
+          individual ? "lg:items-stretch" : "items-start",
+        )}
+      >
         <div className="order-1 lg:col-span-3">
           <Card className="hover:translate-y-0 hover:shadow-card shadow-card">
             <CardContent className="p-4 lg:p-4">
@@ -429,10 +434,25 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
           </Card>
         </div>
 
-        <div className="order-2 grid gap-3 lg:col-span-2 lg:row-span-2">
-          <Card className="hover:translate-y-0 hover:shadow-card shadow-card">
-            <CardContent className="p-4 lg:p-3">
-              <div className="mb-3 flex items-center justify-between gap-2 lg:mb-2">
+        <div
+          className={cn(
+            "order-2 lg:col-span-2 lg:row-span-2",
+            individual ? "flex min-h-0 flex-col lg:h-full" : "grid gap-3",
+          )}
+        >
+          <Card
+            className={cn(
+              "hover:translate-y-0 hover:shadow-card shadow-card",
+              individual && "flex min-h-0 flex-1 flex-col",
+            )}
+          >
+            <CardContent
+              className={cn(
+                "p-4 lg:p-3",
+                individual && "flex min-h-0 flex-1 flex-col",
+              )}
+            >
+              <div className="mb-3 flex shrink-0 items-center justify-between gap-2 lg:mb-2">
                 <h2 className="text-sm font-semibold text-foreground sm:text-base">Recent Lessons</h2>
                 <Link
                   href="/my-learning"
@@ -441,7 +461,12 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
                   View All
                 </Link>
               </div>
-              <ul className="max-h-[22rem] space-y-2 overflow-y-auto pr-0.5">
+              <ul
+                className={cn(
+                  "space-y-2 overflow-y-auto pr-0.5",
+                  individual ? "min-h-0 flex-1" : "max-h-[22rem]",
+                )}
+              >
                 {recentLessons.length === 0 ? (
                   <li className="text-sm text-muted-foreground">No recent lessons yet.</li>
                 ) : (
