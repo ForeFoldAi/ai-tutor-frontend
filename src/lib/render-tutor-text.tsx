@@ -1,7 +1,7 @@
 import { type ReactNode } from "react";
 import katex from "katex";
 import "katex/dist/katex.min.css";
-import { cn } from "@/lib/utils";
+import { cn, cleanDisplayText } from "@/lib/utils";
 
 const BOLD_RE = /\*\*(.+?)\*\*/g;
 const DISPLAY_MATH_RE = /\$\$([\s\S]*?)\$\$/g;
@@ -213,8 +213,15 @@ const LEADING_COLON_RE = /^\s*:\s*/;
 /** Drop empty bullets and leftover `:` from `**Heading**:` so study notes render cleanly. */
 export function sanitizeTutorDisplayText(text: string): string {
   if (!text) return text;
+  const DISPLAY_BOX_ARTIFACT_RE =
+    /[\uFFFD\u25A1\u25A0\u25FB\u25FC\u25FD\u25FE\u2588▌▍▮▯▢▣▤▥▦▧]/g;
+
+  // Remove control/zero-width glyphs (already used elsewhere in the app) and common
+  // "streaming cursor" / "paste box" artifacts that render as squares.
+  const normalized = cleanDisplayText(text).replace(DISPLAY_BOX_ARTIFACT_RE, "");
+
   const out: string[] = [];
-  for (const line of text.replace(/\r\n/g, "\n").split("\n")) {
+  for (const line of normalized.replace(/\r\n/g, "\n").split("\n")) {
     if (EMPTY_BULLET_RE.test(line) || /^\s*:\s*$/.test(line)) continue;
     const cleaned = line.replace(LEADING_COLON_RE, "");
     if (!cleaned.trim()) {
