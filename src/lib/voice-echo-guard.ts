@@ -50,9 +50,14 @@ export function textSimilarity(transcript: string, recentAiSpeech: string): numb
   const a = normalizeSttForEcho(recentAiSpeech);
   if (!u || !a || u.length < 3) return 0;
 
-  if (a.includes(u)) return 1;
+  if (a.includes(u)) {
+    // ponytail: short follow-ups often appear inside the tutor's last answer ("what is a resource");
+    // only treat long verbatim spans as speaker bleed.
+    const uWords = u.split(" ").filter((w) => w.length > 2);
+    if (uWords.length >= 6 || u.length >= 48) return 1;
+  }
   const probe = a.slice(0, Math.min(120, a.length));
-  if (u.includes(probe) && probe.length >= 12) return 1;
+  if (u.includes(probe) && probe.length >= 24) return 1;
 
   const uWords = u.split(" ").filter((w) => w.length > 2);
   if (uWords.length === 0) return 0;

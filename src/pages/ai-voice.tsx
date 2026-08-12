@@ -515,10 +515,16 @@ export default function AIVoicePage() {
       armSttCooldown(POST_PLAYBACK_ECHO_MS);
     }
     if (shuttingDownRef.current) return;
-    if (phaseRef.current === "thinking" || phaseRef.current === "connecting") return;
+    // Always re-arm mic after a finished tutor turn — even if phase briefly flipped.
+    // Shrink AI speech tail so the next student question isn't false-rejected as echo.
+    recentAiSpeechRef.current = recentAiSpeechRef.current.slice(-160);
+    bargeEchoGuardRef.current = recentAiSpeechRef.current;
     micListenAllowedRef.current = true;
     bargeUtteranceActiveRef.current = false;
     listeningUtteranceActiveRef.current = false;
+    speechActiveRef.current = false;
+    silenceSinceRef.current = null;
+    phaseRef.current = "listening";
     setPhase("listening");
     setInterimTranscript("");
     window.setTimeout(() => scheduleVoiceCaptureRef.current(), POST_PLAYBACK_LISTEN_MS);
@@ -2045,10 +2051,13 @@ export default function AIVoicePage() {
       }
 
       if (phaseRef.current !== "listening") return;
+      // Yield to Whisper only while it is actively hearing/processing — not while it
+      // is sitting on an empty capture (that used to mute browser STT when the text box was closed).
       if (
         whisperPrimaryRef.current &&
         serverSttActiveRef.current &&
-        (listeningUtteranceActiveRef.current || serverSttProcessingRef.current)
+        (serverSttProcessingRef.current ||
+          (listeningUtteranceActiveRef.current && speechActiveRef.current))
       ) {
         return;
       }
@@ -2464,10 +2473,24 @@ export default function AIVoicePage() {
           onTextInputOpenChange={(open) => {
             textInputOpenRef.current = open;
             if (open) {
+              // Pause Whisper auto-listen so browser STT can dictate into the field.
+              const mic = serverSttRecorderRef.current;
+              if (mic?.isCapturingUtterance()) {
+                mic.endUtteranceCapture();
+              }
+              listeningUtteranceActiveRef.current = false;
+              speechActiveRef.current = false;
+              silenceSinceRef.current = null;
               textDictationRef.current = textInput;
               void bootstrapVoiceInputRef.current();
             } else {
               setInterimTranscript("");
+              // Text box closed = normal voice conversation; resume capture.
+              micListenAllowedRef.current = true;
+              listeningUtteranceActiveRef.current = false;
+              speechActiveRef.current = false;
+              void bootstrapVoiceInputRef.current();
+              scheduleVoiceCaptureRef.current();
             }
           }}
           onSendText={handleSendText}
