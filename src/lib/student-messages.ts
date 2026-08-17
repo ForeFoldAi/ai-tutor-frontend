@@ -13,7 +13,8 @@ export const MSG = {
   streamFailed: "I couldn't finish my answer. Please ask your question again.",
   tutorError:
     "Sorry — something went wrong. Please try again or ask your question in a different way.",
-  voiceUnavailable: "Voice tutor isn't available right now. Please try again later.",
+  voiceUnavailable:
+    "We couldn't reach your tutor. Tap Reconnect to try again.",
   voiceConnection:
     "We lost connection to your tutor. Close this page and open voice again, or tap Refresh.",
   voiceError: "Something went wrong during your voice session. Please try again.",

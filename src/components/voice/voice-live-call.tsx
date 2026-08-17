@@ -20,6 +20,7 @@ import {
 } from "@/components/assistant-message-content";
 import type { MathLesson } from "@/types/math-lesson";
 import type { ScienceExperiment } from "@/types/science-experiment";
+import { combineVoiceTextField, liveSpeechInterim } from "@/lib/voice-text-field";
 import { AiWaveform } from "./ai-waveform";
 import type { TranscriptEntry, VoicePhase, VoiceRelatedImage } from "./voice-types";
 
@@ -387,6 +388,8 @@ export function VoiceLiveCall({
   const [textInputOpen, setTextInputOpen] = useState(false);
   const textFieldRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const onTextInputOpenChangeRef = useRef(onTextInputOpenChange);
+  onTextInputOpenChangeRef.current = onTextInputOpenChange;
   const tutorHint =
     understandingHint?.trim() ||
     (tutorState && tutorState !== "LISTENING" && tutorState !== "TEACHING"
@@ -400,19 +403,15 @@ export function VoiceLiveCall({
   }, [entries, isTyping, streamingAssistantText, streamingRelatedImages, streamingMathLesson, streamingScienceExperiment]);
 
   useEffect(() => {
-    if (textInputOpen) {
-      textFieldRef.current?.focus();
-      onTextInputOpenChange?.(true);
-    } else {
-      onTextInputOpenChange?.(false);
-    }
-  }, [textInputOpen, onTextInputOpenChange]);
+    if (!textInputOpen) return;
+    textFieldRef.current?.focus();
+    onTextInputOpenChangeRef.current?.(true);
+    return () => {
+      onTextInputOpenChangeRef.current?.(false);
+    };
+  }, [textInputOpen]);
 
-  const textFieldDisplay = interimTranscript.trim()
-    ? textInput.trim()
-      ? `${textInput.trim()} ${interimTranscript.trim()}`
-      : interimTranscript.trim()
-    : textInput;
+  const liveInterim = liveSpeechInterim(interimTranscript);
 
   const showEmptyState = entries.length === 0 && !isTyping;
   const hearingYou = Boolean(interimTranscript.trim());
@@ -577,30 +576,37 @@ export function VoiceLiveCall({
           </Button>
         </div>
         {textInputOpen && onTextInputChange && onSendText ? (
-          <div className="flex items-center gap-2 px-4 pb-3 sm:px-6 sm:pb-3.5">
-            <Input
-              ref={textFieldRef}
-              value={textFieldDisplay}
-              onChange={(e) => onTextInputChange(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  onSendText();
-                }
-              }}
-              placeholder="Type or speak your question…"
-              className="flex-1 h-10 rounded-full bg-background border-border text-sm"
-            />
-            <Button
-              type="button"
-              size="icon"
-              className="h-10 w-10 shrink-0 rounded-full bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-400 hover:to-violet-500 text-white"
-              onClick={onSendText}
-              disabled={!textFieldDisplay.trim()}
-              aria-label="Send message"
-            >
-              <Send className="h-4 w-4" />
-            </Button>
+          <div className="px-4 pb-3 sm:px-6 sm:pb-3.5">
+            <div className="flex items-center gap-2">
+              <Input
+                ref={textFieldRef}
+                value={textInput}
+                onChange={(e) => onTextInputChange(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    onSendText();
+                  }
+                }}
+                placeholder="Type or speak your question…"
+                className="flex-1 h-10 rounded-full bg-background border-border text-sm"
+              />
+              <Button
+                type="button"
+                size="icon"
+                className="h-10 w-10 shrink-0 rounded-full bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-400 hover:to-violet-500 text-white"
+                onClick={onSendText}
+                disabled={!combineVoiceTextField(textInput, interimTranscript)}
+                aria-label="Send message"
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+            </div>
+            {liveInterim ? (
+              <p className="mt-1.5 px-1 text-xs text-emerald-700 dark:text-emerald-300">
+                {liveInterim}
+              </p>
+            ) : null}
           </div>
         ) : null}
       </div>

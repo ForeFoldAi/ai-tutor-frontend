@@ -19,10 +19,48 @@ export function useWhisperListenPrimary(): boolean {
   return import.meta.env.VITE_WHISPER_LISTEN_PRIMARY === "true";
 }
 
-/** Whisper primary for listen only when explicitly enabled; barge always uses server STT. */
-export function useWhisperVoiceCapture(serverSttActive: boolean): boolean {
+export function isMobileVoiceClient(
+  ua = typeof navigator !== "undefined" ? navigator.userAgent : "",
+  touchPoints = typeof navigator !== "undefined" ? navigator.maxTouchPoints : 0,
+): boolean {
+  return /Android|iPhone|iPad|iPod/i.test(ua) || (touchPoints > 1 && /Macintosh/i.test(ua));
+}
+
+/** iOS MediaRecorder only delivers audio on stop — timeslice chunks stay empty. */
+export function mediaRecorderNeedsStopFlush(
+  ua = typeof navigator !== "undefined" ? navigator.userAgent : "",
+  touchPoints = typeof navigator !== "undefined" ? navigator.maxTouchPoints : 0,
+): boolean {
+  return /iP(ad|hone|od)/.test(ua) || (touchPoints > 1 && /Macintosh/i.test(ua));
+}
+
+export function shouldUseWhisperListen(
+  serverSttActive: boolean,
+  opts: { envPrimary?: boolean; mobile?: boolean; recognitionAvailable?: boolean } = {},
+): boolean {
   if (!serverSttActive) return false;
-  return useWhisperListenPrimary();
+  if (opts.envPrimary) return true;
+  if (opts.mobile) return true;
+  if (opts.recognitionAvailable === false) return true;
+  return false;
+}
+
+export function audioFileName(mimeType: string): string {
+  if (/mp4|aac|m4a/i.test(mimeType)) return "utterance.mp4";
+  if (/ogg/i.test(mimeType)) return "utterance.ogg";
+  return "utterance.webm";
+}
+
+/** Whisper listen on mobile / no-browser-STT; barge always uses server STT. */
+export function useWhisperVoiceCapture(
+  serverSttActive: boolean,
+  recognitionAvailable = true,
+): boolean {
+  return shouldUseWhisperListen(serverSttActive, {
+    envPrimary: useWhisperListenPrimary(),
+    mobile: isMobileVoiceClient(),
+    recognitionAvailable,
+  });
 }
 
 /** @deprecated Whisper is preferred for all voice capture when available. */
@@ -30,7 +68,7 @@ export function useExclusiveServerStt(
   recognitionAvailable: boolean,
   serverSttActive: boolean,
 ): boolean {
-  return serverSttActive && !recognitionAvailable;
+  return shouldUseWhisperListen(serverSttActive, { recognitionAvailable });
 }
 
 export async function fetchServerSttAvailable(baseUrl: string): Promise<boolean> {
@@ -67,7 +105,7 @@ export async function transcribeWithServer(
   const root = baseUrl.replace(/\/$/, "");
   const endpoint = opts.token ? `${root}/auth/voice-transcribe` : `${root}/voice-transcribe`;
   const form = new FormData();
-  form.append("audio", audio, "utterance.webm");
+  form.append("audio", audio, audioFileName(audio.type));
   if (opts.subjectName) form.append("subject_name", opts.subjectName);
   form.append("language", opts.language || "en");
   if (opts.rejectIfSimilarTo?.trim()) {
@@ -108,12 +146,19 @@ export type ContinuousMicRecorder = {
   ensureRunning: () => void;
   stop: () => void;
   beginUtteranceCapture: (opts?: { preRollMs?: number }) => void;
-  endUtteranceCapture: () => Blob;
+  endUtteranceCapture: () => Promise<Blob>;
   isCapturingUtterance: () => boolean;
 };
 
 function pickMime(): string | undefined {
-  const candidates = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"];
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",
+    "audio/mp4;codecs=mp4a.40.2",
+    "audio/ogg;codecs=opus",
+    "audio/aac",
+  ];
   for (const c of candidates) {
     if (typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(c)) return c;
   }
@@ -127,7 +172,8 @@ export function createContinuousMicRecorder(
 ): ContinuousMicRecorder {
   const ring: Array<{ t: number; blob: Blob }> = [];
   let recorder: MediaRecorder | null = null;
-  let mimeType = "audio/webm";
+  const stopFlush = mediaRecorderNeedsStopFlush();
+  let mimeType = stopFlush ? "audio/mp4" : "audio/webm";
   let capturing = false;
   let captureStartedAt = 0;
   let utteranceChunks: Blob[] = [];
@@ -154,15 +200,21 @@ export function createContinuousMicRecorder(
     if (capturing && t >= captureStartedAt) utteranceChunks.push(blob);
   };
 
+  const startRecorder = () => {
+    const mime = pickMime();
+    mimeType = mime || (stopFlush ? "audio/mp4" : "audio/webm");
+    initSegment = null;
+    recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+    recorder.ondataavailable = (e) => onChunk(e.data);
+    if (stopFlush) recorder.start();
+    else recorder.start(200);
+  };
+
   return {
     ensureRunning() {
+      if (stopFlush) return;
       if (recorder && recorder.state !== "inactive") return;
-      const mime = pickMime();
-      mimeType = mime || "audio/webm";
-      initSegment = null;
-      recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
-      recorder.ondataavailable = (e) => onChunk(e.data);
-      recorder.start(200);
+      startRecorder();
     },
     stop() {
       try {
@@ -177,6 +229,14 @@ export function createContinuousMicRecorder(
       initSegment = null;
     },
     beginUtteranceCapture(opts?: { preRollMs?: number }) {
+      if (stopFlush) {
+        utteranceChunks = [];
+        initSegment = null;
+        if (!recorder || recorder.state === "inactive") startRecorder();
+        captureStartedAt = Date.now();
+        capturing = true;
+        return;
+      }
       this.ensureRunning();
       captureStartedAt = Date.now();
       const roll = opts?.preRollMs ?? preRollMs;
@@ -185,8 +245,32 @@ export function createContinuousMicRecorder(
       capturing = true;
     },
     endUtteranceCapture() {
-      capturing = false;
-      return new Blob(withInitSegment(utteranceChunks), { type: mimeType });
+      if (!stopFlush) {
+        capturing = false;
+        return Promise.resolve(new Blob(withInitSegment(utteranceChunks), { type: mimeType }));
+      }
+      return new Promise((resolve) => {
+        const rec = recorder;
+        if (!rec || rec.state === "inactive") {
+          capturing = false;
+          resolve(new Blob(utteranceChunks, { type: mimeType }));
+          recorder = null;
+          return;
+        }
+        rec.onstop = () => {
+          capturing = false;
+          resolve(new Blob(utteranceChunks, { type: rec.mimeType || mimeType }));
+          utteranceChunks = [];
+          recorder = null;
+        };
+        try {
+          rec.stop();
+        } catch {
+          capturing = false;
+          resolve(new Blob(utteranceChunks, { type: mimeType }));
+          recorder = null;
+        }
+      });
     },
     isCapturingUtterance() {
       return capturing;
