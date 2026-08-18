@@ -39,6 +39,10 @@ export type TranscriptVerdict = "accepted" | "discarded" | "echo_rejected";
 /** Lowercase, strip punctuation, drop fillers — for echo comparison only. */
 export function normalizeSttForEcho(text: string): string {
   let t = (text || "").toLowerCase();
+  // ponytail: normalize common contractions so overlap scoring
+  // doesn't miss "you're" vs "you are" speaker-echo cases.
+  t = t.replace(/\byou'?re\b/g, "you are");
+  t = t.replace(/\bi'm\b/g, "i am");
   t = t.replace(/[^\w\s]/g, " ");
   t = t.replace(FILLER_PATTERN, " ");
   return t.replace(/\s+/g, " ").trim();
@@ -52,9 +56,10 @@ export function textSimilarity(transcript: string, recentAiSpeech: string): numb
 
   if (a.includes(u)) {
     // ponytail: short follow-ups often appear inside the tutor's last answer ("what is a resource");
-    // only treat long verbatim spans as speaker bleed.
+    // only treat verbatim spans as speaker bleed when they are long enough to be distinctive.
+    // Lowered from 6/48 → 4/28 so partial echo like "you mean the dynastic dynasty" is caught.
     const uWords = u.split(" ").filter((w) => w.length > 2);
-    if (uWords.length >= 6 || u.length >= 48) return 1;
+    if (uWords.length >= 4 || u.length >= 28) return 1;
   }
   const probe = a.slice(0, Math.min(120, a.length));
   if (u.includes(probe) && probe.length >= 24) return 1;
@@ -63,11 +68,15 @@ export function textSimilarity(transcript: string, recentAiSpeech: string): numb
   if (uWords.length === 0) return 0;
   // ponytail: brief questions ("what is weather") share topic words with the tutor;
   // scattered overlap is not speaker echo — only verbatim substring counts.
-  if (uWords.length <= 4) return 0;
-  const aWords = new Set(a.split(" ").filter((w) => w.length > 2));
+  // Threshold lowered from 4 → 3 so 4-5 word echoes are also caught by overlap scoring.
+  if (uWords.length <= 3) return 0;
+  const aWordList = a.split(" ").filter((w) => w.length > 2);
+  const aWords = new Set(aWordList);
+  // prefix stems (len≥6) catch "dynasty"↔"dynasties", "shape"↔"shaping"
+  const aStems = new Set(aWordList.filter((w) => w.length >= 6).map((w) => w.slice(0, 6)));
   let overlap = 0;
   for (const w of uWords) {
-    if (aWords.has(w)) overlap += 1;
+    if (aWords.has(w) || (w.length >= 6 && aStems.has(w.slice(0, 6)))) overlap += 1;
   }
   return overlap / uWords.length;
 }

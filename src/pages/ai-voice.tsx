@@ -529,7 +529,9 @@ export default function AIVoicePage() {
     if (phaseRef.current === "thinking") return;
     // Always re-arm mic after a finished tutor turn — even if phase briefly flipped.
     // Shrink AI speech tail so the next student question isn't false-rejected as echo.
-    recentAiSpeechRef.current = recentAiSpeechRef.current.slice(-160);
+    // Keep a larger tail so speaker-bleed partial phrases ("got it, Suneel...", mid-sentence)
+    // are still rejected after we reopen the mic.
+    recentAiSpeechRef.current = recentAiSpeechRef.current.slice(-320);
     bargeEchoGuardRef.current = recentAiSpeechRef.current;
     micListenAllowedRef.current = true;
     bargeUtteranceActiveRef.current = false;

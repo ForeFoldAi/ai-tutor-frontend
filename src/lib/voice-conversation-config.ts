@@ -32,7 +32,7 @@ export const VAD_THRESHOLD = envNum("VITE_VAD_THRESHOLD", 0.75);
 export const MIN_SPEECH_MS = envNum("VITE_MIN_SPEECH_MS", 300);
 
 /** Alias used by ai-voice resumeListeningAfterPlayback */
-export const POST_PLAYBACK_STT_DELAY_MS = envNum("VITE_POST_PLAYBACK_STT_DELAY_MS", 1200);
+export const POST_PLAYBACK_STT_DELAY_MS = envNum("VITE_POST_PLAYBACK_STT_DELAY_MS", 1800);
 export const POST_PLAYBACK_ECHO_MS = POST_PLAYBACK_STT_DELAY_MS;
 
 export const ECHO_SIMILARITY_THRESHOLD = envNum("VITE_ECHO_SIMILARITY_THRESHOLD", 0.7);
