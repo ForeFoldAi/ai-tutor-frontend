@@ -135,6 +135,11 @@ export function useVoiceAudio(s: VoicePageState) {
 
   const bootstrapVoiceInput = useCallback(async () => {
     if (!s.micEnabledRef.current || s.shuttingDownRef.current) return;
+    // Must fire before any await: iOS Safari only treats audio.play() as
+    // user-activated when called synchronously from the gesture handler.
+    // Awaiting getUserMedia (a real permission prompt) first loses that
+    // activation, so TTS playback silently never starts on mobile.
+    void unlockAudioPlayback();
     try {
       if (!s.micBootstrappedRef.current) {
         let stream: MediaStream;
@@ -176,7 +181,6 @@ export function useVoiceAudio(s: VoicePageState) {
         s.setErrorText(null);
       }
       s.micListenAllowedRef.current = true;
-      void unlockAudioPlayback();
       s.scheduleVoiceCaptureRef.current();
     } catch {
       s.setErrorText(MSG.micPermission);

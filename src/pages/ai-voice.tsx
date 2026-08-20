@@ -216,15 +216,21 @@ export default function AIVoicePage() {
   useEffect(() => {
     rejectTranscriptCandidateRef.current = (raw: string, source: string): boolean => {
       const cleaned = raw.trim();
-      const intent = detectInterruptIntent(cleaned);
-      if (intent.isInterruptIntent) {
-        logSttVerdict("accepted", cleaned, { source, reason: "interrupt_intent", phrase: intent.matchedPhrase });
-        return false;
-      }
+      // Echo check runs first and unconditionally: "hi"/"wait"/"stop" are common
+      // tutor openers too, so matching an interrupt phrase is not proof the student
+      // said it — a near-verbatim echo of the AI's own recent speech must still
+      // be rejected even when it happens to match an intent phrase.
       const { verdict, similarity } = evaluateIncomingTranscript(cleaned, s.recentAiSpeechRef.current);
       if (verdict === "echo_rejected") {
         s.protectionMetricsRef.current.bump("echo_rejected_count");
         s.protectionMetricsRef.current.set("echo_similarity_score", similarity);
+        logSttVerdict(verdict, cleaned, { source, similarity });
+        return true;
+      }
+      const intent = detectInterruptIntent(cleaned);
+      if (intent.isInterruptIntent) {
+        logSttVerdict("accepted", cleaned, { source, reason: "interrupt_intent", phrase: intent.matchedPhrase });
+        return false;
       }
       if (verdict !== "accepted") { logSttVerdict(verdict, cleaned, { source, similarity }); return true; }
       logSttVerdict("accepted", cleaned, { source, similarity });
@@ -305,6 +311,33 @@ export default function AIVoicePage() {
     }, 3000);
     return () => window.clearInterval(id);
   }, [s.isCallLive, s.phase, s.micEnabled, stt.scheduleVoiceCapture]); // eslint-disable-line
+
+  // ── Screen wake lock — mobile screens auto-lock mid-call and Android/iOS
+  // suspend the mic/audio pipeline once the screen turns off; keep it awake
+  // for the duration of the call and re-acquire if the OS revokes it.
+  useEffect(() => {
+    if (!s.isCallLive || typeof navigator === "undefined" || !("wakeLock" in navigator)) return;
+    let sentinel: WakeLockSentinel | null = null;
+    let cancelled = false;
+    const acquire = async () => {
+      try {
+        sentinel = await navigator.wakeLock.request("screen");
+        sentinel.addEventListener("release", () => { sentinel = null; });
+      } catch {
+        /* denied or unsupported — call still works, screen may just dim */
+      }
+    };
+    void acquire();
+    const onVisibility = () => {
+      if (!cancelled && document.visibilityState === "visible" && !sentinel) void acquire();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVisibility);
+      void sentinel?.release().catch(() => {});
+    };
+  }, [s.isCallLive]); // eslint-disable-line
 
   // ── Gesture unlock ───────────────────────────────────────────────────────
   useEffect(() => {
