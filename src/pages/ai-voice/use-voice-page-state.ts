@@ -86,7 +86,12 @@ export function useVoicePageState() {
     (
       userText: string,
       turnId: number,
-      opts?: { requireMic?: boolean; skipPhaseCheck?: boolean; skipPlaybackCheck?: boolean },
+      opts?: {
+        requireMic?: boolean;
+        skipPhaseCheck?: boolean;
+        skipPlaybackCheck?: boolean;
+        isBargeAudio?: boolean;
+      },
     ) => Promise<void>
   >(() => Promise.resolve());
   const handleInterruptRef = useRef<(opts?: { skipBargeCapture?: boolean; fromUi?: boolean }) => void>(() => {});

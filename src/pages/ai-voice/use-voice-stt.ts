@@ -81,9 +81,13 @@ export function useVoiceStt(deps: SttDeps) {
 
   const beginPostInterruptCapture = () => {
     const mic = s.serverSttRecorderRef.current;
-    if (!mic) return;
+    // Two independent barge-in detectors (VAD monitor + browser-STT intent
+    // check) can both fire for the same real utterance. If a capture is
+    // already running, this is the second firing — let it keep recording
+    // instead of truncating it and starting a fresh one, which used to chop
+    // one sentence into two fragments submitted as separate questions.
+    if (!mic || mic.isCapturingUtterance()) return;
     void (async () => {
-      if (mic.isCapturingUtterance()) await mic.endUtteranceCapture();
       mic.beginUtteranceCapture({ preRollMs: POST_INTERRUPT_PRE_ROLL_MS });
       s.bargeUtteranceActiveRef.current = true;
       s.utteranceStartedAtRef.current = Date.now();
@@ -234,8 +238,11 @@ export function useVoiceStt(deps: SttDeps) {
   // ── Server Whisper ticker ───────────────────────────────────────────────
   useEffect(() => {
     if (!serverSttActive || !micEnabled) return;
-    const LISTEN_SILENCE_MS = 950;
-    const BARGE_SILENCE_MS = 950;
+    // ponytail: 950ms cut speech off mid-sentence on normal thinking pauses
+    // ("from can you tell me…", "tell me India…") — 1400ms gives room for a
+    // pause without feeling laggy. Upgrade path: per-student adaptive timing.
+    const LISTEN_SILENCE_MS = 1400;
+    const BARGE_SILENCE_MS = 1400;
     const MAX_UTTERANCE_MS = 11_000;
     const SPEECH_LEVEL = 0.018;
 
@@ -261,6 +268,7 @@ export function useVoiceStt(deps: SttDeps) {
           language: "en",
           rejectIfSimilarTo: s.recentAiSpeechRef.current || "",
           voiceSessionId: s.voiceSessionIdRef.current,
+          isBarge: mode === "barge",
         });
         let cleaned = stripConversationalLeadIn(
           postprocessVoiceTranscript(result.transcript, subjectLabel),
@@ -297,7 +305,9 @@ export function useVoiceStt(deps: SttDeps) {
         s.lastUtteranceBlobRef.current = blob;
         if (mode === "barge") {
           if (s.phaseRef.current === "listening" || s.phaseRef.current === "thinking") {
-            void s.handleUserTurnRef.current(cleaned, ++s.turnIdRef.current, { requireMic: true, skipPlaybackCheck: true });
+            void s.handleUserTurnRef.current(cleaned, ++s.turnIdRef.current, {
+              requireMic: true, skipPlaybackCheck: true, isBargeAudio: true,
+            });
           } else {
             vlog.whisper("barge_result_discarded phase_not_eligible", { phase: s.phaseRef.current });
           }
@@ -608,18 +618,17 @@ export function useVoiceStt(deps: SttDeps) {
           const intent = detectInterruptIntent(t);
           const question = stripConversationalLeadIn(t);
           if (intent.isInterruptIntent || looksLikeStudentQuestion(question)) {
+            // Browser Web Speech text has no audio attached, so it can't be
+            // speaker-verified — use it only to decide *whether* to interrupt,
+            // then re-capture real mic audio through the verified server
+            // pipeline (speaker check + echo check) instead of trusting this
+            // text as the prompt.
             console.debug("[INTERRUPT_ACCEPTED]", {
               reason: intent.isInterruptIntent ? "intent" : "question",
               phrase: intent.matchedPhrase, turnId: s.turnIdRef.current, text: t.slice(0, 80),
             });
             s.handleInterruptRef.current({ skipBargeCapture: true });
-            if (question.length >= 2) {
-              void s.handleUserTurnRef.current(question, ++s.turnIdRef.current, {
-                requireMic: true, skipPhaseCheck: true, skipPlaybackCheck: true,
-              });
-            } else {
-              beginPostInterruptCapture();
-            }
+            beginPostInterruptCapture();
           } else {
             console.debug("[STT] phase=speaking source=browser DISCARD reason=no_interrupt_intent", {
               turnId: s.turnIdRef.current, text: t.slice(0, 80),

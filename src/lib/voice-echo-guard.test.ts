@@ -36,6 +36,25 @@ assert.equal(evaluateIncomingTranscript("what is gravity", tutor).verdict, "acce
 assert.equal(evaluateIncomingTranscript("what is photosynthesis", tutor).verdict, "accepted");
 assert.equal(evaluateIncomingTranscript("a", tutor).verdict, "discarded");
 
+const greeting =
+  "Hi Suneel, welcome back. What would you like to learn today from Chapter 2?";
+assert.equal(
+  evaluateIncomingTranscript("what would", greeting).verdict,
+  "echo_rejected",
+  "prefix of greeting sentence is speaker bleed, not a student question",
+);
+assert.equal(
+  evaluateIncomingTranscript("what is photosynthesis", greeting).verdict,
+  "accepted",
+);
+assert.ok(
+  !transcriptEchoesAiSpeech(
+    "the mughals",
+    "Later the Mughals take over, and the map changes again.",
+  ),
+  "mid-sentence topic words are not a sentence-prefix echo",
+);
+
 const tail = appendAiSpeechTail("x".repeat(480), "hello world");
 assert.ok(tail.length <= 500);
 assert.ok(tail.endsWith("hello world"));

@@ -93,6 +93,8 @@ export function useVoiceTurn(deps: TurnDeps) {
       /** Only set true for explicit text-field/UI sends — never for mic STT paths */
       skipPhaseCheck?: boolean;
       skipPlaybackCheck?: boolean;
+      /** Audio captured while/right after tutor TTS was playing — never used to train the voiceprint. */
+      isBargeAudio?: boolean;
     },
   ) => {
     if (s.shuttingDownRef.current) return;
@@ -177,6 +179,7 @@ export function useVoiceTurn(deps: TurnDeps) {
           type: "question",
           text: trimmed,
           voice_session_id: s.voiceSessionIdRef.current,
+          is_barge: Boolean(opts?.isBargeAudio),
         };
         const utterBlob = s.lastUtteranceBlobRef.current;
         s.lastUtteranceBlobRef.current = null;

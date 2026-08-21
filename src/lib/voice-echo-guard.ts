@@ -48,11 +48,24 @@ export function normalizeSttForEcho(text: string): string {
   return t.replace(/\s+/g, " ").trim();
 }
 
+/** True when the transcript is the start of an AI sentence (greeting bleed). */
+export function isSentencePrefixEcho(transcript: string, recentAiSpeech: string): boolean {
+  const u = normalizeSttForEcho(transcript);
+  const words = u.split(" ").filter(Boolean);
+  if (words.length < 2 || words.length > 6) return false;
+  for (const raw of recentAiSpeech.split(/[.!?]+/)) {
+    const s = normalizeSttForEcho(raw);
+    if (s === u || s.startsWith(`${u} `)) return true;
+  }
+  return false;
+}
+
 /** Word-overlap similarity in [0, 1] against recent tutor speech. */
 export function textSimilarity(transcript: string, recentAiSpeech: string): number {
   const u = normalizeSttForEcho(transcript);
   const a = normalizeSttForEcho(recentAiSpeech);
   if (!u || !a || u.length < 3) return 0;
+  if (isSentencePrefixEcho(transcript, recentAiSpeech)) return 1;
 
   if (a.includes(u)) {
     // ponytail: short follow-ups often appear inside the tutor's last answer ("what is a resource");

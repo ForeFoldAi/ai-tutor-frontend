@@ -47,7 +47,10 @@ export const STT_FINAL_DEBOUNCE_MS = 140;
 /** Submit stable interim text when the browser never marks a short utterance final */
 export const STT_INTERIM_COMPLETE_MS = envNum("VITE_STT_INTERIM_COMPLETE_MS", 480);
 export const POST_PLAYBACK_LISTEN_MS = 80;
-export const AI_SPEECH_TAIL_MAX_CHARS = 500;
+// Must cover a full tutor answer, not just its tail — TTS audio playback
+// (30-60s+) runs far behind the LLM text stream (2-5s), so a short tail
+// goes stale mid-playback and lets genuine self-echo slip past the guard.
+export const AI_SPEECH_TAIL_MAX_CHARS = 4000;
 
 /** Confirm barge candidate before calling /voice/barge-check */
 export const BARGE_IN_HOLD_MS = envNum("VITE_BARGE_IN_HOLD_MS", 280);

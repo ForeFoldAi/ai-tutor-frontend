@@ -100,6 +100,8 @@ export async function transcribeWithServer(
     language?: string;
     rejectIfSimilarTo?: string;
     voiceSessionId?: string;
+    /** Captured while/right after tutor TTS was playing — never used to train the voiceprint. */
+    isBarge?: boolean;
   },
 ): Promise<TranscribeResult> {
   const root = baseUrl.replace(/\/$/, "");
@@ -114,6 +116,7 @@ export async function transcribeWithServer(
   if (opts.voiceSessionId?.trim()) {
     form.append("voice_session_id", opts.voiceSessionId.trim());
   }
+  if (opts.isBarge) form.append("is_barge", "true");
 
   const res = await fetch(endpoint, {
     method: "POST",
