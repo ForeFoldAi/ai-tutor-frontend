@@ -143,6 +143,7 @@ export function useVoiceAudio(s: VoicePageState) {
     try {
       if (!s.micBootstrappedRef.current) {
         let stream: MediaStream;
+        let constrainedRequestFailed = false;
         try {
           stream = await navigator.mediaDevices.getUserMedia({
             audio: {
@@ -152,7 +153,9 @@ export function useVoiceAudio(s: VoicePageState) {
               channelCount: { ideal: 1 },
             },
           });
-        } catch {
+        } catch (err) {
+          constrainedRequestFailed = true;
+          console.warn("[MIC_CONSTRAINTS] constrained getUserMedia failed, falling back to unconstrained audio (AEC/NS/AGC may be off)", err);
           stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         }
         try {
@@ -169,7 +172,14 @@ export function useVoiceAudio(s: VoicePageState) {
             sampleRate: settings?.sampleRate,
             channelCount: settings?.channelCount,
             deviceId: settings?.deviceId,
+            constrainedRequestFailed,
           });
+          // Browser AEC needs echoCancellation actually engaged on the track — if the
+          // browser silently ignored the constraint (or we fell back to plain audio:true),
+          // the volume-spike barge-in monitor is working against raw tutor-audio leakage.
+          if (settings && settings.echoCancellation === false) {
+            console.warn("[MIC_CONSTRAINTS] echoCancellation not active on mic track — barge-in false-triggers on tutor audio are more likely");
+          }
         } catch {
           /* ignore */
         }

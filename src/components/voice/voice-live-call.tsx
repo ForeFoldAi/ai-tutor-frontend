@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Bot,
   ChevronDown,
@@ -236,7 +236,6 @@ function MessageBubble({
 
 function StreamingBubble({
   streamingAssistantText,
-  spokenUnitText,
   streamingRelatedImages,
   streamingMathLesson,
   streamingScienceExperiment,
@@ -245,7 +244,6 @@ function StreamingBubble({
   accessToken,
 }: {
   streamingAssistantText?: string;
-  spokenUnitText?: string;
   streamingRelatedImages?: VoiceRelatedImage[];
   streamingMathLesson?: MathLesson | null;
   streamingScienceExperiment?: ScienceExperiment | null;
@@ -254,24 +252,6 @@ function StreamingBubble({
   accessToken?: string | null;
 }) {
   const streamingImages = (streamingRelatedImages ?? []) as RelatedTextbookImage[];
-  const full = streamingAssistantText || "";
-  const spoken = (spokenUnitText || "").trim();
-  let highlightNode: ReactNode = null;
-  if (full && spoken && !streamingMathLesson && !streamingScienceExperiment && streamingImages.length === 0) {
-    const idx = full.toLowerCase().lastIndexOf(spoken.toLowerCase());
-    if (idx >= 0) {
-      const before = full.slice(0, idx);
-      const mid = full.slice(idx, idx + spoken.length);
-      const after = full.slice(idx + spoken.length);
-      highlightNode = (
-        <>
-          {before}
-          <mark className="bg-indigo-500/20 text-foreground rounded-sm px-0.5">{mid}</mark>
-          {after}
-        </>
-      );
-    }
-  }
 
   return (
     <div className="flex gap-2.5 items-end min-w-0">
@@ -294,8 +274,6 @@ function StreamingBubble({
               </span>
               <span>Composing reply…</span>
             </div>
-          ) : highlightNode ? (
-            <div className="whitespace-pre-wrap break-words">{highlightNode}</div>
           ) : (
             <AssistantMessageContent
               content={streamingAssistantText}
@@ -330,7 +308,6 @@ export function VoiceLiveCall({
   entries,
   isTyping,
   streamingAssistantText,
-  spokenUnitText,
   streamingRelatedImages,
   streamingMathLesson,
   streamingScienceExperiment,
@@ -365,7 +342,6 @@ export function VoiceLiveCall({
   entries: TranscriptEntry[];
   isTyping: boolean;
   streamingAssistantText?: string;
-  spokenUnitText?: string;
   streamingRelatedImages?: VoiceRelatedImage[];
   streamingMathLesson?: MathLesson | null;
   streamingScienceExperiment?: ScienceExperiment | null;
@@ -489,7 +465,6 @@ export function VoiceLiveCall({
           {isTyping ? (
             <StreamingBubble
               streamingAssistantText={streamingAssistantText}
-              spokenUnitText={spokenUnitText}
               streamingRelatedImages={streamingRelatedImages}
               streamingMathLesson={streamingMathLesson}
               streamingScienceExperiment={streamingScienceExperiment}

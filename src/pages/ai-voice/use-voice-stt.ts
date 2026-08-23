@@ -419,15 +419,30 @@ export function useVoiceStt(deps: SttDeps) {
     if (!s.bargeInEnabledRef.current || !s.micEnabledRef.current) return;
     if (s.shuttingDownRef.current || s.interruptingRef.current || s.phaseRef.current !== "speaking") {
       s.bargeVolumeHistoryRef.current = [];
+      s.bargeCalibrationRef.current = [];
       s.bargeInHoldSinceRef.current = null;
       s.echoBaselineRef.current = 0;
       return;
     }
 
     const started = s.speakingStartedAtRef.current;
-    if (started && Date.now() - started < BARGE_IN_ARM_DELAY_MS) return;
+    if (started && Date.now() - started < BARGE_IN_ARM_DELAY_MS) {
+      // Arm-delay window: TTS is already audible and nothing the student says
+      // could have been captured yet, so this is leaked-tutor-audio signal —
+      // bank it as the echo baseline instead of throwing it away.
+      s.bargeCalibrationRef.current.push(level);
+      return;
+    }
 
     const history = s.bargeVolumeHistoryRef.current;
+    if (s.bargeCalibrationRef.current.length > 0) {
+      // Seed the rolling window with the calibration samples once, so the
+      // floor starts from a real "tutor audio bleed" baseline instead of a
+      // cold/empty window (which made floor === level and let anything
+      // through for the first ~8 ticks after arm-delay ends).
+      history.unshift(...s.bargeCalibrationRef.current);
+      s.bargeCalibrationRef.current = [];
+    }
     history.push(level);
     if (history.length > 40) history.shift();
 
@@ -471,11 +486,25 @@ export function useVoiceStt(deps: SttDeps) {
       s.protectionMetricsRef.current.set("echo_similarity_score", result.echo_similarity_score ?? 0);
     };
 
+    // Detection timestamp for interrupt-latency measurement (issue 5) — set
+    // here regardless of path, since this is the moment the spike/hold was
+    // confirmed, before either the sync or the async (network) branch runs.
+    s.bargeDetectedAtRef.current = Date.now();
+
     if (!BARGE_CONFIRMED || !VOICE_PROTECTION_ENABLED || !BARGE_CHECK_REQUIRED) {
       if (mic?.isCapturingUtterance()) void mic.endUtteranceCapture();
+      s.bargeEventIdRef.current = null;
       s.handleInterruptRef.current();
       return;
     }
+
+    // Snapshot what "still valid" means *before* the network round-trip —
+    // checkBargeIn can take 100s of ms, long enough for interruptingRef's
+    // cooldown (INTERRUPT_COOLDOWN_MS=280ms) to have already reset from an
+    // unrelated interrupt. Without re-checking these after the await, a
+    // stale confirmation can fire handleInterrupt for a turn/phase that has
+    // already moved on (race — see PR notes).
+    const epochAtCheckStart = s.streamEpochRef.current;
 
     void (async () => {
       const snapshot = mic && mic.isCapturingUtterance() ? await mic.endUtteranceCapture() : null;
@@ -499,8 +528,21 @@ export function useVoiceStt(deps: SttDeps) {
           console.debug("[INTERRUPT_REJECTED]", result);
           return;
         }
+        const stillValid =
+          !s.shuttingDownRef.current &&
+          s.streamEpochRef.current === epochAtCheckStart &&
+          s.phaseRef.current === "speaking";
+        if (!stillValid) {
+          s.protectionMetricsRef.current.bump("interrupt_rejected_count");
+          console.debug("[INTERRUPT_REJECTED]", {
+            reason: "stale_confirmation",
+            epochAtCheckStart, epochNow: s.streamEpochRef.current, phaseNow: s.phaseRef.current,
+          });
+          return;
+        }
         console.debug("[INTERRUPT_ACCEPTED]", { latency_ms: performance.now() - t0, reason: result.reason, intent: result.intent });
         s.protectionMetricsRef.current.bump("interrupt_accepted_count");
+        s.bargeEventIdRef.current = result.barge_event_id || null;
         s.handleInterruptRef.current({ skipBargeCapture: true });
         beginPostInterruptCapture();
       } catch (err) {
@@ -627,6 +669,8 @@ export function useVoiceStt(deps: SttDeps) {
               reason: intent.isInterruptIntent ? "intent" : "question",
               phrase: intent.matchedPhrase, turnId: s.turnIdRef.current, text: t.slice(0, 80),
             });
+            s.bargeDetectedAtRef.current = Date.now();
+            s.bargeEventIdRef.current = null; // no server barge-check on this path — nothing to correlate
             s.handleInterruptRef.current({ skipBargeCapture: true });
             beginPostInterruptCapture();
           } else {

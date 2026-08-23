@@ -60,6 +60,13 @@ export function useVoiceTurn(deps: TurnDeps) {
     s.abortRef.current?.abort();
     s.abortRef.current = null;
     audio.stopAudioPlayback();
+    if (s.bargeDetectedAtRef.current) {
+      vlog.interrupt("latency", {
+        interrupt_latency_ms: Date.now() - s.bargeDetectedAtRef.current,
+        barge_event_id: s.bargeEventIdRef.current,
+      });
+      s.bargeDetectedAtRef.current = 0;
+    }
     setTutorPlaybackVolume(s.mp3PlayerRef.current, s.fallbackMp3Ref.current, 1);
     s.bargeEchoGuardRef.current = s.recentAiSpeechRef.current || s.assistantTextRef.current.trim();
     session.finalizeAssistantTurn();

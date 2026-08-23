@@ -12,6 +12,7 @@ export type BargeCheckResult = {
   noise_reduction_db?: number;
   intent?: { is_interrupt_intent?: boolean; matched_phrase?: string | null };
   interrupt_latency_ms?: number;
+  barge_event_id?: string;
 };
 
 export async function fetchProtectionInfo(baseUrl: string): Promise<Record<string, unknown> | null> {

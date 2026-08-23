@@ -141,6 +141,7 @@ export function useVoiceWebSocket({ s, normalizedVoiceUrl, session, audio }: WSD
         voice_gender: s.voiceGenderRef.current,
         tts_voice: tutorVoiceId(s.voiceGenderRef.current),
         voice_session_id: s.voiceSessionIdRef.current,
+        stt_mode: s.sttModeRef.current,
       }));
       if (!sendGreet) {
         void s.bootstrapVoiceInputRef.current();
@@ -180,6 +181,12 @@ export function useVoiceWebSocket({ s, normalizedVoiceUrl, session, audio }: WSD
       if (assistantEventTypes.has(String(msg.type)) && staleAssistant) return;
 
       switch (msg.type) {
+        case "session_ready":
+          // Server-confirmed echo of the stt_mode we declared at session_start —
+          // hook point for a "limited interrupt detection" UI indicator.
+          console.debug("[STT] session_ready", { stt_mode: msg.stt_mode });
+          break;
+
         case "greeting_start":
           s.receivedAssistantStreamRef.current = true;
           s.micListenAllowedRef.current = false;
@@ -259,13 +266,6 @@ export function useVoiceWebSocket({ s, normalizedVoiceUrl, session, audio }: WSD
           s.bargeInHoldSinceRef.current = null;
           break;
 
-        case "speech_unit": {
-          const unit = String(msg.text ?? "").trim();
-          s.setSpokenUnitText(unit || null);
-          s.setSpokenUnitIndex(typeof msg.index === "number" ? msg.index : -1);
-          break;
-        }
-
         case "ai_text_token": {
           const tok = String(msg.token ?? "");
           s.receivedAssistantStreamRef.current = true;
@@ -290,8 +290,6 @@ export function useVoiceWebSocket({ s, normalizedVoiceUrl, session, audio }: WSD
           s.micListenAllowedRef.current = true;
           s.setPhase("listening");
           s.finalizeAssistantTurnRef.current();
-          s.setSpokenUnitText(null);
-          s.setSpokenUnitIndex(-1);
           if (s.micEnabledRef.current) s.scheduleVoiceCaptureRef.current();
           break;
 
@@ -303,8 +301,6 @@ export function useVoiceWebSocket({ s, normalizedVoiceUrl, session, audio }: WSD
           if (!s.receivedAssistantStreamRef.current) break;
           s.receivedAssistantStreamRef.current = false;
           s.setTutorUnderstandingHint(null);
-          s.setSpokenUnitText(null);
-          s.setSpokenUnitIndex(-1);
           vlog.tts("stream_done", { epoch: s.activeQuestionEpochRef.current });
           const playerStats = s.mp3PlayerRef.current?.stats();
           logVoicePlayerStats(playerStats);

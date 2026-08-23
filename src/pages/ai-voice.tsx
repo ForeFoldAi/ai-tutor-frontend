@@ -107,6 +107,10 @@ export default function AIVoicePage() {
     const w = window as Window & { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown };
     return Boolean(w.SpeechRecognition || w.webkitSpeechRecognition);
   }, []);
+  // Explicit mode, not a silent degrade: without SpeechRecognition, barge-in
+  // relies solely on the volume-spike monitor (still fully functional — see
+  // tickBargeInMonitorRef — just less precise without the intent text check).
+  const sttMode = recognitionAvailable ? "hybrid" : "volume_only";
 
   // ── All state + refs ──────────────────────────────────────────────────────
   const s = useVoicePageState();
@@ -119,6 +123,7 @@ export default function AIVoicePage() {
   useEffect(() => { s.speakerEnabledRef.current = s.speakerEnabled; }, [s.speakerEnabled]);
   useEffect(() => { s.voiceGenderRef.current = s.voiceGender; }, [s.voiceGender]);
   useEffect(() => { s.bargeInEnabledRef.current = bargeInEnabled; }, [bargeInEnabled]);
+  useEffect(() => { s.sttModeRef.current = sttMode; }, [sttMode]);
   useEffect(() => { s.interimTranscriptRef.current = s.interimTranscript; }, [s.interimTranscript]);
   useEffect(() => { s.transcriptEntriesRef.current = s.transcriptEntries; }, [s.transcriptEntries]);
   useEffect(() => { s.tutorStateRef.current = s.tutorState; }, [s.tutorState]);
@@ -551,7 +556,6 @@ export default function AIVoicePage() {
           entries={s.transcriptEntries}
           isTyping={isTyping}
           streamingAssistantText={s.assistantText || undefined}
-          spokenUnitText={s.spokenUnitText || undefined}
           streamingRelatedImages={s.voiceRelatedImages}
           streamingMathLesson={s.streamingMathLesson}
           streamingScienceExperiment={s.streamingScienceExperiment}

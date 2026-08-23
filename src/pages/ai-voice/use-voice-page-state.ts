@@ -35,8 +35,6 @@ export function useVoicePageState() {
   const [voiceRelatedImages, setVoiceRelatedImages] = useState<VoiceRelatedImage[]>([]);
   const [streamingMathLesson, setStreamingMathLesson] = useState<MathLesson | null>(null);
   const [streamingScienceExperiment, setStreamingScienceExperiment] = useState<ScienceExperiment | null>(null);
-  const [spokenUnitText, setSpokenUnitText] = useState<string | null>(null);
-  const [, setSpokenUnitIndex] = useState(-1);
   const [volumeUi, setVolumeUi] = useState(0);
   const [needsVoiceTap, setNeedsVoiceTap] = useState(true);
 
@@ -126,8 +124,15 @@ export function useVoicePageState() {
   const echoBaselineRef = useRef(0);
   const bargeInHoldSinceRef = useRef<number | null>(null);
   const bargeVolumeHistoryRef = useRef<number[]>([]);
+  /** Samples collected during the arm-delay window — a TTS-echo baseline, not ambient noise. */
+  const bargeCalibrationRef = useRef<number[]>([]);
+  /** Detection timestamp (spike hold-confirm or SpeechRecognition intent match) → interrupt latency. */
+  const bargeDetectedAtRef = useRef(0);
+  const bargeEventIdRef = useRef<string | null>(null);
   const tickBargeInMonitorRef = useRef<(level: number) => void>(() => {});
   const bargeInEnabledRef = useRef(true);
+  /** "hybrid" (SpeechRecognition + volume-spike) or "volume_only" (no browser STT). Set once at mount. */
+  const sttModeRef = useRef<"hybrid" | "volume_only">("hybrid");
   const protectionMetricsRef = useRef(createClientProtectionMetrics());
   const voiceSessionIdRef = useRef(
     typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -164,8 +169,6 @@ export function useVoicePageState() {
     voiceRelatedImages, setVoiceRelatedImages,
     streamingMathLesson, setStreamingMathLesson,
     streamingScienceExperiment, setStreamingScienceExperiment,
-    spokenUnitText, setSpokenUnitText,
-    setSpokenUnitIndex,
     volumeUi, setVolumeUi,
     needsVoiceTap, setNeedsVoiceTap,
     // refs
@@ -192,7 +195,8 @@ export function useVoicePageState() {
     speechActiveRef, silenceSinceRef, utteranceStartedAtRef,
     bargeUtteranceActiveRef, bargeEchoGuardRef, recentAiSpeechRef,
     sttCooldownUntilRef, listenCooldownUntilRef, echoBaselineRef, bargeInHoldSinceRef,
-    bargeVolumeHistoryRef, tickBargeInMonitorRef, bargeInEnabledRef,
+    bargeVolumeHistoryRef, bargeCalibrationRef, bargeDetectedAtRef, bargeEventIdRef,
+    tickBargeInMonitorRef, bargeInEnabledRef, sttModeRef,
     protectionMetricsRef, voiceSessionIdRef,
     listeningUtteranceActiveRef, lastUtteranceBlobRef,
     whisperPrimaryRef, finalizeUtteranceRef,
