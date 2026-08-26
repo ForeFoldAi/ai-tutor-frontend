@@ -361,7 +361,7 @@ export function VoiceLiveCall({
   isCallLive?: boolean;
   sessionResumed?: boolean;
 }) {
-  const [textInputOpen, setTextInputOpen] = useState(false);
+  const [textInputOpen, setTextInputOpen] = useState(true);
   const textFieldRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const onTextInputOpenChangeRef = useRef(onTextInputOpenChange);
@@ -378,13 +378,15 @@ export function VoiceLiveCall({
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [entries, isTyping, streamingAssistantText, streamingRelatedImages, streamingMathLesson, streamingScienceExperiment]);
 
+  // Visible-by-default, but voice capture must not pause just because the
+  // box is showing (that would make a "voice" page open muted). Only real
+  // focus in the field means "the student is typing right now" — see the
+  // onFocus/onBlur handlers on the <Input> below, which drive
+  // onTextInputOpenChange instead. This effect only handles the panel being
+  // closed outright, since unmounting a focused input can skip blur.
   useEffect(() => {
-    if (!textInputOpen) return;
-    textFieldRef.current?.focus();
-    onTextInputOpenChangeRef.current?.(true);
-    return () => {
-      onTextInputOpenChangeRef.current?.(false);
-    };
+    if (textInputOpen) return;
+    onTextInputOpenChangeRef.current?.(false);
   }, [textInputOpen]);
 
   const liveInterim = liveSpeechInterim(interimTranscript);
@@ -541,7 +543,16 @@ export function VoiceLiveCall({
                 ? "text-primary bg-primary/10 border-primary/30"
                 : "text-muted-foreground bg-muted hover:bg-muted/80",
             )}
-            onClick={() => setTextInputOpen((open) => !open)}
+            onClick={() =>
+              setTextInputOpen((open) => {
+                const next = !open;
+                // Only an explicit click to open should steal focus — the
+                // default-open box on mount must not pop a mobile keyboard
+                // before the student has done anything.
+                if (next) requestAnimationFrame(() => textFieldRef.current?.focus());
+                return next;
+              })
+            }
             aria-label={textInputOpen ? "Hide text input" : "Type a message"}
             aria-expanded={textInputOpen}
           >
@@ -557,6 +568,8 @@ export function VoiceLiveCall({
                 ref={textFieldRef}
                 value={textInput}
                 onChange={(e) => onTextInputChange(e.target.value)}
+                onFocus={() => onTextInputOpenChangeRef.current?.(true)}
+                onBlur={() => onTextInputOpenChangeRef.current?.(false)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();

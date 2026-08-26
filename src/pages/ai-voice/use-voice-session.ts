@@ -4,7 +4,7 @@
  *   syncAssistantText, appendAssistantToken, getCallSeconds
  */
 import { useCallback } from "react";
-import { appendAiSpeechTail } from "@/lib/voice-echo-guard";
+import { appendAiSpeechTail, AI_SPEECH_TAIL_MAX_CHARS } from "@/lib/voice-echo-guard";
 import { POST_PLAYBACK_ECHO_MS, POST_PLAYBACK_LISTEN_MS } from "@/lib/voice-conversation-config";
 import type { TranscriptEntry } from "@/components/voice/voice-types";
 import { vlog } from "./voice-logger";
@@ -98,7 +98,10 @@ export function useVoiceSession(s: VoicePageState) {
     if (s.shuttingDownRef.current) return;
     if (s.activeQuestionEpochRef.current !== epochAtStart) return;
     if (s.phaseRef.current === "thinking") return;
-    s.recentAiSpeechRef.current = s.recentAiSpeechRef.current.slice(-320);
+    // Keep the same window used while streaming (AI_SPEECH_TAIL_MAX_CHARS) — a
+    // tighter cutoff here dropped the start of longer answers, letting the
+    // echo-guard miss mic bleed of a tutor's own opening sentence.
+    s.recentAiSpeechRef.current = s.recentAiSpeechRef.current.slice(-AI_SPEECH_TAIL_MAX_CHARS);
     s.bargeEchoGuardRef.current = s.recentAiSpeechRef.current;
     // Clear the listen-block so STT can resume after the echo-cooldown window.
     s.listenCooldownUntilRef.current = 0;

@@ -355,6 +355,33 @@ export default function AIVoicePage() {
     };
   }, []); // eslint-disable-line
 
+  // ── Skip the tap prompt when mic permission is already granted ──────────
+  // getUserMedia() only *needs* a user gesture for its permission prompt to
+  // reliably appear — once a returning student has already granted access,
+  // the browser skips the prompt and resolves immediately regardless of
+  // gesture. Bootstrapping here (before the greeting even starts) means the
+  // mic is warm by the time "listening" fires, so no tap is needed at all.
+  // navigator.permissions doesn't support the 'microphone' query on Safari —
+  // that's also the one browser family that genuinely enforces a fresh
+  // per-call gesture for audio, so it correctly falls through to the
+  // existing tap-required flow below unchanged.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const status = await navigator.permissions?.query({
+          name: "microphone" as PermissionName,
+        });
+        if (!cancelled && status?.state === "granted") {
+          void audio.bootstrapVoiceInput();
+        }
+      } catch {
+        /* Permissions API unsupported for 'microphone' (Safari) — keep tap-required flow */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line
+
   // ── Analyser cleanup ─────────────────────────────────────────────────────
   useEffect(() => () => { s.analyserCleanupRef.current?.(); }, []); // eslint-disable-line
 
