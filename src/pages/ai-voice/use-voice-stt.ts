@@ -103,6 +103,7 @@ export function useVoiceStt(deps: SttDeps) {
     const phaseNow = s.phaseRef.current;
     const bargePhase =
       s.bargeInEnabledRef.current &&
+      !s.isGreetingActiveRef.current &&
       s.micEnabledRef.current &&
       (phaseNow === "thinking" || phaseNow === "speaking");
     if (bargePhase) return !isSttCooldownActive();
@@ -416,7 +417,7 @@ export function useVoiceStt(deps: SttDeps) {
 
   // ── Production barge-in monitor ──────────────────────────────────────────
   s.tickBargeInMonitorRef.current = (level: number) => {
-    if (!s.bargeInEnabledRef.current || !s.micEnabledRef.current) return;
+    if (!s.bargeInEnabledRef.current || s.isGreetingActiveRef.current || !s.micEnabledRef.current) return;
     if (s.shuttingDownRef.current || s.interruptingRef.current || s.phaseRef.current !== "speaking") {
       s.bargeVolumeHistoryRef.current = [];
       s.bargeCalibrationRef.current = [];
@@ -636,7 +637,12 @@ export function useVoiceStt(deps: SttDeps) {
       if (s.shuttingDownRef.current) return;
 
       // INVARIANT 4: AI audio must NEVER become a user prompt.
-      if (s.phaseRef.current === "speaking" && bargeInEnabled && s.micEnabledRef.current) {
+      if (
+        s.phaseRef.current === "speaking" &&
+        bargeInEnabled &&
+        !s.isGreetingActiveRef.current &&
+        s.micEnabledRef.current
+      ) {
         let chunk = "";
         for (let i = event.resultIndex; i < event.results.length; i++) {
           chunk += (chunk ? " " : "") + (event.results[i][0]?.transcript || "");
@@ -761,9 +767,18 @@ export function useVoiceStt(deps: SttDeps) {
       if (s.micBootstrappedRef.current) scheduleVoiceCapture();
     } else if (deps.s.phase === "thinking") {
       s.abortRecognitionRef.current();
-    } else if (deps.s.phase === "speaking" && bargeInEnabled && micEnabled && s.micBootstrappedRef.current) {
+    } else if (
+      deps.s.phase === "speaking" &&
+      bargeInEnabled &&
+      !s.isGreetingActiveRef.current &&
+      micEnabled &&
+      s.micBootstrappedRef.current
+    ) {
       s.startRecognitionRef.current();
-    } else if (deps.s.phase === "connecting" || (deps.s.phase === "speaking" && !bargeInEnabled)) {
+    } else if (
+      deps.s.phase === "connecting" ||
+      (deps.s.phase === "speaking" && (!bargeInEnabled || s.isGreetingActiveRef.current))
+    ) {
       s.abortRecognitionRef.current();
       s.echoBaselineRef.current = 0;
       s.bargeInHoldSinceRef.current = null;

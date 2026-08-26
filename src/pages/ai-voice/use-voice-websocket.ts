@@ -190,11 +190,16 @@ export function useVoiceWebSocket({ s, normalizedVoiceUrl, session, audio }: WSD
         case "greeting_start":
           s.receivedAssistantStreamRef.current = true;
           s.micListenAllowedRef.current = false;
-          if (s.bargeInEnabledRef.current) {
-            s.scheduleVoiceCaptureRef.current();
-          } else {
-            s.abortRecognitionRef.current();
-          }
+          // Unlike a regular teaching turn, the opening greeting never arms
+          // barge-in — mic/VAD calibration hasn't settled yet and the
+          // echo-guard has barely any of the tutor's own speech accumulated
+          // this early, so a false trigger here is both more likely and
+          // lower-value to catch (there's little reason to interrupt "Hi,
+          // welcome back…"). isGreetingActiveRef gates every barge-in check
+          // (see use-voice-stt.ts) until "listening" fires below, once the
+          // greeting has fully finished playing.
+          s.isGreetingActiveRef.current = true;
+          s.abortRecognitionRef.current();
           s.setPhase("speaking");
           session.syncAssistantText(String(msg.text ?? ""));
           s.setVoiceRelatedImages([]);
@@ -285,6 +290,7 @@ export function useVoiceWebSocket({ s, normalizedVoiceUrl, session, audio }: WSD
 
         case "interrupt_ack":
           if (shouldIgnoreLateInterruptAck(s.streamEpochRef.current, s.activeQuestionEpochRef.current)) break;
+          s.isGreetingActiveRef.current = false;
           s.streamEpochRef.current += 1;
           stopAudioPlayback();
           s.micListenAllowedRef.current = true;
@@ -312,6 +318,7 @@ export function useVoiceWebSocket({ s, normalizedVoiceUrl, session, audio }: WSD
 
         case "listening":
           if (isInFlightVoiceTurn(s.phaseRef.current, s.streamEpochRef.current, s.activeQuestionEpochRef.current)) break;
+          s.isGreetingActiveRef.current = false;
           s.micListenAllowedRef.current = true;
           s.bargeUtteranceActiveRef.current = false;
           s.listeningUtteranceActiveRef.current = false;
@@ -322,6 +329,7 @@ export function useVoiceWebSocket({ s, normalizedVoiceUrl, session, audio }: WSD
           break;
 
         case "error": {
+          s.isGreetingActiveRef.current = false;
           s.setErrorText(studentFriendlyError(msg.message, MSG.voiceError));
           stopAudioPlayback();
           if (s.wsReadyRef.current) {

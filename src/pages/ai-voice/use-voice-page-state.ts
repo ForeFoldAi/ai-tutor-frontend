@@ -131,6 +131,10 @@ export function useVoicePageState() {
   const bargeEventIdRef = useRef<string | null>(null);
   const tickBargeInMonitorRef = useRef<(level: number) => void>(() => {});
   const bargeInEnabledRef = useRef(true);
+  /** True only while the opening greeting is playing — barge-in checks must
+   * skip during this window regardless of bargeInEnabledRef, since mic/VAD
+   * calibration hasn't settled yet this early in the session. */
+  const isGreetingActiveRef = useRef(false);
   /** "hybrid" (SpeechRecognition + volume-spike) or "volume_only" (no browser STT). Set once at mount. */
   const sttModeRef = useRef<"hybrid" | "volume_only">("hybrid");
   const protectionMetricsRef = useRef(createClientProtectionMetrics());
@@ -196,7 +200,7 @@ export function useVoicePageState() {
     bargeUtteranceActiveRef, bargeEchoGuardRef, recentAiSpeechRef,
     sttCooldownUntilRef, listenCooldownUntilRef, echoBaselineRef, bargeInHoldSinceRef,
     bargeVolumeHistoryRef, bargeCalibrationRef, bargeDetectedAtRef, bargeEventIdRef,
-    tickBargeInMonitorRef, bargeInEnabledRef, sttModeRef,
+    tickBargeInMonitorRef, bargeInEnabledRef, isGreetingActiveRef, sttModeRef,
     protectionMetricsRef, voiceSessionIdRef,
     listeningUtteranceActiveRef, lastUtteranceBlobRef,
     whisperPrimaryRef, finalizeUtteranceRef,

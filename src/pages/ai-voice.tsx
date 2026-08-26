@@ -446,7 +446,8 @@ export default function AIVoicePage() {
   const aiWaveActive = s.phase === "speaking";
   const aiWaveIntensity = aiWaveActive ? 0.72 : 0.2;
   const studentWaveActive =
-    (s.phase === "listening" || (bargeInEnabled && (s.phase === "thinking" || s.phase === "speaking"))) &&
+    (s.phase === "listening" ||
+      (bargeInEnabled && !s.isGreetingActiveRef.current && (s.phase === "thinking" || s.phase === "speaking"))) &&
     s.micEnabled &&
     (s.volumeUi > 0.06 || Boolean(s.interimTranscript.trim()));
   const studentWaveIntensity = Math.max(0.35, 0.35 + s.volumeUi * 0.65);
