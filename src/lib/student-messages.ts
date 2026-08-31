@@ -22,6 +22,10 @@ export const MSG = {
     "Voice input isn't supported in this browser. You can still type your questions.",
   micPermission:
     "We need microphone access to hear you. Allow the mic in your browser settings, then tap the microphone button.",
+  micNotFound:
+    "We couldn't find a microphone on this device. Plug one in, or type your questions instead.",
+  micInUse:
+    "Your microphone is being used by another app or tab. Close it and tap the microphone button again.",
   subjectsLoad: "We couldn't load your subjects.",
   subjectsRetry: "Check your internet connection, then tap Refresh.",
   configUnavailable:

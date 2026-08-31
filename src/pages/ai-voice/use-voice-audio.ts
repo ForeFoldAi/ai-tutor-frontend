@@ -177,8 +177,11 @@ export function useVoiceAudio(s: VoicePageState) {
           // Browser AEC needs echoCancellation actually engaged on the track — if the
           // browser silently ignored the constraint (or we fell back to plain audio:true),
           // the volume-spike barge-in monitor is working against raw tutor-audio leakage.
+          // Flag it so the monitor (use-voice-stt.ts) demands a stronger, longer-held
+          // spike before treating it as the student's own voice.
           if (settings && settings.echoCancellation === false) {
-            console.warn("[MIC_CONSTRAINTS] echoCancellation not active on mic track — barge-in false-triggers on tutor audio are more likely");
+            s.aecDegradedRef.current = true;
+            console.warn("[MIC_CONSTRAINTS] echoCancellation not active on mic track — tightening barge-in threshold to compensate");
           }
         } catch {
           /* ignore */
@@ -192,8 +195,15 @@ export function useVoiceAudio(s: VoicePageState) {
       }
       s.micListenAllowedRef.current = true;
       s.scheduleVoiceCaptureRef.current();
-    } catch {
-      s.setErrorText(MSG.micPermission);
+    } catch (err) {
+      const name = err instanceof Error ? err.name : "";
+      if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+        s.setErrorText(MSG.micNotFound);
+      } else if (name === "NotReadableError" || name === "TrackStartError") {
+        s.setErrorText(MSG.micInUse);
+      } else {
+        s.setErrorText(MSG.micPermission);
+      }
     }
   }, [startMicAnalyser, unlockAudioPlayback]); // eslint-disable-line
 

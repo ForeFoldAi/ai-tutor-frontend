@@ -376,7 +376,15 @@ export function VoiceLiveCall({
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, [entries, isTyping, streamingAssistantText, streamingRelatedImages, streamingMathLesson, streamingScienceExperiment]);
+  }, [
+    entries,
+    isTyping,
+    streamingAssistantText,
+    streamingRelatedImages,
+    streamingMathLesson,
+    streamingScienceExperiment,
+    interimTranscript,
+  ]);
 
   // Visible-by-default, but voice capture must not pause just because the
   // box is showing (that would make a "voice" page open muted). Only real
@@ -463,6 +471,26 @@ export function VoiceLiveCall({
           {entries.map((entry) => (
             <MessageBubble key={entry.id} entry={entry} accessToken={accessToken} />
           ))}
+
+          {/* Live capture preview — was only ever shown on the very first
+             turn of a session (inside the showEmptyState block above), so
+             for the rest of the conversation the student had no visibility
+             into what STT was actually hearing before it got auto-submitted.
+             Rendered unconditionally here so a misheard/truncated capture
+             ("what is" instead of "what is wit") is visible in real time on
+             every turn, not just the first. */}
+          {!showEmptyState && hearingYou ? (
+            <div className="flex gap-2.5 items-end min-w-0 flex-row-reverse">
+              <div className="h-8 w-8 rounded-full flex items-center justify-center shrink-0 mb-0.5 bg-primary/40 animate-pulse">
+                <User className="h-4 w-4 text-primary-foreground" />
+              </div>
+              <div className="min-w-0 flex flex-col gap-1 items-end max-w-[92%]">
+                <p className="text-sm rounded-2xl rounded-br-sm border border-dashed border-primary/40 bg-primary/5 px-3.5 py-2 text-foreground/80">
+                  {interimTranscript.trim()}
+                </p>
+              </div>
+            </div>
+          ) : null}
 
           {isTyping ? (
             <StreamingBubble
@@ -590,12 +618,15 @@ export function VoiceLiveCall({
                 <Send className="h-4 w-4" />
               </Button>
             </div>
-            {liveInterim ? (
-              <p className="mt-1.5 px-1 text-xs text-emerald-700 dark:text-emerald-300">
-                {liveInterim}
-              </p>
-            ) : null}
           </div>
+        ) : null}
+        {/* Live caption of the student's own speech — shown below the text
+           field regardless of whether it's expanded, so it's never hidden by
+           collapsing the box. */}
+        {liveInterim ? (
+          <p className="px-5 pb-2 sm:px-7 text-xs text-emerald-700 dark:text-emerald-300 truncate">
+            {liveInterim}
+          </p>
         ) : null}
       </div>
     </div>

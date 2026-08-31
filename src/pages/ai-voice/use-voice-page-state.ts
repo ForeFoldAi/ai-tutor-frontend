@@ -150,6 +150,10 @@ export function useVoicePageState() {
   const interimTranscriptRef = useRef("");
   const finalizeAssistantTurnRef = useRef<() => void>(() => {});
   const serverSttActiveRef = useRef(false);
+  /** True when the browser didn't actually honor echoCancellation on the mic
+   * track — raw tutor-audio leakage into the mic is more likely, so the
+   * barge-in volume monitor should demand a stronger, longer-held spike. */
+  const aecDegradedRef = useRef(false);
 
   return {
     // state + setters
@@ -205,6 +209,7 @@ export function useVoicePageState() {
     listeningUtteranceActiveRef, lastUtteranceBlobRef,
     whisperPrimaryRef, finalizeUtteranceRef,
     interimTranscriptRef, finalizeAssistantTurnRef, serverSttActiveRef,
+    aecDegradedRef,
   };
 }
 

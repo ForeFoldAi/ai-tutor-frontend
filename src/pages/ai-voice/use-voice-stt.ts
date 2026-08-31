@@ -17,7 +17,11 @@ import {
   BARGE_IN_HOLD_MS,
   BARGE_CHECK_REQUIRED,
   BARGE_CONFIRMED,
+  BARGE_SILENCE_MS,
+  LISTEN_SILENCE_MS,
+  MAX_UTTERANCE_MS,
   POST_PLAYBACK_ECHO_MS,
+  SPEECH_LEVEL,
   STT_FINAL_DEBOUNCE_MS,
   STT_INTERIM_COMPLETE_MS,
   VOICE_PROTECTION_ENABLED,
@@ -155,7 +159,11 @@ export function useVoiceStt(deps: SttDeps) {
       !isAiSpeakingNow()
     ) {
       s.serverSttRecorderRef.current?.ensureRunning();
-      if (Date.now() >= s.whisperBrowserFallbackUntilRef.current) return;
+      // Whisper still owns capture/submission for this turn (onresult's
+      // ownership guard blocks this channel from ever calling
+      // submitListeningTranscript while Whisper is active) — but browser
+      // recognition is also started below so the student sees a live caption
+      // of their own words instead of just a "Listening…" placeholder.
     }
 
     if (!recognitionAvailable) return;
@@ -239,13 +247,6 @@ export function useVoiceStt(deps: SttDeps) {
   // ── Server Whisper ticker ───────────────────────────────────────────────
   useEffect(() => {
     if (!serverSttActive || !micEnabled) return;
-    // ponytail: 950ms cut speech off mid-sentence on normal thinking pauses
-    // ("from can you tell me…", "tell me India…") — 1400ms gives room for a
-    // pause without feeling laggy. Upgrade path: per-student adaptive timing.
-    const LISTEN_SILENCE_MS = 1400;
-    const BARGE_SILENCE_MS = 1400;
-    const MAX_UTTERANCE_MS = 11_000;
-    const SPEECH_LEVEL = 0.018;
 
     const beginListenCapture = () => {
       const mic = s.serverSttRecorderRef.current;
@@ -454,9 +455,16 @@ export function useVoiceStt(deps: SttDeps) {
     }
     s.echoBaselineRef.current = floor;
 
+    // Native AEC failed to engage on this mic track (some Android/Bluetooth
+    // combos) — the volume monitor is now working against raw tutor-audio
+    // leakage instead of a clean signal, so demand a visibly stronger spike
+    // held for longer before treating it as the student's own voice.
+    const degraded = s.aecDegradedRef.current;
     const spike = level - floor;
     const ratio = floor > 0.015 ? level / floor : 0;
-    const userLikely = level > 0.045 && (spike > 0.028 || ratio > 1.14);
+    const userLikely = degraded
+      ? level > 0.07 && (spike > 0.05 || ratio > 1.35)
+      : level > 0.045 && (spike > 0.028 || ratio > 1.14);
 
     if (!userLikely) { s.bargeInHoldSinceRef.current = null; return; }
 
@@ -465,7 +473,8 @@ export function useVoiceStt(deps: SttDeps) {
       beginBargeGateCapture();
       return;
     }
-    if (Date.now() - s.bargeInHoldSinceRef.current < BARGE_IN_HOLD_MS) return;
+    const holdMs = degraded ? BARGE_IN_HOLD_MS * 1.6 : BARGE_IN_HOLD_MS;
+    if (Date.now() - s.bargeInHoldSinceRef.current < holdMs) return;
 
     s.bargeInHoldSinceRef.current = null;
     s.bargeVolumeHistoryRef.current = [];
@@ -567,6 +576,10 @@ export function useVoiceStt(deps: SttDeps) {
     let finalizeTimer: number | null = null;
     let interimFlushTimer: number | null = null;
     let pendingInterim = "";
+    // Separate from finalAccumulator on purpose: this only feeds the live
+    // caption preview and must never influence what gets submitted, even on
+    // turns where server-Whisper (not this channel) owns capture/submit.
+    let captionAccumulator = "";
 
     const clearInterimFlush = () => {
       if (interimFlushTimer) window.clearTimeout(interimFlushTimer);
@@ -608,6 +621,26 @@ export function useVoiceStt(deps: SttDeps) {
             requireMic: false, skipPlaybackCheck: true, skipPhaseCheck: true,
           });
         }
+        return;
+      }
+      // Whisper (not this channel) owns capture/submission for spoken listening
+      // turns in this configuration — browser recognition is running purely for
+      // the live caption preview (see the caption block above in onresult).
+      // Chrome's own endpointing is non-configurable and known to clip trailing
+      // words (that's the entire reason VITE_WHISPER_LISTEN_PRIMARY exists) —
+      // letting this channel submit unconditionally would race Whisper's
+      // longer, tuned silence window and win on short pauses, cutting the
+      // student off early. Only actually submit from here when Whisper isn't
+      // primary, or when the whisper-failure fallback window is armed.
+      if (
+        s.whisperPrimaryRef.current &&
+        s.serverSttActiveRef.current &&
+        Date.now() >= s.whisperBrowserFallbackUntilRef.current
+      ) {
+        console.debug("[STT] browser_submit_blocked", {
+          source, phase: s.phaseRef.current, turnId: s.turnIdRef.current,
+          text: t.slice(0, 60), reason: "whisper_owns_submission",
+        });
         return;
       }
       if (rejectTranscriptCandidateRef.current(t, source)) {
@@ -692,6 +725,26 @@ export function useVoiceStt(deps: SttDeps) {
       if (!canAcceptSttNowRef.current()) return;
       if (s.phaseRef.current === "connecting" || isTutorAudible(s.mp3PlayerRef.current, s.fallbackMp3Ref.current)) return;
       if (s.phaseRef.current !== "listening") return;
+
+      // Live caption preview — paints the student's words as they speak them,
+      // even on turns where server-Whisper (not this channel) owns the actual
+      // capture/submit for endpointing accuracy. Display-only: it never calls
+      // submitListeningTranscript, so it can't cause a double-submit with the
+      // Whisper path below.
+      if (!s.textInputOpenRef.current) {
+        let previewInterim = "";
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const txt = event.results[i][0]?.transcript || "";
+          if (event.results[i].isFinal) {
+            captionAccumulator += (captionAccumulator ? " " : "") + txt;
+          } else {
+            previewInterim += txt;
+          }
+        }
+        const preview = [captionAccumulator, previewInterim].filter(Boolean).join(" ").trim();
+        if (preview) s.setInterimTranscript(preview);
+      }
+
       if (
         s.whisperPrimaryRef.current &&
         s.serverSttActiveRef.current &&
@@ -728,6 +781,7 @@ export function useVoiceStt(deps: SttDeps) {
       if (finalizeTimer) { window.clearTimeout(finalizeTimer); finalizeTimer = null; }
       const pending = [finalAccumulator, pendingInterim].filter(Boolean).join(" ").trim();
       finalAccumulator = "";
+      captionAccumulator = "";
       clearInterimFlush();
       if (pending && s.phaseRef.current === "listening" && canAcceptSttNowRef.current()) {
         submitListeningTranscript(pending, "browser-onend");

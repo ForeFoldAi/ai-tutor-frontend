@@ -10,7 +10,7 @@ export default function TutorAIInteractionPage() {
         <CardHeader><CardTitle>Launch AI Tools</CardTitle></CardHeader>
         <CardContent className="flex gap-3">
           <Button asChild><Link href="/ai-tutor">Open AI Tutor</Link></Button>
-          <Button asChild variant="outline"><Link href="/ai-voice">Open AI Voice</Link></Button>
+          <Button asChild variant="outline"><Link href="/voice-tutor">Open AI Voice</Link></Button>
         </CardContent>
       </Card>
     </div>

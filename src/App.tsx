@@ -22,7 +22,7 @@ import LiveClassesPage from "@/pages/live-classes";
 import SettingsPage from "@/pages/settings";
 import UsersPage from "@/pages/users";
 import SyllabusPage from "@/pages/syllabus";
-import AIVoicePage from "@/pages/ai-voice";
+import VoiceTutorPage from "@/pages/tutor/voice-tutor";
 import { getDashboardPath } from "@/lib/dashboard-routes";
 import { isIndividualStudent } from "@/lib/app-nav-items";
 import { UserRole, type UserRoleType } from "@/types/schema";
@@ -194,10 +194,16 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
-      <Route path="/ai-voice">
+      <Route path="/voice-tutor">
         <ProtectedRoute>
-          <AIVoicePage />
+          <VoiceTutorPage />
         </ProtectedRoute>
+      </Route>
+      {/* Retired: the FastAPI /ws/voice stack. Voice is now the Nest RTC server
+          (/voice-tutor). Keep the redirect — chapter deep links are bookmarked,
+          and the scope lives entirely in the query string. */}
+      <Route path="/ai-voice">
+        <Redirect to={`/voice-tutor${window.location.search}`} />
       </Route>
       
       <Route path="/subjects">

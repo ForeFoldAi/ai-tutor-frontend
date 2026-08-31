@@ -244,7 +244,7 @@ export function LearningSetupWizard({
     if (selectedMethod === "ai-tutor") {
       setLocation(`/ai-tutor?${params.toString()}`);
     } else if (selectedMethod === "ai-voice") {
-      setLocation(`/ai-voice?${params.toString()}`);
+      setLocation(`/voice-tutor?${params.toString()}`);
     } else {
       alert("Pre-recorded videos feature coming soon!");
     }

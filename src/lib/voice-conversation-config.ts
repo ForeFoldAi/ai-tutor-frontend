@@ -47,6 +47,22 @@ export const STT_FINAL_DEBOUNCE_MS = 140;
 /** Submit stable interim text when the browser never marks a short utterance final */
 export const STT_INTERIM_COMPLETE_MS = envNum("VITE_STT_INTERIM_COMPLETE_MS", 480);
 export const POST_PLAYBACK_LISTEN_MS = 80;
+
+// How long a student can go quiet mid-question before server-Whisper listen
+// capture treats them as done and submits — must comfortably cover a natural
+// "thinking pause" ("what is... the capital of France") without feeling like
+// the tutor is ignoring them. Was 950ms, then 1400ms; both still clipped kids
+// composing a longer question. Ceiling: still a fixed timeout, not adaptive to
+// utterance length — revisit with per-student tuning if long questions still
+// get cut.
+export const LISTEN_SILENCE_MS = envNum("VITE_LISTEN_SILENCE_MS", 1800);
+/** Same pause allowance for a barge-in (interrupt) capture — the student is
+ * still finishing a real sentence, not just triggering a stop. */
+export const BARGE_SILENCE_MS = envNum("VITE_BARGE_SILENCE_MS", 1800);
+/** Hard ceiling so a silent-but-open mic doesn't hang forever. */
+export const MAX_UTTERANCE_MS = envNum("VITE_MAX_UTTERANCE_MS", 11_000);
+/** RMS level above which the mic is considered "speaking" for endpointing. */
+export const SPEECH_LEVEL = envNum("VITE_SPEECH_LEVEL", 0.018);
 // Must cover a full tutor answer, not just its tail — TTS audio playback
 // (30-60s+) runs far behind the LLM text stream (2-5s), so a short tail
 // goes stale mid-playback and lets genuine self-echo slip past the guard.

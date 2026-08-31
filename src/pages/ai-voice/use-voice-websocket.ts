@@ -361,6 +361,15 @@ export function useVoiceWebSocket({ s, normalizedVoiceUrl, session, audio }: WSD
       s.setIsCallLive(false);
       if (s.shuttingDownRef.current || myGen !== s.wsActiveRef.current) return;
       s.wsRef.current = null;
+      // Whatever the tutor was doing (speaking/thinking) is now stale — stop
+      // playback and recognition immediately instead of leaving the UI stuck
+      // showing "speaking" while audio silently drains, or the mic mid-listen
+      // against a dead socket. Mirrors handleReconnect's manual-path cleanup.
+      stopAudioPlayback();
+      audio.resetMp3Player();
+      s.stopRecognitionRef.current();
+      s.micListenAllowedRef.current = false;
+      s.setPhase("connecting");
       s.setConnectionStatus("Reconnecting…");
       s.setErrorText((prev) => prev ?? MSG.voiceConnection);
       s.reconnectTimerRef.current = window.setTimeout(connectWS, 2500);
