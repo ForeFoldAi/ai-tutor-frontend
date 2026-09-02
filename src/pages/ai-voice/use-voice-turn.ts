@@ -12,7 +12,7 @@ import { MSG, studentFriendlyApiError, studentFriendlyError } from "@/lib/studen
 import { tutorVoiceId } from "@/lib/tutor-voice";
 import { blobToBase64 } from "@/lib/voice-server-stt";
 import { buildVoiceConversationHistory } from "@/lib/voice-http-history";
-import { postprocessVoiceTranscript } from "@/lib/voice-stt-postprocess";
+import { postprocessVoiceTranscript, isMeaningfulVoiceTranscript } from "@/lib/voice-stt-postprocess";
 import { stripConversationalLeadIn } from "@/lib/voice-interrupt-intent";
 import { Mp3StreamPlayer } from "@/lib/mp3-stream-player";
 import type { VoiceRelatedImage } from "@/components/voice/voice-types";
@@ -144,7 +144,7 @@ export function useVoiceTurn(deps: TurnDeps) {
     const trimmed = stripConversationalLeadIn(
       postprocessVoiceTranscript(userText, subjectLabel),
     ).trim();
-    if (trimmed.length < 2) return;
+    if (!isMeaningfulVoiceTranscript(trimmed)) return;
 
     const now = Date.now();
     if (trimmed === s.lastSubmittedTranscriptRef.current && now - s.lastSubmittedAtRef.current < 4000) return;

@@ -3,6 +3,7 @@
  */
 
 import { ECHO_SIMILARITY_THRESHOLD, AI_SPEECH_TAIL_MAX_CHARS } from "./voice-conversation-config.ts";
+import { isMeaningfulVoiceTranscript } from "./voice-stt-postprocess.ts";
 
 export { AI_SPEECH_TAIL_MAX_CHARS };
 
@@ -117,7 +118,7 @@ export function evaluateIncomingTranscript(
   threshold = ECHO_SIMILARITY_THRESHOLD,
 ): { verdict: TranscriptVerdict; similarity: number } {
   const trimmed = (transcript || "").trim();
-  if (!trimmed || trimmed.length < 2) {
+  if (!trimmed || trimmed.length < 2 || !isMeaningfulVoiceTranscript(trimmed)) {
     return { verdict: "discarded", similarity: 0 };
   }
   const similarity = textSimilarity(trimmed, recentAiSpeech);

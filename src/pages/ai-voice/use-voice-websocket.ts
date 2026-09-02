@@ -224,6 +224,7 @@ export function useVoiceWebSocket({ s, normalizedVoiceUrl, session, audio }: WSD
           break;
 
         case "tutor_hint":
+        case "affect_hint":
           s.setTutorUnderstandingHint(String(msg.hint ?? "").trim() || null);
           break;
 

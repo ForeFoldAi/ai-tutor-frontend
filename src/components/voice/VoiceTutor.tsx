@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { TutorMessageProse } from "@/lib/render-tutor-text";
+import { TextbookImageGallery, type RelatedTextbookImage } from "@/components/assistant-message-content";
 import type { TranscriptLine, VoiceState } from "@/types/voice";
 import { AiWaveform } from "./ai-waveform";
 import { VoiceButton } from "./VoiceButton";
@@ -124,6 +125,8 @@ export function VoiceTutor({
   error,
   hint = "",
   transcript,
+  images = [],
+  accessToken,
   muted,
   level,
   callSeconds = 0,
@@ -140,6 +143,9 @@ export function VoiceTutor({
   error: string;
   hint?: string;
   transcript: TranscriptLine[];
+  /** Textbook figures for the answer being spoken right now. */
+  images?: RelatedTextbookImage[];
+  accessToken?: string | null;
   muted: boolean;
   level: number;
   callSeconds?: number;
@@ -275,6 +281,10 @@ export function VoiceTutor({
           ))}
 
           {showThinking ? <ThinkingBubble /> : null}
+
+          {images.length > 0 ? (
+            <TextbookImageGallery images={images} token={accessToken} className="mt-0" />
+          ) : null}
 
           {error ? <p className="text-center text-sm text-destructive px-4">{error}</p> : null}
         </div>

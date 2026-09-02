@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { refreshAccessToken } from "@/api";
 import { MSG } from "@/lib/student-messages";
 import { stripGreetSearchParam } from "@/lib/tutor-greeting";
 import { connectVoiceEvents, type VoiceSock } from "@/services/voice/voiceEvents.service";
 import { applyTranscriptEvent } from "@/lib/voice-transcript";
+import type { RelatedTextbookImage } from "@/components/assistant-message-content";
 import type { TranscriptLine, VoiceScope, VoiceState } from "@/types/voice";
 import { requestMicrophone, stopStream } from "./useMicrophone";
 import { useAudioPlayback } from "./useAudioPlayback";
@@ -32,6 +34,7 @@ export function useVoiceTutor(opts: { token: string; scope: VoiceScope | null; g
   const [error, setError] = useState("");
   const [hint, setHint] = useState("");
   const [transcript, setTranscript] = useState<TranscriptLine[]>([]);
+  const [images, setImages] = useState<RelatedTextbookImage[]>([]);
   const [muted, setMuted] = useState(false);
   const [level, setLevel] = useState(0);
   const [sessionId, setSessionId] = useState("");
@@ -50,6 +53,8 @@ export function useVoiceTutor(opts: { token: string; scope: VoiceScope | null; g
   const reconnectTimerRef = useRef(0);
   const connectTimerRef = useRef(0);
   const shouldGreetOnConnectRef = useRef(Boolean(opts.greet));
+  const tokenRef = useRef(opts.token);
+  const listenMuteUntilRef = useRef(0);
 
   const playback = useAudioPlayback();
   const vad = useVoiceActivity(setLevel);
@@ -74,6 +79,19 @@ export function useVoiceTutor(opts: { token: string; scope: VoiceScope | null; g
 
   stateRef.current = state;
   mutedRef.current = muted;
+  tokenRef.current = opts.token;
+
+  const pushFreshToken = useCallback(async (): Promise<string | null> => {
+    const fresh = await refreshAccessToken();
+    if (fresh) {
+      tokenRef.current = fresh;
+      const sid = sessionIdRef.current;
+      if (sid && sockRef.current) {
+        sockRef.current.send({ type: "token_update", sessionId: sid, token: fresh });
+      }
+    }
+    return fresh;
+  }, []);
 
   const clearTimers = useCallback(() => {
     if (connectTimerRef.current) window.clearTimeout(connectTimerRef.current);
@@ -131,7 +149,7 @@ export function useVoiceTutor(opts: { token: string; scope: VoiceScope | null; g
         // ponytail: leans on the browser's echoCancellation to keep the tutor's
         // own audio from tripping this. No echo guard like the old FastAPI
         // stack had — set VITE_VOICE_BARGE_IN=false if it self-interrupts.
-        if (stateRef.current !== "SPEAKING") {
+        if (stateRef.current !== "SPEAKING" && Date.now() >= listenMuteUntilRef.current) {
           sockRef.current?.sendBinary(packPcm(i16, sampleRateRef.current, false));
         }
         void vad.push(i16).then((hits) => {
@@ -183,8 +201,14 @@ export function useVoiceTutor(opts: { token: string; scope: VoiceScope | null; g
         return;
       }
       if (type === "student_started_speaking") {
+        // Last turn's figures belong to last turn's answer.
+        setImages([]);
         setState("PROCESSING");
         setHint("Hearing you…");
+        return;
+      }
+      if (type === "related_images") {
+        setImages((msg.images as RelatedTextbookImage[] | undefined) ?? []);
         return;
       }
       if (type === "student_stopped_speaking") {
@@ -223,10 +247,12 @@ export function useVoiceTutor(opts: { token: string; scope: VoiceScope | null; g
         markAudioReady();
       }
       if (type === "ai_stopped_speaking") {
+        listenMuteUntilRef.current = Date.now() + 1000;
         setState("LISTENING");
         setHint("Speak now — pause about 1 second when you finish.");
       }
       if (type === "ai_interrupted") {
+        listenMuteUntilRef.current = Date.now() + 800;
         void playback.stop();
         setState("INTERRUPTED");
         setHint("Speak now — pause about 1 second when you finish.");
@@ -235,18 +261,30 @@ export function useVoiceTutor(opts: { token: string; scope: VoiceScope | null; g
         setError(String(msg.message || MSG.voiceError));
         setState("ERROR");
       }
+      if (type === "token_expired") {
+        const fresh = await pushFreshToken();
+        if (!fresh) {
+          setError(String(msg.message || MSG.voiceError));
+          setState("ERROR");
+        } else {
+          setError("");
+          setState("LISTENING");
+          setHint("Session refreshed — please ask again.");
+        }
+      }
       if (type === "session_ended") setState("ENDED");
     },
-    [clearTimers, failConnect, markAudioReady, playback, startCapture],
+    [clearTimers, failConnect, markAudioReady, playback, pushFreshToken, startCapture],
   );
 
   const openSocketRef = useRef<() => void>(() => undefined);
 
   openSocketRef.current = () => {
-    if (!opts.token || !opts.scope || endedRef.current) return;
+    const token = tokenRef.current;
+    if (!token || !opts.scope || endedRef.current) return;
     sockRef.current?.close();
     sockRef.current = connectVoiceEvents(
-      opts.token,
+      token,
       (msg) => void handleEvent(msg),
       () => {
         if (userEndedRef.current || endedRef.current) return;
@@ -271,7 +309,7 @@ export function useVoiceTutor(opts: { token: string; scope: VoiceScope | null; g
         if (resumeOnOpenRef.current && sessionIdRef.current) {
           sockRef.current?.send({
             type: "session_resume",
-            token: opts.token,
+            token: tokenRef.current,
             sessionId: sessionIdRef.current,
           });
           resumeOnOpenRef.current = false;
@@ -284,7 +322,7 @@ export function useVoiceTutor(opts: { token: string; scope: VoiceScope | null; g
         }
         sockRef.current?.send({
           type: "session_start",
-          token: opts.token,
+          token: tokenRef.current,
           greet: sendGreet ? "1" : "0",
           board: opts.scope?.board,
           classLevel: opts.scope?.classLevel,
@@ -309,6 +347,7 @@ export function useVoiceTutor(opts: { token: string; scope: VoiceScope | null; g
     setError("");
     setHint("");
     setTranscript([]);
+    setImages([]);
     setAudioReady(false);
     endedRef.current = false;
     userEndedRef.current = false;
@@ -336,6 +375,14 @@ export function useVoiceTutor(opts: { token: string; scope: VoiceScope | null; g
     openSocketRef.current();
   }, [clearTimers, failConnect, opts.scope, opts.token, playback]);
 
+  useEffect(() => {
+    if (!sessionId || state === "ENDED" || state === "ERROR") return;
+    const id = window.setInterval(() => {
+      void pushFreshToken();
+    }, 10 * 60 * 1000);
+    return () => window.clearInterval(id);
+  }, [pushFreshToken, sessionId, state]);
+
   const interrupt = useCallback(() => {
     void playback.stop();
     sockRef.current?.send({ type: "interrupt", sessionId });
@@ -354,6 +401,7 @@ export function useVoiceTutor(opts: { token: string; scope: VoiceScope | null; g
   const sendText = useCallback((text: string) => {
     const trimmed = text.trim();
     if (!trimmed || !sessionIdRef.current || endedRef.current) return;
+    setImages([]);
     sockRef.current?.send({ type: "text", sessionId: sessionIdRef.current, text: trimmed });
   }, []);
 
@@ -377,6 +425,7 @@ export function useVoiceTutor(opts: { token: string; scope: VoiceScope | null; g
     error,
     hint,
     transcript,
+    images,
     muted,
     setMuted,
     level,

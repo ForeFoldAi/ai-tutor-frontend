@@ -153,6 +153,8 @@ export default function VoiceTutorPage() {
           error={voice.error || (scope ? "" : "Pick a class and subject in Learning Studio first.")}
           hint={voice.hint}
           transcript={voice.transcript}
+          images={voice.images}
+          accessToken={token}
           muted={voice.muted}
           level={voice.level}
           callSeconds={callSeconds}

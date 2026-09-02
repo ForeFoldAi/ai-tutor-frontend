@@ -321,9 +321,13 @@ async function streamChapterChatMessage(
       full = evt.content;
       handlers.onCleanAnswer?.(evt.content);
     } else if (evt.type === "math_lesson" && evt.lesson) {
-      handlers.onMathLesson?.(evt.lesson, evt.clean_answer ?? full);
+      const clean = (evt.clean_answer ?? "").trim();
+      if (clean) full = clean;
+      handlers.onMathLesson?.(evt.lesson, clean || full);
     } else if (evt.type === "science_experiment" && evt.experiment) {
-      handlers.onScienceExperiment?.(evt.experiment, evt.clean_answer ?? full);
+      const clean = (evt.clean_answer ?? "").trim();
+      if (clean) full = clean;
+      handlers.onScienceExperiment?.(evt.experiment, clean || full);
     }
   };
 
@@ -762,7 +766,7 @@ export default function AITutorPage() {
         const history = buildConversationHistory(
           updatedConversation.messages.filter((m) => m.id !== assistantMessage.id),
         );
-        fullContent = await streamChapterChatMessage(
+        const streamed = await streamChapterChatMessage(
           content,
           chapterCtx,
           {
@@ -797,6 +801,9 @@ export default function AITutorPage() {
           },
           history,
         );
+        if (streamed.trim()) {
+          fullContent = streamed;
+        }
         if (!fullContent.trim()) {
           fullContent = MSG.tutorError;
           patchAssistant(fullContent);

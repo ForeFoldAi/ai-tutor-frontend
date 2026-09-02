@@ -23,6 +23,66 @@ const WORD_FIXES: Record<string, string> = {
   mitocondria: "mitochondria",
 };
 
+const WHISPER_JUNK_PHRASES = new Set([
+  "blank audio",
+  "blank_audio",
+  "inaudible",
+  "music",
+  "applause",
+  "silence",
+  "laughs",
+  "laughter",
+  "clear throat",
+  "clears throat",
+  "cough",
+  "coughs",
+  "sigh",
+  "sighs",
+  "breathing",
+  "background noise",
+  "thank you for watching",
+  "thanks for watching",
+  "subscribe",
+  "subtitles by",
+  "amara org",
+]);
+
+const SHORT_OK = new Set(["ok", "okay", "yes", "no", "hi", "hey", "bye", "stop", "wait", "why", "how","yes, please","no, please","yeah","yeah, please","no, thanks","yes, thanks","thanks","please"]);
+
+function junkNormalize(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[\[\](){}]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^[ .,!?-]+|[ .,!?-]+$/g, "");
+}
+
+export function isWhisperHallucination(text: string): boolean {
+  const raw = text.trim();
+  if (!raw) return true;
+  const key = junkNormalize(raw);
+  if (WHISPER_JUNK_PHRASES.has(key)) return true;
+  const m = raw.match(/^[\[(](.+)[\])]\.?$/i);
+  if (m && WHISPER_JUNK_PHRASES.has(junkNormalize(m[1]))) return true;
+  return false;
+}
+
+/** Reject punctuation-only STT and Whisper silence artifacts before committing a turn. */
+export function isMeaningfulVoiceTranscript(text: string): boolean {
+  const raw = text.trim();
+  if (raw.length < 2) return false;
+  if (isWhisperHallucination(raw)) return false;
+  if (!/[a-zA-Z0-9]/.test(raw)) return false;
+  const words = raw.split(/\s+/).map((w) => w.replace(/^[^\w]+|[^\w]+$/g, "")).filter(Boolean);
+  if (words.length === 0) return false;
+  if (words.length === 1) {
+    const w = words[0].toLowerCase();
+    return SHORT_OK.has(w) || w.length >= 4;
+  }
+  return words.some((w) => w.length >= 2);
+}
+
 export function postprocessVoiceTranscript(text: string, subjectName = ""): string {
   const raw = text.trim();
   if (!raw) return "";

@@ -40,6 +40,7 @@ import {
 } from "@/lib/voice-protection";
 import {
   postprocessVoiceTranscript,
+  isMeaningfulVoiceTranscript,
   voiceRecognitionLang,
 } from "@/lib/voice-stt-postprocess";
 import { isTutorAudible, getAccessToken } from "./voice-utils";
@@ -259,6 +260,16 @@ export function useVoiceStt(deps: SttDeps) {
       s.silenceSinceRef.current = null;
     };
 
+    const discardListenCapture = (mic: NonNullable<typeof s.serverSttRecorderRef.current>) => {
+      void (async () => {
+        if (mic.isCapturingUtterance()) await mic.endUtteranceCapture();
+        s.listeningUtteranceActiveRef.current = false;
+        s.speechActiveRef.current = false;
+        s.silenceSinceRef.current = null;
+        beginListenCapture();
+      })();
+    };
+
     async function finalizeUtterance(blob: Blob, mode: "listen" | "barge") {
       try {
         s.setInterimTranscript("Understanding…");
@@ -283,8 +294,19 @@ export function useVoiceStt(deps: SttDeps) {
           return;
         }
 
-        if (!cleaned || cleaned.length < 2 || result.rejected || rejectTranscriptCandidateRef.current(cleaned, rejectSource)) {
-          vlog.whisper("result_discarded", { mode, rejected: result.rejected, len: cleaned.length, phase: s.phaseRef.current });
+        if (
+          !cleaned ||
+          !isMeaningfulVoiceTranscript(cleaned) ||
+          result.rejected ||
+          rejectTranscriptCandidateRef.current(cleaned, rejectSource)
+        ) {
+          vlog.whisper("result_discarded", {
+            mode,
+            rejected: result.rejected,
+            junk: cleaned ? !isMeaningfulVoiceTranscript(cleaned) : true,
+            len: cleaned.length,
+            phase: s.phaseRef.current,
+          });
           if (mode === "barge") {
             beginPostInterruptCapture();
           } else {
@@ -386,7 +408,7 @@ export function useVoiceStt(deps: SttDeps) {
 
       if (isListen && !s.speechActiveRef.current && s.utteranceStartedAtRef.current &&
         Date.now() - s.utteranceStartedAtRef.current > 12_000) {
-        flushUtterance(mic, "listen");
+        discardListenCapture(mic);
         return;
       }
 
@@ -402,6 +424,10 @@ export function useVoiceStt(deps: SttDeps) {
       }
 
       if (s.utteranceStartedAtRef.current && Date.now() - s.utteranceStartedAtRef.current > MAX_UTTERANCE_MS) {
+        if (isListen && !s.speechActiveRef.current) {
+          discardListenCapture(mic);
+          return;
+        }
         flushUtterance(mic, isBarge ? "barge" : "listen");
         return;
       }
@@ -589,7 +615,7 @@ export function useVoiceStt(deps: SttDeps) {
 
     const submitListeningTranscript = (raw: string, source: string) => {
       const t = raw.trim();
-      if (!t || t.length < 2) return;
+      if (!t || !isMeaningfulVoiceTranscript(t)) return;
       if (s.phaseRef.current !== "listening") {
         console.debug("[STT] browser_submit_blocked", {
           source, phase: s.phaseRef.current, turnId: s.turnIdRef.current,
