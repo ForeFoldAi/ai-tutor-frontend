@@ -182,6 +182,8 @@ export function useVoiceTutor(opts: { token: string; scope: VoiceScope | null; g
         setSessionId(sid);
         setState("LISTENING");
         stateRef.current = "LISTENING";
+        // Push a fresh bearer immediately so Nest's RAG token isn't already aged.
+        void pushFreshToken();
         try {
           const stream = streamRef.current;
           if (!stream) {
@@ -262,14 +264,14 @@ export function useVoiceTutor(opts: { token: string; scope: VoiceScope | null; g
         setState("ERROR");
       }
       if (type === "token_expired") {
+        // Nest waits briefly for token_update and retries RAG — refresh quietly.
         const fresh = await pushFreshToken();
         if (!fresh) {
           setError(String(msg.message || MSG.voiceError));
           setState("ERROR");
         } else {
           setError("");
-          setState("LISTENING");
-          setHint("Session refreshed — please ask again.");
+          if (stateRef.current === "ERROR") setState("LISTENING");
         }
       }
       if (type === "session_ended") setState("ENDED");
@@ -375,13 +377,18 @@ export function useVoiceTutor(opts: { token: string; scope: VoiceScope | null; g
     openSocketRef.current();
   }, [clearTimers, failConnect, opts.scope, opts.token, playback]);
 
+  // Keep Nest's RAG bearer fresh. Do NOT depend on `state` — every turn
+  // (LISTENING→THINKING→SPEAKING) used to reset this timer so it never fired
+  // during an active call, and the student heard "session expired" at ~15m.
+  // Access JWT TTL is 15m; refresh at half TTL.
   useEffect(() => {
-    if (!sessionId || state === "ENDED" || state === "ERROR") return;
+    if (!sessionId) return;
     const id = window.setInterval(() => {
+      if (endedRef.current || stateRef.current === "ENDED" || stateRef.current === "ERROR") return;
       void pushFreshToken();
-    }, 10 * 60 * 1000);
+    }, 7 * 60 * 1000);
     return () => window.clearInterval(id);
-  }, [pushFreshToken, sessionId, state]);
+  }, [pushFreshToken, sessionId]);
 
   const interrupt = useCallback(() => {
     void playback.stop();
