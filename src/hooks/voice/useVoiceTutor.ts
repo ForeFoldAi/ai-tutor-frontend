@@ -5,7 +5,12 @@ import { stripGreetSearchParam } from "@/lib/tutor-greeting";
 import { connectVoiceEvents, type VoiceSock } from "@/services/voice/voiceEvents.service";
 import { applyTranscriptEvent } from "@/lib/voice-transcript";
 import type { RelatedTextbookImage } from "@/components/assistant-message-content";
-import type { TranscriptLine, VoiceScope, VoiceState } from "@/types/voice";
+import type {
+  TranscriptLine,
+  VoiceConversationTurn,
+  VoiceScope,
+  VoiceState,
+} from "@/types/voice";
 import { requestMicrophone, stopStream } from "./useMicrophone";
 import { useAudioPlayback } from "./useAudioPlayback";
 import { packPcm, useVoiceActivity } from "./useVoiceActivity";
@@ -29,7 +34,14 @@ function friendlyError(code: string): string {
 
 const bargeInEnabled = import.meta.env.VITE_VOICE_BARGE_IN !== "false";
 
-export function useVoiceTutor(opts: { token: string; scope: VoiceScope | null; greet?: boolean }) {
+export function useVoiceTutor(opts: {
+  token: string;
+  scope: VoiceScope | null;
+  /** Ask AI Tutor — routes Nest to student_assistant. */
+  agentMode?: string;
+  conversationHistory?: VoiceConversationTurn[];
+  greet?: boolean;
+}) {
   const [state, setState] = useState<VoiceState>("IDLE");
   const [error, setError] = useState("");
   const [hint, setHint] = useState("");
@@ -55,9 +67,18 @@ export function useVoiceTutor(opts: { token: string; scope: VoiceScope | null; g
   const shouldGreetOnConnectRef = useRef(Boolean(opts.greet));
   const tokenRef = useRef(opts.token);
   const listenMuteUntilRef = useRef(0);
+  const agentModeRef = useRef(opts.agentMode);
+  const historyRef = useRef(opts.conversationHistory);
+  const scopeRef = useRef(opts.scope);
 
   const playback = useAudioPlayback();
   const vad = useVoiceActivity(setLevel);
+
+  agentModeRef.current = opts.agentMode;
+  historyRef.current = opts.conversationHistory;
+  scopeRef.current = opts.scope;
+
+  const canStart = Boolean(opts.token && (opts.scope || opts.agentMode));
 
   const markAudioReady = useCallback(() => {
     setAudioReady(true);
@@ -142,14 +163,11 @@ export function useVoiceTutor(opts: { token: string; scope: VoiceScope | null; g
         if (mutedRef.current || endedRef.current) return;
         const f32 = ev.inputBuffer.getChannelData(0);
         const i16 = floatToInt16(f32);
-        // Don't uplink mic while the tutor speaks — avoids echo re-STT. The VAD
-        // still runs, because it is what detects barge-in; returning early here
-        // (as this used to) made the barge-in check below dead code and left
-        // the Interrupt button as the only way to cut the tutor off.
-        // ponytail: leans on the browser's echoCancellation to keep the tutor's
-        // own audio from tripping this. No echo guard like the old FastAPI
-        // stack had — set VITE_VOICE_BARGE_IN=false if it self-interrupts.
-        if (stateRef.current !== "SPEAKING" && Date.now() >= listenMuteUntilRef.current) {
+        // Uplink whenever we are not playing tutor audio. Allow CONNECTING so
+        // frames are ready the instant session_ready attaches sessionId.
+        const st = stateRef.current;
+        const blockUplink = st === "SPEAKING" || Date.now() < listenMuteUntilRef.current;
+        if (!blockUplink) {
           sockRef.current?.sendBinary(packPcm(i16, sampleRateRef.current, false));
         }
         void vad.push(i16).then((hits) => {
@@ -186,14 +204,18 @@ export function useVoiceTutor(opts: { token: string; scope: VoiceScope | null; g
         void pushFreshToken();
         try {
           const stream = streamRef.current;
-          if (!stream) {
+          if (!stream || stream.getAudioTracks().every((t) => t.readyState === "ended")) {
             failConnect(MSG.micNotFound);
             return;
           }
+          // Prefer capture started in start() (user-gesture). Resume / recreate if needed.
           if (!captureRef.current) await startCapture(stream);
-          else if (captureRef.current.state === "suspended") await captureRef.current.resume();
+          else if (captureRef.current.state === "suspended") {
+            await captureRef.current.resume();
+          }
           await playback.unlock();
           markAudioReady();
+          setHint("Speak now — pause about 1 second when you finish.");
         } catch (err) {
           const code = (err as { code?: string }).code || "error";
           failConnect(code === "denied" || code === "missing" || code === "inuse" || code === "unsupported"
@@ -283,7 +305,8 @@ export function useVoiceTutor(opts: { token: string; scope: VoiceScope | null; g
 
   openSocketRef.current = () => {
     const token = tokenRef.current;
-    if (!token || !opts.scope || endedRef.current) return;
+    if (!token || endedRef.current) return;
+    if (!scopeRef.current && !agentModeRef.current) return;
     sockRef.current?.close();
     sockRef.current = connectVoiceEvents(
       token,
@@ -322,16 +345,23 @@ export function useVoiceTutor(opts: { token: string; scope: VoiceScope | null; g
           shouldGreetOnConnectRef.current = false;
           stripGreetSearchParam();
         }
-        sockRef.current?.send({
+        const scope = scopeRef.current;
+        const payload: Record<string, unknown> = {
           type: "session_start",
           token: tokenRef.current,
           greet: sendGreet ? "1" : "0",
-          board: opts.scope?.board,
-          classLevel: opts.scope?.classLevel,
-          subject: opts.scope?.subject,
-          chapterIds: opts.scope?.chapterIds,
-          chapterNames: opts.scope?.chapterNames,
-        });
+          board: scope?.board || "",
+          classLevel: scope?.classLevel || "",
+          subject: scope?.subject || "",
+          chapterIds: scope?.chapterIds || [],
+          chapterNames: scope?.chapterNames || [],
+        };
+        if (agentModeRef.current) {
+          payload.agentMode = agentModeRef.current;
+          const hist = historyRef.current;
+          if (hist?.length) payload.conversationHistory = hist.slice(-8);
+        }
+        sockRef.current?.send(payload);
       },
       () => {
         if (endedRef.current || userEndedRef.current) return;
@@ -343,7 +373,7 @@ export function useVoiceTutor(opts: { token: string; scope: VoiceScope | null; g
   };
 
   const start = useCallback(async () => {
-    if (!opts.token || !opts.scope) return;
+    if (!canStart) return;
     sockRef.current?.close();
     sockRef.current = null;
     setError("");
@@ -356,26 +386,33 @@ export function useVoiceTutor(opts: { token: string; scope: VoiceScope | null; g
     reconnectAttemptRef.current = 0;
     resumeOnOpenRef.current = false;
     sessionIdRef.current = "";
+    setSessionId("");
     clearTimers();
+    stopCapture();
     try {
+      // Unlock playback + open mic + start capture inside the click gesture so
+      // AudioContext is not stuck suspended (common inside modal dialogs).
       await playback.unlock();
       setHint("Allow microphone access…");
       const stream = await requestMicrophone();
       streamRef.current = stream;
+      await startCapture(stream);
+      markAudioReady();
     } catch (err) {
       const code = (err as { code?: string }).code || "error";
       setError(friendlyError(code));
       setState("ERROR");
+      stopCapture();
       return;
     }
     setState("CONNECTING");
     setHint("Connecting to voice server…");
     connectTimerRef.current = window.setTimeout(() => {
       if (endedRef.current || sessionIdRef.current) return;
-      failConnect("Voice server didn't respond. Run Voice/backend on port 8080 (npm run start:dev).");
+      failConnect("Voice server didn't respond.");
     }, 20000);
     openSocketRef.current();
-  }, [clearTimers, failConnect, opts.scope, opts.token, playback]);
+  }, [canStart, clearTimers, failConnect, markAudioReady, playback, startCapture, stopCapture]);
 
   // Keep Nest's RAG bearer fresh. Do NOT depend on `state` — every turn
   // (LISTENING→THINKING→SPEAKING) used to reset this timer so it never fired
@@ -398,8 +435,22 @@ export function useVoiceTutor(opts: { token: string; scope: VoiceScope | null; g
   }, [playback, sessionId]);
 
   const end = useCallback(() => {
+    // No-op if never started — avoids Ask AI mount cleanup leaving state=ENDED.
+    if (
+      !sessionIdRef.current &&
+      !sockRef.current &&
+      stateRef.current !== "CONNECTING" &&
+      stateRef.current !== "LISTENING" &&
+      stateRef.current !== "SPEAKING" &&
+      stateRef.current !== "THINKING" &&
+      stateRef.current !== "PROCESSING" &&
+      stateRef.current !== "INTERRUPTED"
+    ) {
+      return;
+    }
     userEndedRef.current = true;
-    sockRef.current?.send({ type: "session_end", sessionId });
+    const sid = sessionIdRef.current || sessionId;
+    if (sid) sockRef.current?.send({ type: "session_end", sessionId: sid });
     teardown();
     setState("ENDED");
     setHint("");
@@ -437,6 +488,7 @@ export function useVoiceTutor(opts: { token: string; scope: VoiceScope | null; g
     setMuted,
     level,
     audioReady,
+    sessionId,
     start,
     interrupt,
     end,

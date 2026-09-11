@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { renderTutorText } from "@/lib/render-tutor-text";
 import type { MathLesson } from "@/types/math-lesson";
 import { MathInteractiveVisualization } from "./math-interactive-visualization";
+import { SIGNATURE } from "./design-tokens";
 
 interface MathLessonPanelProps {
   lesson: MathLesson;
@@ -98,19 +99,35 @@ export function MathLessonPanel({ lesson }: MathLessonPanelProps) {
   ].filter((p) => p.text?.trim());
 
   return (
-    <div className="mt-4 space-y-4 w-full min-w-0" data-testid="math-lesson-panel">
-      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-primary">
+    <div
+      className="mt-4 space-y-4 w-full min-w-0 rounded-2xl border bg-[#fafafa] p-4 sm:p-5 shadow-sm"
+      style={{ borderColor: "#e8e8ec" }}
+      data-testid="math-lesson-panel"
+    >
+      <div
+        className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.08em]"
+        style={{ color: SIGNATURE.blue }}
+      >
         <BookOpen className="h-3.5 w-3.5" />
         Interactive Exploration
       </div>
 
       {lesson.visualization ? (
-        <MathInteractiveVisualization spec={lesson.visualization} />
+        <MathInteractiveVisualization
+          spec={lesson.visualization}
+          classLevel={lesson.classLevel}
+        />
       ) : null}
 
       {lesson.guidedExploration && lesson.guidedExploration.length > 0 ? (
-        <section className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-4">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-400 mb-3 flex items-center gap-1.5">
+        <section
+          className="rounded-xl border bg-white p-4"
+          style={{ borderColor: "#e8e8ec" }}
+        >
+          <h4
+            className="text-[11px] font-semibold uppercase tracking-[0.08em] mb-3 flex items-center gap-1.5"
+            style={{ color: "#6b6c76" }}
+          >
             <Compass className="h-3.5 w-3.5" />
             Guided Exploration
           </h4>
@@ -118,9 +135,10 @@ export function MathLessonPanel({ lesson }: MathLessonPanelProps) {
             {lesson.guidedExploration.map((prompt, i) => (
               <li
                 key={i}
-                className="flex gap-2 text-sm text-foreground/90 rounded-lg border border-amber-500/20 bg-background/60 px-3 py-2"
+                className="flex gap-2 text-sm rounded-lg border bg-[#fafafa] px-3 py-2"
+                style={{ borderColor: "#e8e8ec", color: "#1a1a1f" }}
               >
-                <span className="shrink-0 font-semibold text-amber-600 dark:text-amber-400">
+                <span className="shrink-0 font-semibold tabular-nums" style={{ color: SIGNATURE.blue }}>
                   {i + 1}.
                 </span>
                 <span>{prompt}</span>
@@ -131,8 +149,11 @@ export function MathLessonPanel({ lesson }: MathLessonPanelProps) {
       ) : null}
 
       {practiceLevels.length > 0 ? (
-        <section className="rounded-xl border border-border/50 p-4">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3 flex items-center gap-1.5">
+        <section className="rounded-xl border bg-white p-4" style={{ borderColor: "#e8e8ec" }}>
+          <h4
+            className="text-[11px] font-semibold uppercase tracking-[0.08em] mb-3 flex items-center gap-1.5"
+            style={{ color: "#6b6c76" }}
+          >
             <ClipboardList className="h-3.5 w-3.5" />
             Practice Mode
           </h4>
@@ -140,16 +161,24 @@ export function MathLessonPanel({ lesson }: MathLessonPanelProps) {
             {practiceLevels.map((p) => (
               <div
                 key={p.key}
-                className={cn(
-                  "rounded-lg border px-3 py-2.5 text-sm",
-                  p.key === "easy" && "border-green-500/30 bg-green-500/5",
-                  p.key === "medium" && "border-blue-500/30 bg-blue-500/5",
-                  p.key === "hard" && "border-orange-500/30 bg-orange-500/5",
-                  p.key === "challenge" && "border-red-500/30 bg-red-500/5",
-                )}
+                className={cn("rounded-lg border px-3 py-2.5 text-sm bg-[#fafafa]")}
+                style={{
+                  borderColor:
+                    p.key === "easy"
+                      ? `${SIGNATURE.green}44`
+                      : p.key === "medium"
+                        ? `${SIGNATURE.blue}44`
+                        : p.key === "hard"
+                          ? `${SIGNATURE.orange}44`
+                          : `${SIGNATURE.red}44`,
+                }}
               >
-                <p className="text-[11px] font-semibold text-muted-foreground mb-1">{p.label}</p>
-                <div className="text-foreground/90 text-xs leading-relaxed">{renderTutorText(p.text!)}</div>
+                <p className="text-[11px] font-semibold mb-1" style={{ color: "#6b6c76" }}>
+                  {p.label}
+                </p>
+                <div className="text-xs leading-relaxed" style={{ color: "#1a1a1f" }}>
+                  {renderTutorText(p.text!)}
+                </div>
               </div>
             ))}
           </div>
@@ -157,12 +186,18 @@ export function MathLessonPanel({ lesson }: MathLessonPanelProps) {
       ) : null}
 
       {lesson.commonMistakes && lesson.commonMistakes.length > 0 ? (
-        <section className="rounded-xl border border-destructive/20 bg-destructive/5 p-4">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-destructive/80 mb-2 flex items-center gap-1.5">
+        <section
+          className="rounded-xl border bg-white p-4"
+          style={{ borderColor: `${SIGNATURE.red}44` }}
+        >
+          <h4
+            className="text-[11px] font-semibold uppercase tracking-[0.08em] mb-2 flex items-center gap-1.5"
+            style={{ color: SIGNATURE.red }}
+          >
             <AlertTriangle className="h-3.5 w-3.5" />
             Common Mistakes
           </h4>
-          <ul className="space-y-1.5 list-disc pl-4 text-sm text-foreground/85">
+          <ul className="space-y-1.5 list-disc pl-4 text-sm" style={{ color: "#1a1a1f" }}>
             {lesson.commonMistakes.map((m, i) => (
               <li key={i}>{m}</li>
             ))}
@@ -171,8 +206,11 @@ export function MathLessonPanel({ lesson }: MathLessonPanelProps) {
       ) : null}
 
       {lesson.aiHints && lesson.aiHints.length > 0 ? (
-        <section className="rounded-xl border border-border/50 p-4">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
+        <section className="rounded-xl border bg-white p-4" style={{ borderColor: "#e8e8ec" }}>
+          <h4
+            className="text-[11px] font-semibold uppercase tracking-[0.08em] mb-3"
+            style={{ color: "#6b6c76" }}
+          >
             AI Hints (progressive)
           </h4>
           <HintProgressive hints={lesson.aiHints} />
@@ -180,9 +218,15 @@ export function MathLessonPanel({ lesson }: MathLessonPanelProps) {
       ) : null}
 
       {lesson.assessment && lesson.assessment.length > 0 ? (
-        <section className="rounded-xl border border-primary/25 bg-primary/5 p-4">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-primary mb-3">
-            Assessment — 5 Conceptual Questions
+        <section
+          className="rounded-xl border bg-white p-4"
+          style={{ borderColor: `${SIGNATURE.blue}44` }}
+        >
+          <h4
+            className="text-[11px] font-semibold uppercase tracking-[0.08em] mb-3"
+            style={{ color: SIGNATURE.blue }}
+          >
+            Assessment
           </h4>
           <AssessmentBlock questions={lesson.assessment} />
         </section>

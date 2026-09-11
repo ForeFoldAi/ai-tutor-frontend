@@ -49,7 +49,7 @@ describe("applyTranscriptEvent", () => {
     assert.equal(lines.filter((l) => l.role === "user").length, 2);
   });
 
-  it("rejects assistant while user is still pending", () => {
+  it("commits pending user when assistant text arrives with speech", () => {
     let lines = applyTranscriptEvent([], {
       role: "user",
       text: "What is my last question?",
@@ -58,10 +58,55 @@ describe("applyTranscriptEvent", () => {
     });
     lines = applyTranscriptEvent(lines, {
       role: "assistant",
-      text: "Late answer",
+      text: "Your last question was about maps.",
       turnId: 2,
     });
-    assert.equal(lines.some((l) => l.role === "assistant"), false);
+    assert.equal(lines.find((l) => l.role === "user")?.pending, false);
+    assert.equal(lines.find((l) => l.role === "assistant")?.text, "Your last question was about maps.");
+  });
+
+  it("updates assistant text for the same turn as speech streams", () => {
+    let lines = applyTranscriptEvent([], {
+      role: "user",
+      text: "What is photosynthesis?",
+      turnId: 1,
+      pending: false,
+    });
+    lines = applyTranscriptEvent(lines, {
+      role: "assistant",
+      text: "Photosynthesis makes food.",
+      turnId: 1,
+    });
+    lines = applyTranscriptEvent(lines, {
+      role: "assistant",
+      text: "Photosynthesis makes food. Plants use sunlight.",
+      turnId: 1,
+    });
+    assert.equal(lines.filter((l) => l.role === "assistant").length, 1);
+    assert.equal(
+      lines.find((l) => l.role === "assistant")?.text,
+      "Photosynthesis makes food. Plants use sunlight.",
+    );
+  });
+
+  it("does not shrink assistant text when a shorter partial arrives late", () => {
+    let lines = applyTranscriptEvent([], {
+      role: "user",
+      text: "What is a square root?",
+      turnId: 1,
+      pending: false,
+    });
+    lines = applyTranscriptEvent(lines, {
+      role: "assistant",
+      text: "Want an example? Let's try 81.",
+      turnId: 1,
+    });
+    lines = applyTranscriptEvent(lines, {
+      role: "assistant",
+      text: "Want an example? Let's",
+      turnId: 1,
+    });
+    assert.equal(lines.find((l) => l.role === "assistant")?.text, "Want an example? Let's try 81.");
   });
 
   it("removes pending user on turn_cancelled", () => {

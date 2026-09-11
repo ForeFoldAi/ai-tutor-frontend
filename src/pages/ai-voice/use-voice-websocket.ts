@@ -243,7 +243,7 @@ export function useVoiceWebSocket({ s, normalizedVoiceUrl, session, audio }: WSD
             s.voiceMathLessonRef.current = lesson;
             s.setStreamingMathLesson(lesson);
             const clean = String(msg.clean_answer ?? "").trim();
-            if (clean && !s.assistantTextRef.current.trim()) session.syncAssistantText(clean);
+            if (clean) session.syncAssistantText(clean);
           }
           break;
         }
@@ -254,7 +254,7 @@ export function useVoiceWebSocket({ s, normalizedVoiceUrl, session, audio }: WSD
             s.voiceScienceExperimentRef.current = experiment;
             s.setStreamingScienceExperiment(experiment);
             const clean = String(msg.clean_answer ?? "").trim();
-            if (clean && !s.assistantTextRef.current.trim()) session.syncAssistantText(clean);
+            if (clean) session.syncAssistantText(clean);
           }
           break;
         }

@@ -44,4 +44,9 @@ export type VoiceScope = {
   chapterNames: string[];
 };
 
+export type VoiceConversationTurn = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 export type IceServer = { urls: string | string[]; username?: string; credential?: string };

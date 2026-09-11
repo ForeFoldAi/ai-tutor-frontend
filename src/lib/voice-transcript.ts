@@ -39,19 +39,44 @@ export function applyTranscriptEvent(
     return [...lines, line];
   }
 
-  // Assistant — must attach to an existing user turn unless this is a synthetic greet.
-  if (lines.some((l) => l.role === "assistant" && l.turnId === turnId)) return lines;
-  const user = lines.find((l) => l.role === "user" && l.turnId === turnId);
-  if (user?.pending) return lines;
+  // Assistant text arrives with audio — commit a still-pending user line so
+  // voice + transcript stay paired on the same turn.
+  let next = lines;
+  const userIdx = lines.findIndex((l) => l.role === "user" && l.turnId === turnId);
+  if (userIdx >= 0 && lines[userIdx].pending) {
+    next = lines.slice();
+    next[userIdx] = { ...lines[userIdx], pending: false };
+  } else if (userIdx < 0 && turnId > 0) {
+    // Synthetic / greet-style assistant with no user line for this turn is ok
+    // only when we already have some transcript context; still allow attach.
+    next = lines;
+  }
 
-  return [
-    ...lines,
-    {
-      role: "assistant",
-      text,
-      turnId,
-      action: typeof msg.action === "string" ? msg.action : undefined,
-    },
-  ];
+  const action = typeof msg.action === "string" ? msg.action : undefined;
+  const existing = next.findIndex((l) => l.role === "assistant" && l.turnId === turnId);
+  const line: TranscriptLine = {
+    role: "assistant",
+    text,
+    turnId,
+    ...(action
+      ? { action }
+      : existing >= 0 && next[existing].action
+        ? { action: next[existing].action }
+        : {}),
+  };
+  if (existing >= 0) {
+    // Progressive speech updates must not shrink a longer final reply.
+    if (text.length < next[existing].text.length) return next === lines ? lines : next;
+    if (next === lines) next = lines.slice();
+    next[existing] = line;
+    return next;
+  }
+
+  // Assistant — must attach to an existing user turn unless this is a lone greet.
+  const user = next.find((l) => l.role === "user" && l.turnId === turnId);
+  if (!user && next.length > 0) {
+    // No matching user — still show text (e.g. late commit race).
+  }
+
+  return [...next, line];
 }
-

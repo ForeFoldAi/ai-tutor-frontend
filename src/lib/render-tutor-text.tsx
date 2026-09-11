@@ -3,7 +3,10 @@ import katex from "katex";
 import "katex/dist/katex.min.css";
 import { cn, cleanDisplayText } from "@/lib/utils";
 
-const BOLD_RE = /\*\*(.+?)\*\*/g;
+// *** / ** / *word* (letter-only italic so `2*3*4` stays math). Same-length
+// open/close: `***lonely***` must not render as `*lonely*`.
+const EMPH_RE =
+  /(\*{2,3}|_{2,3})([^*_\n]+)\1|(?<![*\w])\*([A-Za-z][^*]{0,80}?)\*(?![*\w])/g;
 const DISPLAY_MATH_RE = /\$\$([\s\S]*?)\$\$/g;
 const INLINE_MATH_RE = /(?<!\$)\$(?!\$)((?:\\.|[^$\\])+)\$(?!\$)/g;
 const LATEX_DISPLAY_RE = /\\\[([\s\S]*?)\\\]/g;
@@ -125,6 +128,11 @@ export function normalizeTutorMathDelimiters(text: string): string {
   let out = text;
   out = out.replace(LATEX_DISPLAY_RE, (_, inner) => `$$${inner.trim()}$$`);
   out = out.replace(LATEX_INLINE_RE, (_, inner) => `$${inner.trim()}$`);
+  // Truncated streams leave a lonely opener — drop it so students don't see `\[`
+  out = out.replace(/\\\[[\t ]*$/gm, "");
+  out = out.replace(/\\\([\t ]*$/gm, "");
+  out = out.replace(/\\\[(?![\s\S]*?\\\])/g, "");
+  out = out.replace(/\\\((?![\s\S]*?\\\))/g, "");
   return wrapBareLatexInText(out);
 }
 
@@ -180,49 +188,63 @@ function renderInlineSegments(text: string, keyPrefix: string): ReactNode[] {
   return parts.length === 0 ? renderBoldSegments(text, keyPrefix) : parts;
 }
 
+function collapseEmphasisRuns(text: string): string {
+  return text.replace(/\*{4,}/g, "**").replace(/_{4,}/g, "__");
+}
+
+function stripStrayEmphasis(text: string): string {
+  return text.replace(/\*{2,}|_{2,}/g, "");
+}
+
 function renderBoldSegments(text: string, keyPrefix: string): ReactNode[] {
+  const src = collapseEmphasisRuns(text);
   const parts: ReactNode[] = [];
   let lastIndex = 0;
   let key = 0;
   let match: RegExpExecArray | null;
 
-  BOLD_RE.lastIndex = 0;
-  while ((match = BOLD_RE.exec(text)) !== null) {
+  EMPH_RE.lastIndex = 0;
+  while ((match = EMPH_RE.exec(src)) !== null) {
     if (match.index > lastIndex) {
-      parts.push(text.slice(lastIndex, match.index));
+      parts.push(stripStrayEmphasis(src.slice(lastIndex, match.index)));
     }
     parts.push(
       <strong key={`${keyPrefix}-b${key++}`} className="font-semibold">
-        {match[1]}
+        {match[2] || match[3]}
       </strong>,
     );
-    lastIndex = BOLD_RE.lastIndex;
+    lastIndex = EMPH_RE.lastIndex;
   }
 
-  if (lastIndex < text.length) {
-    parts.push(text.slice(lastIndex));
+  if (lastIndex < src.length) {
+    parts.push(stripStrayEmphasis(src.slice(lastIndex)));
   }
 
-  return parts.length === 0 ? [text] : parts;
+  return parts.length === 0 ? [stripStrayEmphasis(src)] : parts;
 }
 
-const TOPIC_HEADING_RE = /^\*\*[^*\n]+?\*\*:?\s*$/;
+const TOPIC_HEADING_RE = /^\*{2,3}[^*\n]+?\*{2,3}:?\s*$/;
 const EMPTY_BULLET_RE = /^\s*[•\-*]\s*$/;
 const LEADING_COLON_RE = /^\s*:\s*/;
+const HR_LINE_RE = /^\s*[-*_]{3,}\s*$/;
+const MARKDOWN_UNWRAP_RE = /```markdown\s*\n?([\s\S]*?)```/gi;
+const CLOSED_FENCE_RE = /```[\s\S]*?```/g;
+const UNCLOSED_FENCE_RE = /```[\s\S]*$/;
 
-/** Drop empty bullets and leftover `:` from `**Heading**:` so study notes render cleanly. */
+/** Drop empty bullets, HR lines, and ```math-lesson JSON so study notes render cleanly. */
 export function sanitizeTutorDisplayText(text: string): string {
   if (!text) return text;
   const DISPLAY_BOX_ARTIFACT_RE =
     /[\uFFFD\u25A1\u25A0\u25FB\u25FC\u25FD\u25FE\u2588▌▍▮▯▢▣▤▥▦▧]/g;
 
-  // Remove control/zero-width glyphs (already used elsewhere in the app) and common
-  // "streaming cursor" / "paste box" artifacts that render as squares.
-  const normalized = cleanDisplayText(text).replace(DISPLAY_BOX_ARTIFACT_RE, "");
+  let normalized = cleanDisplayText(text).replace(DISPLAY_BOX_ARTIFACT_RE, "");
+  normalized = normalized.replace(MARKDOWN_UNWRAP_RE, "$1");
+  normalized = normalized.replace(CLOSED_FENCE_RE, "");
+  normalized = normalized.replace(UNCLOSED_FENCE_RE, "");
 
   const out: string[] = [];
   for (const line of normalized.replace(/\r\n/g, "\n").split("\n")) {
-    if (EMPTY_BULLET_RE.test(line) || /^\s*:\s*$/.test(line)) continue;
+    if (EMPTY_BULLET_RE.test(line) || HR_LINE_RE.test(line) || /^\s*:\s*$/.test(line)) continue;
     const cleaned = line.replace(LEADING_COLON_RE, "");
     if (!cleaned.trim()) {
       if (out.length > 0 && out[out.length - 1].trim() !== "") out.push("");
@@ -271,7 +293,7 @@ export function splitTutorProseBlocks(text: string): string[] {
 
 function headingLabel(line: string): string {
   const trimmed = line.trim();
-  const match = trimmed.match(/^\*\*([^*]+)\*\*:?\s*$/);
+  const match = trimmed.match(/^\*{2,3}([^*]+)\*{2,3}:?\s*$/);
   return match ? match[1].trim().replace(/:+$/, "") : trimmed;
 }
 
@@ -447,5 +469,25 @@ if (import.meta.env.DEV) {
     parseBulletLine("• Mamluks (Slave dynasty): first") === "Mamluks (Slave dynasty): first" &&
       parseBulletLine("plain text") === null,
     "parseBulletLine: strip bullet marker for hanging indent",
+  );
+  const vis = (s: string) =>
+    sanitizeTutorDisplayText(s)
+      .replace(/(\*{2,3}|_{2,3})([^*_\n]+)\1/g, "$2")
+      .replace(/(?<![*\w])\*([A-Za-z][^*]{0,80}?)\*(?![*\w])/g, "$1")
+      .replace(/\*{2,}|_{2,}/g, "");
+  console.assert(
+    !vis("he was ***lonely*** and his **mind and body** weren't healthy.").includes("*") &&
+      vis("he was *lonely*") === "he was lonely",
+    "emphasis markers must not leak into visible tutor text",
+  );
+  const fenced = sanitizeTutorDisplayText(
+    "Find the cube root of 64.\n---\n```math-lesson\n{\"conceptName\":\"Squares\"}",
+  );
+  console.assert(
+    !fenced.includes("```") &&
+      !fenced.includes("conceptName") &&
+      !fenced.includes("---") &&
+      fenced.includes("cube root"),
+    "sanitizeTutorDisplayText: strip HR and unclosed math-lesson JSON",
   );
 }

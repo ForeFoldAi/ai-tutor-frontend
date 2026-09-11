@@ -59,6 +59,26 @@ export interface ColorSpec {
   text?: string;
 }
 
+export type PaletteId =
+  | "primary-1to2"
+  | "primary-3to5"
+  | "middle-6to8"
+  | "technical-9to10";
+
+export interface AlgebraStep {
+  id: string;
+  expressionBefore: string;
+  expressionAfter: string;
+  operation?: string;
+  highlightTerms?: string[];
+}
+
+/** @deprecated prefer AlgebraStep / algebraSteps */
+export interface AlgebraStepSpec {
+  expression: string;
+  explanation?: string;
+}
+
 export interface StudentInteractionSpec {
   id: string;
   type: string;
@@ -66,10 +86,57 @@ export interface StudentInteractionSpec {
   expectedObservation?: string;
 }
 
+export interface CameraSpec {
+  position?: [number, number, number] | number[];
+  target?: [number, number, number] | number[];
+  fov?: number;
+}
+
+export interface SceneObject {
+  id: string;
+  type: "box" | "cylinder" | "cone" | "sphere" | "composite";
+  position?: [number, number, number] | number[];
+  rotation?: [number, number, number] | number[];
+  scale?: [number, number, number] | number[];
+  scaleDrivenBy?: string | null;
+  /** Palette token key (primary/secondary/accent), not raw hex */
+  color?: string | null;
+  roughness?: number;
+  metalness?: number;
+  wireframeAccent?: boolean;
+  children?: SceneObject[];
+}
+
+export interface SceneSpec {
+  camera?: CameraSpec;
+  objects: SceneObject[];
+  groundGrid?: boolean;
+  labels?: Array<{ id?: string; text: string; position?: number[]; anchor?: string }>;
+}
+
+export interface FinanceSpec {
+  principal?: number;
+  rate?: number;
+  timeYears?: number;
+  mode?: "compound-interest" | "simple-interest-compare" | "discount" | "tax";
+  compoundingFrequency?: "annually" | "half-yearly" | "quarterly";
+}
+
 export interface VisualizationSpec {
   visualizationType: string;
   title: string;
   description?: string;
+  renderMode?: "2d" | "3d";
+  scene?: SceneSpec | null;
+  paletteId?: PaletteId | null;
+  curveType?: "linear" | "quadratic" | null;
+  coefficients?: number[];
+  algebraSteps?: AlgebraStep[];
+  financeSpec?: FinanceSpec | null;
+  /** @deprecated use curveType */
+  graphMode?: "" | "linear" | "quadratic";
+  /** @deprecated use algebraSteps */
+  steps?: AlgebraStepSpec[];
   interactiveObjects?: InteractiveObjectSpec[];
   draggableObjects?: DraggableObjectSpec[];
   sliders?: SliderSpec[];
@@ -77,6 +144,7 @@ export interface VisualizationSpec {
   animations?: AnimationSpec[];
   liveCalculations?: LiveCalculationSpec[];
   labels?: LabelSpec[];
+  /** Legacy — prefer paletteId */
   colors?: ColorSpec;
   studentInteractions?: StudentInteractionSpec[];
 }
@@ -107,10 +175,10 @@ export interface MathLesson {
 }
 
 const MATH_LESSON_FENCE_RE =
-  /```(?:math-lesson|json:math-lesson|math_lesson)\s*\n([\s\S]*?)```/i;
+  /```\s*(?:math-lesson|json:math-lesson|math_lesson)\s*\n([\s\S]*?)```/i;
 
 const INCOMPLETE_MATH_LESSON_RE =
-  /\n?```(?:math-lesson|json:math-lesson|math_lesson)\s*\n[\s\S]*$/i;
+  /\n?```\s*(?:math-lesson|json:math-lesson|math_lesson)\s*\n[\s\S]*$/i;
 
 const MARKDOWN_FENCE_RE = /```markdown\s*\n([\s\S]*?)```/gi;
 
@@ -119,6 +187,7 @@ export function cleanTutorDisplayContent(content: string): string {
   let text = content ?? "";
   text = text.replace(MARKDOWN_FENCE_RE, "$1");
   text = text.replace(INCOMPLETE_MATH_LESSON_RE, "");
+  text = text.replace(/```[\s\S]*$/, "");
   return text.replace(/\n{3,}/g, "\n\n").trim();
 }
 

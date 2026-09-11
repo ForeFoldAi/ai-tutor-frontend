@@ -9,6 +9,19 @@ import type { VisualizationSpec } from "@/types/math-lesson";
 import { defaultSliderValues } from "./formula-utils";
 import { ELEMENTARY_RENDERERS } from "./elementary-visualizations";
 import { CalcGrid, SliderPanel, type TopicVizProps } from "./topic-viz-shared";
+import { MATH_TOKENS } from "./math-tokens";
+import { ControlPoint } from "./control-point";
+import { SIGNATURE, resolvePalette } from "./design-tokens";
+import { StepScrubber, VizStage } from "./viz-stage";
+import { useAnswerFeedback } from "./use-answer-feedback";
+import { motion } from "framer-motion";
+import {
+  AlgebraStepperViz,
+  CompoundInterestViz,
+  HeightsDistancesViz,
+  withOptional3D,
+} from "./extended-visualizations";
+
 
 const TILE = 28;
 
@@ -179,26 +192,97 @@ export function AlgebraTilesViz({ spec, values, onChange, onReset }: TopicVizPro
 }
 
 /** x²+bx+c factor rectangle */
-export function FactorRectangleViz({ spec, values, onChange }: TopicVizProps) {
+export function FactorRectangleViz({ spec, values, onChange, palette, classLevel }: TopicVizProps) {
   const w = values.width ?? 3;
   const h = values.height ?? 4;
   const correct = w === 3 && h === 4;
   const scale = 18;
+  const p = palette ?? resolvePalette({ paletteId: spec.paletteId, classLevel, colors: spec.colors });
+  const { feedback, flash } = useAnswerFeedback();
+
   return (
     <div className="space-y-4">
-      <svg viewBox="0 0 220 160" className="w-full max-w-md mx-auto">
-        <rect x={30} y={30} width={w * scale} height={h * scale} fill="#3B82F622" stroke="#3B82F6" strokeWidth={2} />
-        <text x={30 + (w * scale) / 2} y={22} textAnchor="middle" className="fill-foreground text-[10px]">x + {w}</text>
-        <text x={18} y={30 + (h * scale) / 2} textAnchor="middle" className="fill-foreground text-[10px]" transform={`rotate(-90 18 ${30 + (h * scale) / 2})`}>x + {h}</text>
-        <text x={30 + w * scale + 8} y={30 + h * scale / 2} className="fill-muted-foreground text-[10px]">Area ≈ x² + {w + h}x + {w * h}</text>
-      </svg>
+      <motion.div
+        animate={
+          feedback === "correct"
+            ? { scale: [1, 1.04, 1] }
+            : feedback === "incorrect"
+              ? { x: [0, -6, 6, -6, 6, 0] }
+              : { scale: 1, x: 0 }
+        }
+        transition={{ duration: 0.28 }}
+      >
+        <VizStage palette={p} viewBox="0 0 220 160" heightClass="h-40" hint="Adjust width & height until the area matches x² + 7x + 12">
+          <rect
+            x={30}
+            y={30}
+            width={w * scale}
+            height={h * scale}
+            fill={`${p.primary}22`}
+            stroke={feedback === "correct" ? SIGNATURE.green : feedback === "incorrect" ? SIGNATURE.red : p.primary}
+            strokeWidth={2.5}
+            rx={4}
+          />
+          <text x={30 + (w * scale) / 2} y={22} textAnchor="middle" fill={p.text} fontSize={10}>
+            x + {w}
+          </text>
+          <text
+            x={18}
+            y={30 + (h * scale) / 2}
+            textAnchor="middle"
+            fill={p.text}
+            fontSize={10}
+            transform={`rotate(-90 18 ${30 + (h * scale) / 2})`}
+          >
+            x + {h}
+          </text>
+          <ControlPoint
+            cx={30 + w * scale}
+            cy={30 + h * scale}
+            active
+            feedback={feedback}
+            onPointerDown={(e) => {
+              e.currentTarget.setPointerCapture(e.pointerId);
+              const svg = (e.target as Element).closest("svg");
+              if (!svg) return;
+              const move = (ev: PointerEvent) => {
+                const r = svg.getBoundingClientRect();
+                const nx = Math.round(Math.min(12, Math.max(1, ((ev.clientX - r.left) / r.width) * 220 - 30) / scale));
+                const ny = Math.round(Math.min(12, Math.max(1, ((ev.clientY - r.top) / r.height) * 160 - 30) / scale));
+                onChange("width", nx);
+                onChange("height", ny);
+              };
+              const up = () => {
+                window.removeEventListener("pointermove", move);
+                window.removeEventListener("pointerup", up);
+              };
+              window.addEventListener("pointermove", move);
+              window.addEventListener("pointerup", up);
+            }}
+          />
+        </VizStage>
+      </motion.div>
+      <div className="flex flex-wrap gap-2 justify-center">
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => flash(correct ? "correct" : "incorrect")}
+          style={{ background: p.primary }}
+        >
+          Check factors
+        </Button>
+      </div>
       {correct ? (
-        <p className="text-xs text-center text-emerald-600 font-medium">✓ (x+3)(x+4) = x² + 7x + 12</p>
+        <p className="text-xs text-center font-medium" style={{ color: SIGNATURE.green }}>
+          ✓ (x+3)(x+4) = x² + 7x + 12
+        </p>
       ) : (
-        <p className="text-xs text-center text-muted-foreground">Find factors: product = 12, sum = 7</p>
+        <p className="text-xs text-center" style={{ color: p.muted }}>
+          Find factors: product = 12, sum = 7 · drag the orange corner
+        </p>
       )}
-      <SliderPanel spec={spec} values={values} onChange={onChange} />
-      <CalcGrid spec={spec} values={values} />
+      <SliderPanel spec={spec} values={values} onChange={onChange} palette={p} />
+      <CalcGrid spec={spec} values={values} palette={p} />
     </div>
   );
 }
@@ -260,26 +344,30 @@ export function GeometryBasicsViz({ spec }: TopicVizProps) {
             ) : null}
           </>
         ) : null}
-        <line x1={A.x} y1={A.y} x2={B.x} y2={B.y} stroke="#3B82F6" strokeWidth={3} />
+        <line x1={A.x} y1={A.y} x2={B.x} y2={B.y} stroke={SIGNATURE.blue} strokeWidth={3} />
         {([
           ["A", A] as const,
           ["B", B] as const,
-        ]).map(([id, p]) => (
+        ]).map(([id, pt]) => (
           <g key={id}>
-            <circle
-              cx={p.x}
-              cy={p.y}
-              r={8}
-              fill={id === "A" ? "#3B82F6" : "#10B981"}
-              className="cursor-grab"
-              onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); dragging.current = id; }}
+            <ControlPoint
+              cx={pt.x}
+              cy={pt.y}
+              active={dragging.current === id}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                e.currentTarget.setPointerCapture(e.pointerId);
+                dragging.current = id;
+              }}
             />
-            <text x={p.x + 10} y={p.y - 8} className="fill-foreground text-[10px]">{id}</text>
+            <text x={pt.x + 12} y={pt.y - 8} fill="#1a1a1f" fontSize={10} fontWeight={600}>
+              {id}
+            </text>
           </g>
         ))}
       </svg>
-      <p className="text-xs text-muted-foreground">
-        {mode === "segment" && "Segment AB — two endpoints, finite length."}
+      <p className="text-xs" style={{ color: "#6b6c76" }}>
+        {mode === "segment" && "Segment AB — two endpoints, finite length. Drag orange handles."}
         {mode === "ray" && "Ray — starts at A, passes through B, extends infinitely."}
         {mode === "line" && "Line — extends infinitely in both directions."}
       </p>
@@ -288,27 +376,105 @@ export function GeometryBasicsViz({ spec }: TopicVizProps) {
 }
 
 /** Draggable rays angle explorer */
-export function AngleExplorerViz({ spec, values, onChange }: TopicVizProps) {
+export function AngleExplorerViz({ spec, values, onChange, palette, classLevel }: TopicVizProps) {
   const r1 = values.ray1 ?? 0;
   const r2 = values.ray2 ?? 45;
   let angle = Math.abs(r2 - r1) % 360;
   if (angle > 180) angle = 360 - angle;
   const type =
-    angle === 0 ? "Zero" : angle < 90 ? "Acute" : angle === 90 ? "Right" : angle < 180 ? "Obtuse" : angle === 180 ? "Straight" : "Reflex";
+    angle === 0
+      ? "Zero"
+      : angle < 90
+        ? "Acute"
+        : angle === 90
+          ? "Right"
+          : angle < 180
+            ? "Obtuse"
+            : angle === 180
+              ? "Straight"
+              : "Reflex";
   const cx = 110;
   const cy = 110;
+  const p = palette ?? resolvePalette({ paletteId: spec.paletteId, classLevel, colors: spec.colors });
   const rad = (deg: number) => ((deg - 90) * Math.PI) / 180;
-  const arm = (deg: number) => ({ x: cx + 80 * Math.cos(rad(deg)), y: cy + 80 * Math.sin(rad(deg)) });
+  const arm = (deg: number, len = 80) => ({
+    x: cx + len * Math.cos(rad(deg)),
+    y: cy + len * Math.sin(rad(deg)),
+  });
+  const a1 = arm(r1);
+  const a2 = arm(r2);
+  const [drag, setDrag] = useState<"ray1" | "ray2" | null>(null);
+
+  const setFromPointer = (id: "ray1" | "ray2", clientX: number, clientY: number, rect: DOMRect) => {
+    const x = ((clientX - rect.left) / rect.width) * 220 - cx;
+    const y = ((clientY - rect.top) / rect.height) * 220 - cy;
+    let deg = (Math.atan2(y, x) * 180) / Math.PI + 90;
+    if (deg < 0) deg += 360;
+    onChange(id, Math.round(deg) % 360);
+  };
+
+  const sweep = (r2 - r1 + 360) % 360;
+  const large = sweep > 180 ? 1 : 0;
 
   return (
     <div className="space-y-4">
-      <svg viewBox="0 0 220 220" className="w-52 h-52 mx-auto">
-        <circle cx={cx} cy={cy} r={80} fill="none" stroke="#E2E8F0" />
-        <line x1={cx} y1={cy} x2={arm(r1).x} y2={arm(r1).y} stroke="#3B82F6" strokeWidth={3} />
-        <line x1={cx} y1={cy} x2={arm(r2).x} y2={arm(r2).y} stroke="#F59E0B" strokeWidth={3} />
-        <text x={cx} y={24} textAnchor="middle" className="fill-foreground text-xs font-semibold">{angle}° — {type}</text>
-      </svg>
-      <SliderPanel spec={spec} values={values} onChange={onChange} />
+      <VizStage
+        palette={p}
+        viewBox="0 0 220 220"
+        heightClass="h-52"
+        hint="Drag the orange handles to change each ray"
+      >
+        <circle cx={cx} cy={cy} r={80} fill="none" stroke={p.gridLine} />
+        <path
+          d={`M ${a1.x} ${a1.y} A 80 80 0 ${large} 1 ${a2.x} ${a2.y}`}
+          fill={`${p.primary}18`}
+          stroke="none"
+        />
+        <line x1={cx} y1={cy} x2={a1.x} y2={a1.y} stroke={SIGNATURE.blue} strokeWidth={3} strokeLinecap="round" />
+        <line x1={cx} y1={cy} x2={a2.x} y2={a2.y} stroke={SIGNATURE.green} strokeWidth={3} strokeLinecap="round" />
+        <text x={cx} y={24} textAnchor="middle" fill={p.text} fontSize={12} fontWeight={600}>
+          {angle}° — {type}
+        </text>
+        <ControlPoint
+          cx={a1.x}
+          cy={a1.y}
+          active={drag === "ray1"}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            e.currentTarget.setPointerCapture(e.pointerId);
+            setDrag("ray1");
+            const svg = (e.target as Element).closest("svg")!;
+            const move = (ev: PointerEvent) => setFromPointer("ray1", ev.clientX, ev.clientY, svg.getBoundingClientRect());
+            const up = () => {
+              setDrag(null);
+              window.removeEventListener("pointermove", move);
+              window.removeEventListener("pointerup", up);
+            };
+            window.addEventListener("pointermove", move);
+            window.addEventListener("pointerup", up);
+          }}
+        />
+        <ControlPoint
+          cx={a2.x}
+          cy={a2.y}
+          active={drag === "ray2"}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            e.currentTarget.setPointerCapture(e.pointerId);
+            setDrag("ray2");
+            const svg = (e.target as Element).closest("svg")!;
+            const move = (ev: PointerEvent) => setFromPointer("ray2", ev.clientX, ev.clientY, svg.getBoundingClientRect());
+            const up = () => {
+              setDrag(null);
+              window.removeEventListener("pointermove", move);
+              window.removeEventListener("pointerup", up);
+            };
+            window.addEventListener("pointermove", move);
+            window.addEventListener("pointerup", up);
+          }}
+        />
+      </VizStage>
+      <SliderPanel spec={spec} values={values} onChange={onChange} palette={p} />
     </div>
   );
 }
@@ -350,28 +516,137 @@ export function ParallelTransversalViz({ spec, values, onChange }: TopicVizProps
   );
 }
 
-/** y = mx + c */
-export function LinearGraphViz({ spec, values, onChange }: TopicVizProps) {
+/** y = mx + c, or quadratic sub-mode y = ax² + bx + c */
+export function LinearGraphViz({ spec, values, onChange, palette }: TopicVizProps) {
+  const coeffs = spec.coefficients ?? [];
+  const quadratic =
+    spec.curveType === "quadratic" ||
+    spec.graphMode === "quadratic" ||
+    (spec.visualizationType ?? "").toLowerCase().includes("quadratic") ||
+    (values.a !== undefined && values.m === undefined);
   const m = values.m ?? 1;
-  const c = values.c ?? 0;
+  const cLin = values.c ?? (coeffs[2] ?? 0);
+  const a = values.a ?? coeffs[0] ?? 1;
+  const b = values.b ?? coeffs[1] ?? 0;
+  const c = quadratic ? (values.c ?? coeffs[2] ?? 0) : cLin;
   const W = 280;
   const H = 200;
+  const p = palette ?? MATH_TOKENS;
+  const primary = "primary" in p ? (p as { primary: string }).primary : MATH_TOKENS.primary;
+  const grid = "gridLine" in p ? (p as { gridLine: string }).gridLine : MATH_TOKENS.grid;
+  const secondary = "secondary" in p ? (p as { secondary: string }).secondary : MATH_TOKENS.secondary;
+  const accent = "accent" in p ? (p as { accent: string }).accent : MATH_TOKENS.accent;
+  const fillPos = `${secondary}44`;
+  const fillNeg = `${accent}33`;
+
+  const disc = b * b - 4 * a * c;
+  const roots: number[] = [];
+  if (quadratic && Math.abs(a) > 1e-9) {
+    if (disc > 1e-9) {
+      roots.push((-b - Math.sqrt(disc)) / (2 * a), (-b + Math.sqrt(disc)) / (2 * a));
+    } else if (Math.abs(disc) <= 1e-9) {
+      roots.push(-b / (2 * a));
+    }
+  }
+  const vertexX = quadratic && Math.abs(a) > 1e-9 ? -b / (2 * a) : 0;
+  const vertexY = quadratic ? a * vertexX * vertexX + b * vertexX + c : 0;
+
+  const toPx = (x: number) => ((x + 5) / 10) * W;
+  const toPy = (y: number) => H / 2 - y * 12;
+
   const pts: string[] = [];
+  const areaAbove: string[] = [];
+  const areaBelow: string[] = [];
   for (let px = 0; px <= W; px += 2) {
     const x = (px / W) * 10 - 5;
-    const y = m * x + c;
-    const sy = H / 2 - y * 12;
-    if (sy >= 0 && sy <= H) pts.push(`${px},${sy}`);
+    const y = quadratic ? a * x * x + b * x + c : m * x + c;
+    const sy = toPy(y);
+    if (sy >= -20 && sy <= H + 20) pts.push(`${px},${sy}`);
+    if (quadratic) {
+      if (y >= 0) {
+        areaAbove.push(`${px},${Math.min(H / 2, Math.max(0, sy))}`);
+      } else {
+        areaBelow.push(`${px},${Math.max(H / 2, Math.min(H, sy))}`);
+      }
+    }
   }
+
+  const label = quadratic ? `y = ${a}x² + ${b}x + ${c}` : `y = ${m}x + ${c}`;
+  const discState = !quadratic ? "" : disc > 1e-9 ? "Two real roots" : Math.abs(disc) <= 1e-9 ? "One real root" : "No real roots";
+  const pal = resolvePalette({
+    paletteId: spec.paletteId,
+    colors: spec.colors,
+  });
+  const bg = "background" in (palette ?? {}) ? (palette as { background?: string }).background ?? pal.background : pal.background;
+  const text = "text" in (palette ?? {}) ? (palette as { text?: string }).text ?? pal.text : pal.text;
+  const muted = "muted" in (palette ?? {}) ? (palette as { muted?: string }).muted ?? pal.muted : pal.muted;
+
   return (
     <div className="space-y-3">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-md h-48 rounded-xl border border-border/50">
-        <line x1={0} y1={H / 2} x2={W} y2={H / 2} stroke="#CBD5E1" />
-        <line x1={W / 2} y1={0} x2={W / 2} y2={H} stroke="#CBD5E1" />
-        <polyline points={pts.join(" ")} fill="none" stroke="#3B82F6" strokeWidth={2.5} />
-        <text x={8} y={16} className="fill-foreground text-[10px]">y = {m}x + {c}</text>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full max-w-md h-48 rounded-xl border touch-none"
+        style={{ borderColor: grid, background: bg, boxShadow: "inset 0 1px 2px rgba(26,26,31,0.04)" }}
+      >
+        {quadratic && areaAbove.length > 1 ? (
+          <polyline
+            points={`${areaAbove[0]?.split(",")[0] ?? 0},${H / 2} ${areaAbove.join(" ")} ${areaAbove[areaAbove.length - 1]?.split(",")[0] ?? W},${H / 2}`}
+            fill={fillPos}
+            stroke="none"
+          />
+        ) : null}
+        {quadratic && areaBelow.length > 1 ? (
+          <polyline
+            points={`${areaBelow[0]?.split(",")[0] ?? 0},${H / 2} ${areaBelow.join(" ")} ${areaBelow[areaBelow.length - 1]?.split(",")[0] ?? W},${H / 2}`}
+            fill={fillNeg}
+            stroke="none"
+          />
+        ) : null}
+        <line x1={0} y1={H / 2} x2={W} y2={H / 2} stroke={grid} />
+        <line x1={W / 2} y1={0} x2={W / 2} y2={H} stroke={grid} />
+        <polyline points={pts.join(" ")} fill="none" stroke={primary} strokeWidth={2.5} strokeLinecap="round" />
+        {roots.map((rx, i) => (
+          <ControlPoint key={i} cx={toPx(rx)} cy={H / 2} r={5} />
+        ))}
+        {quadratic ? (
+          <ControlPoint cx={toPx(vertexX)} cy={toPy(vertexY)} r={4} />
+        ) : (
+          <ControlPoint
+            cx={toPx(0)}
+            cy={toPy(c)}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              const svg = (e.target as Element).closest("svg")!;
+              const move = (ev: PointerEvent) => {
+                const r = svg.getBoundingClientRect();
+                const py = ((ev.clientY - r.top) / r.height) * H;
+                const y = (H / 2 - py) / 12;
+                onChange("c", Math.round(y * 2) / 2);
+              };
+              const up = () => {
+                window.removeEventListener("pointermove", move);
+                window.removeEventListener("pointerup", up);
+              };
+              window.addEventListener("pointermove", move);
+              window.addEventListener("pointerup", up);
+            }}
+          />
+        )}
+        <text x={8} y={16} fill={text} fontSize={10} fontFamily="ui-monospace, monospace">
+          {label}
+        </text>
+        {discState ? (
+          <text x={8} y={H - 8} fill={muted} fontSize={9}>
+            Δ = {Math.round(disc * 100) / 100} · {discState}
+          </text>
+        ) : (
+          <text x={8} y={H - 8} fill={muted} fontSize={9}>
+            Drag the orange intercept · use sliders for slope
+          </text>
+        )}
       </svg>
-      <SliderPanel spec={spec} values={values} onChange={onChange} />
+      <SliderPanel spec={spec} values={values} onChange={onChange} palette={palette} />
+      {quadratic ? <CalcGrid spec={spec} values={values} palette={palette} /> : null}
     </div>
   );
 }
@@ -421,9 +696,9 @@ export function LineIntersectionViz({ spec, values, onChange }: TopicVizProps) {
 /** Triangle with draggable vertices */
 export function TriangleExplorerViz({ spec }: TopicVizProps) {
   const defs = spec.draggableObjects ?? [
-    { id: "A", label: "A", initialX: 80, initialY: 40, color: "#3B82F6" },
-    { id: "B", label: "B", initialX: 30, initialY: 130, color: "#10B981" },
-    { id: "C", label: "C", initialX: 180, initialY: 130, color: "#F59E0B" },
+    { id: "A", label: "A", initialX: 80, initialY: 40 },
+    { id: "B", label: "B", initialX: 30, initialY: 130 },
+    { id: "C", label: "C", initialX: 180, initialY: 130 },
   ];
   const [pts, setPts] = useState(() =>
     Object.fromEntries(defs.map((d) => [d.id, { x: d.initialX ?? 80, y: d.initialY ?? 80 }])),
@@ -440,6 +715,7 @@ export function TriangleExplorerViz({ spec }: TopicVizProps) {
       <svg
         viewBox="0 0 220 160"
         className="w-full h-44 rounded-xl border touch-none"
+        style={{ borderColor: "#e8e8ec", background: "#fafafa" }}
         onPointerMove={(e) => {
           if (!drag.current) return;
           const r = e.currentTarget.getBoundingClientRect();
@@ -451,23 +727,32 @@ export function TriangleExplorerViz({ spec }: TopicVizProps) {
             },
           }));
         }}
-        onPointerUp={() => { drag.current = null; }}
+        onPointerUp={() => {
+          drag.current = null;
+        }}
       >
-        <polygon points={`${A.x},${A.y} ${B.x},${B.y} ${C.x},${C.y}`} fill="#3B82F622" stroke="#3B82F6" strokeWidth={2} />
+        <polygon
+          points={`${A.x},${A.y} ${B.x},${B.y} ${C.x},${C.y}`}
+          fill={`${SIGNATURE.blue}22`}
+          stroke={SIGNATURE.blue}
+          strokeWidth={2}
+        />
         {([["A", A], ["B", B], ["C", C]] as const).map(([id, p]) => (
-          <circle
+          <ControlPoint
             key={id}
             cx={p.x}
             cy={p.y}
-            r={8}
-            fill={id === "A" ? "#3B82F6" : id === "B" ? "#10B981" : "#F59E0B"}
-            className="cursor-grab"
-            onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); drag.current = id; }}
+            active={drag.current === id}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              e.currentTarget.setPointerCapture(e.pointerId);
+              drag.current = id;
+            }}
           />
         ))}
       </svg>
-      <p className="text-xs text-center text-muted-foreground">
-        AB = {dist(A, B)} · BC = {dist(B, C)} · CA = {dist(C, A)} (relative units)
+      <p className="text-xs text-center" style={{ color: "#6b6c76" }}>
+        AB = {dist(A, B)} · BC = {dist(B, C)} · CA = {dist(C, A)} · drag orange handles
       </p>
     </div>
   );
@@ -627,22 +912,75 @@ export function MensurationCylinderViz({ spec, values, onChange }: TopicVizProps
   );
 }
 
-/** Rectangle + triangle areas */
-export function AreaResizerViz({ spec, values, onChange }: TopicVizProps) {
+/** Rectangle + triangle areas — drag corners to resize */
+export function AreaResizerViz({ spec, values, onChange, palette, classLevel }: TopicVizProps) {
   const w = values.width ?? 6;
   const h = values.height ?? 4;
   const base = values.base ?? 8;
   const th = values.triHeight ?? 5;
+  const p = palette ?? resolvePalette({ paletteId: spec.paletteId, classLevel, colors: spec.colors });
+  const rw = w * 12;
+  const rh = h * 12;
+
   return (
     <div className="space-y-4">
-      <svg viewBox="0 0 260 140" className="w-full max-w-md mx-auto">
-        <rect x={20} y={20} width={w * 12} height={h * 12} fill="#3B82F633" stroke="#3B82F6" />
-        <text x={20 + w * 6} y={16} textAnchor="middle" className="fill-foreground text-[9px]">Rectangle</text>
-        <polygon points={`${160},${120} ${160 + base * 8},${120} ${160 + base * 4},${120 - th * 12}`} fill="#10B98133" stroke="#10B981" />
-        <text x={160 + base * 4} y={135} textAnchor="middle" className="fill-foreground text-[9px]">Triangle</text>
-      </svg>
-      <SliderPanel spec={spec} values={values} onChange={onChange} />
-      <CalcGrid spec={spec} values={values} />
+      <VizStage palette={p} viewBox="0 0 260 140" heightClass="h-36" hint="Drag orange corners · sliders stay in sync">
+        <rect x={20} y={20} width={rw} height={rh} fill={`${SIGNATURE.blue}22`} stroke={SIGNATURE.blue} strokeWidth={2} rx={2} />
+        <text x={20 + rw / 2} y={14} textAnchor="middle" fill={p.text} fontSize={9}>
+          Rectangle {w}×{h}
+        </text>
+        <ControlPoint
+          cx={20 + rw}
+          cy={20 + rh}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            const svg = (e.target as Element).closest("svg")!;
+            const move = (ev: PointerEvent) => {
+              const r = svg.getBoundingClientRect();
+              onChange("width", Math.round(Math.min(12, Math.max(1, (((ev.clientX - r.left) / r.width) * 260 - 20) / 12))));
+              onChange("height", Math.round(Math.min(10, Math.max(1, (((ev.clientY - r.top) / r.height) * 140 - 20) / 12))));
+            };
+            const up = () => {
+              window.removeEventListener("pointermove", move);
+              window.removeEventListener("pointerup", up);
+            };
+            window.addEventListener("pointermove", move);
+            window.addEventListener("pointerup", up);
+          }}
+        />
+        <polygon
+          points={`${160},${120} ${160 + base * 8},${120} ${160 + base * 4},${120 - th * 12}`}
+          fill={`${SIGNATURE.green}33`}
+          stroke={SIGNATURE.green}
+          strokeWidth={2}
+        />
+        <text x={160 + base * 4} y={135} textAnchor="middle" fill={p.text} fontSize={9}>
+          Triangle
+        </text>
+        <ControlPoint
+          cx={160 + base * 4}
+          cy={120 - th * 12}
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            const svg = (e.target as Element).closest("svg")!;
+            const move = (ev: PointerEvent) => {
+              const r = svg.getBoundingClientRect();
+              const ny = ((ev.clientY - r.top) / r.height) * 140;
+              onChange("triHeight", Math.round(Math.min(10, Math.max(1, (120 - ny) / 12))));
+              const nx = ((ev.clientX - r.left) / r.width) * 260;
+              onChange("base", Math.round(Math.min(12, Math.max(2, Math.abs(nx - 160) / 4))));
+            };
+            const up = () => {
+              window.removeEventListener("pointermove", move);
+              window.removeEventListener("pointerup", up);
+            };
+            window.addEventListener("pointermove", move);
+            window.addEventListener("pointerup", up);
+          }}
+        />
+      </VizStage>
+      <SliderPanel spec={spec} values={values} onChange={onChange} palette={p} />
+      <CalcGrid spec={spec} values={values} palette={p} />
     </div>
   );
 }
@@ -774,31 +1112,58 @@ export function CircleTangentViz({ spec, values, onChange }: TopicVizProps) {
   );
 }
 
-/** Compass & ruler guided construction */
-export function GeometryConstructionViz({ onReset }: TopicVizProps) {
+/** Compass & ruler guided construction with scrubbable step history */
+export function GeometryConstructionViz({ onReset, palette, classLevel, spec }: TopicVizProps) {
   const [step, setStep] = useState(0);
+  const p = palette ?? resolvePalette({ paletteId: spec.paletteId, classLevel, colors: spec.colors });
   const A = { x: 60, y: 100 };
   const B = { x: 180, y: 100 };
   const mid = { x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 };
+  const labels = [
+    "Draw segment AB",
+    "Arc centred at A",
+    "Arc centred at B",
+    "Perpendicular bisector",
+  ];
+
   return (
     <div className="space-y-3">
-      <svg viewBox="0 0 240 160" className="w-full h-40 border rounded-xl">
-        <line x1={A.x} y1={A.y} x2={B.x} y2={B.y} stroke="#64748B" strokeWidth={2} />
-        <circle cx={A.x} cy={A.y} r={4} fill="#3B82F6" />
-        <circle cx={B.x} cy={B.y} r={4} fill="#10B981" />
-        {step >= 1 ? <circle cx={A.x} cy={A.y} r={50} fill="none" stroke="#3B82F6" strokeDasharray="4 3" /> : null}
-        {step >= 2 ? <circle cx={B.x} cy={B.y} r={50} fill="none" stroke="#10B981" strokeDasharray="4 3" /> : null}
-        {step >= 3 ? <line x1={mid.x} y1={20} x2={mid.x} y2={140} stroke="#F59E0B" strokeWidth={2} /> : null}
-      </svg>
-      <p className="text-xs text-center text-muted-foreground">
-        {step === 0 && "Segment AB — ready to construct perpendicular bisector"}
-        {step === 1 && "Step 1: Arc centred at A"}
-        {step === 2 && "Step 2: Arc centred at B"}
-        {step >= 3 && "Step 3: Perpendicular bisector through midpoint"}
-      </p>
+      <StepScrubber step={step} total={4} labels={labels} onChange={setStep} palette={p} />
+      <VizStage palette={p} viewBox="0 0 240 160" heightClass="h-40">
+        <line x1={A.x} y1={A.y} x2={B.x} y2={B.y} stroke={p.axisLine} strokeWidth={2.5} />
+        <circle cx={A.x} cy={A.y} r={4} fill={SIGNATURE.blue} />
+        <circle cx={B.x} cy={B.y} r={4} fill={SIGNATURE.green} />
+        <text x={A.x} y={A.y + 16} textAnchor="middle" fill={p.muted} fontSize={10}>
+          A
+        </text>
+        <text x={B.x} y={B.y + 16} textAnchor="middle" fill={p.muted} fontSize={10}>
+          B
+        </text>
+        {step >= 1 ? (
+          <circle cx={A.x} cy={A.y} r={50} fill="none" stroke={SIGNATURE.blue} strokeDasharray="4 3" strokeWidth={1.5} />
+        ) : null}
+        {step >= 2 ? (
+          <circle cx={B.x} cy={B.y} r={50} fill="none" stroke={SIGNATURE.green} strokeDasharray="4 3" strokeWidth={1.5} />
+        ) : null}
+        {step >= 3 ? (
+          <>
+            <line x1={mid.x} y1={20} x2={mid.x} y2={140} stroke={SIGNATURE.orange} strokeWidth={2.5} />
+            <ControlPoint cx={mid.x} cy={mid.y} r={5} />
+          </>
+        ) : null}
+      </VizStage>
       <div className="flex gap-2 justify-center flex-wrap">
-        <Button type="button" size="sm" onClick={() => setStep((s) => Math.min(s + 1, 3))}>Next step</Button>
-        <Button type="button" size="sm" variant="outline" onClick={() => { setStep(0); onReset(); }}>Reset</Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            setStep(0);
+            onReset();
+          }}
+        >
+          Reset
+        </Button>
       </div>
     </div>
   );
@@ -812,21 +1177,33 @@ const TOPIC_RENDERERS: Record<string, React.ComponentType<TopicVizProps>> = {
   "angle-explorer": AngleExplorerViz,
   "parallel-transversal": ParallelTransversalViz,
   "linear-graph": LinearGraphViz,
+  "quadratic-grapher": LinearGraphViz,
   "line-intersection": LineIntersectionViz,
   "triangle-explorer": TriangleExplorerViz,
   "triangle-angle-sum": TriangleAngleSumViz,
   "quadrilateral-morph": QuadrilateralMorphViz,
   "statistics-lab": StatisticsLabViz,
-  "mensuration-cube": MensurationCubeViz,
-  "mensuration-cylinder": MensurationCylinderViz,
+  "mensuration-cube": withOptional3D(MensurationCubeViz, "cube"),
+  "mensuration-cylinder": withOptional3D(MensurationCylinderViz, "cylinder"),
   "area-resizer": AreaResizerViz,
   "probability-dice": ProbabilityDiceViz,
   "probability-coin": ProbabilityCoinViz,
   "circle-tangent": CircleTangentViz,
   "geometry-construction": GeometryConstructionViz,
+  "algebra-stepper": AlgebraStepperViz,
+  "compound-interest-visual": CompoundInterestViz,
+  "heights-distances-scene": HeightsDistancesViz,
 };
 
-export function TopicVisualization({ spec }: { spec: VisualizationSpec }) {
+export function TopicVisualization({
+  spec,
+  classLevel,
+  palette,
+}: {
+  spec: VisualizationSpec;
+  classLevel?: string;
+  palette?: import("./design-tokens").Palette;
+}) {
   const sliders = spec.sliders ?? [];
   const initial = useMemo(() => defaultSliderValues(sliders), [sliders]);
   const [values, setValues] = useState(initial);
@@ -835,9 +1212,21 @@ export function TopicVisualization({ spec }: { spec: VisualizationSpec }) {
   }, []);
   const onReset = useCallback(() => setValues(defaultSliderValues(sliders)), [sliders]);
 
+  // When catalog marks 3d with scene, parent MathInteractiveVisualization handles SceneRenderer.
+  // Topic renderers stay on SVG path unless heights/mensuration use withOptional3D.
+
   const Renderer = TOPIC_RENDERERS[spec.visualizationType];
   if (Renderer) {
-    return <Renderer spec={spec} values={values} onChange={onChange} onReset={onReset} />;
+    return (
+      <Renderer
+        spec={spec}
+        values={values}
+        onChange={onChange}
+        onReset={onReset}
+        classLevel={classLevel}
+        palette={palette}
+      />
+    );
   }
   return null;
 }

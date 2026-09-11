@@ -318,7 +318,7 @@ export function useVoiceTurn(deps: TurnDeps) {
                 s.voiceMathLessonRef.current = parsed.lesson;
                 s.setStreamingMathLesson(parsed.lesson);
                 const clean = String(parsed.clean_answer ?? "").trim();
-                if (clean && !displayText.trim()) {
+                if (clean) {
                   displayText = clean;
                   session.syncAssistantText(clean);
                 }
@@ -335,7 +335,7 @@ export function useVoiceTurn(deps: TurnDeps) {
                 s.voiceScienceExperimentRef.current = parsed.experiment;
                 s.setStreamingScienceExperiment(parsed.experiment);
                 const clean = String(parsed.clean_answer ?? "").trim();
-                if (clean && !displayText.trim()) {
+                if (clean) {
                   displayText = clean;
                   session.syncAssistantText(clean);
                 }

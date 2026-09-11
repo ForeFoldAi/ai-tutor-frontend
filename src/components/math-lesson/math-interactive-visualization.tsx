@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { motion } from "framer-motion";
 import type { VisualizationSpec } from "@/types/math-lesson";
 import {
   buildVariableMap,
@@ -13,9 +14,15 @@ import {
   isTopicVisualizationType,
   TopicVisualization,
 } from "./topic-visualizations";
+import { resolvePalette } from "./design-tokens";
+import { SceneRenderer, sceneFromSpec } from "./scene-3d";
+import { SvgPolishDefs } from "./topic-viz-shared";
+import { ControlPoint } from "./control-point";
+import { usePanZoom } from "./use-pan-zoom";
 
 interface VizProps {
   spec: VisualizationSpec;
+  classLevel?: string;
 }
 
 function VizControls({
@@ -25,6 +32,7 @@ function VizControls({
   onReset,
   onAnimate,
   animating = false,
+  palette,
 }: {
   spec: VisualizationSpec;
   values: Record<string, number>;
@@ -32,19 +40,21 @@ function VizControls({
   onReset: () => void;
   onAnimate?: () => void;
   animating?: boolean;
+  palette?: import("./design-tokens").Palette;
 }) {
   const sliders = spec.sliders ?? [];
   const buttons = spec.buttons ?? [];
   const calcs = spec.liveCalculations ?? [];
   const vars = buildVariableMap(values, {});
+  const p = palette ?? resolvePalette({ paletteId: spec.paletteId, colors: spec.colors });
 
   return (
     <div className="space-y-4">
       {sliders.map((s) => (
         <div key={s.id} className="space-y-1.5">
-          <div className="flex justify-between text-xs font-medium text-foreground/90">
+          <div className="flex justify-between text-xs font-medium" style={{ color: p.text }}>
             <span>{s.label}</span>
-            <span className="text-primary tabular-nums">
+            <span className="tabular-nums font-semibold" style={{ color: p.primary }}>
               {values[s.id] ?? s.default ?? 0}
               {s.unit ? ` ${s.unit}` : ""}
             </span>
@@ -64,10 +74,20 @@ function VizControls({
           {calcs.map((c) => (
             <div
               key={c.id}
-              className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2"
+              className="rounded-xl border px-3.5 py-2.5"
+              style={{
+                borderColor: p.gridLine,
+                background: p.surface,
+                boxShadow: "0 1px 2px rgba(26,26,31,0.06)",
+              }}
             >
-              <p className="text-[11px] text-muted-foreground">{c.label}</p>
-              <p className="text-sm font-semibold text-foreground tabular-nums">
+              <p className="text-[11px] font-medium mb-0.5" style={{ color: p.muted }}>
+                {c.label}
+              </p>
+              <p
+                className="text-base font-semibold tabular-nums tracking-tight"
+                style={{ color: p.text, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}
+              >
                 {formatCalcValue(evaluateFormula(c.formula, vars), c.unit)}
               </p>
             </div>
@@ -113,11 +133,12 @@ function FractionsViz({
   const den = Math.max(1, values.denominator ?? values.den ?? 4);
   const slices = Math.min(den, 12);
   const filled = Math.round((num / den) * slices);
-  const colors = spec.colors ?? {};
+  const colors = resolvePalette({ paletteId: spec.paletteId, colors: spec.colors });
 
   return (
     <div className="flex flex-col items-center gap-4">
-      <svg viewBox="0 0 200 200" className="w-48 h-48 drop-shadow-sm">
+      <svg viewBox="0 0 200 200" className="w-48 h-48">
+        <SvgPolishDefs palette={colors} prefix="frac" />
         {Array.from({ length: slices }).map((_, i) => {
           const start = (i / slices) * 2 * Math.PI - Math.PI / 2;
           const end = ((i + 1) / slices) * 2 * Math.PI - Math.PI / 2;
@@ -128,17 +149,20 @@ function FractionsViz({
           const large = end - start > Math.PI ? 1 : 0;
           const filledSlice = i < filled;
           return (
-            <path
+            <motion.path
               key={i}
               d={`M 100 100 L ${x1} ${y1} A 80 80 0 ${large} 1 ${x2} ${y2} Z`}
-              fill={filledSlice ? colors.primary ?? "#3B82F6" : colors.background ?? "#E2E8F0"}
-              stroke={colors.text ?? "#64748B"}
+              fill={filledSlice ? "url(#frac-fill)" : colors.surface}
+              stroke={colors.text}
               strokeWidth={1.5}
-              className="transition-colors duration-300"
+              filter={filledSlice ? "url(#frac-shadow)" : undefined}
+              initial={{ opacity: 0.4 }}
+              animate={{ opacity: 1 }}
+              transition={{ type: "spring", stiffness: 220, damping: 22, delay: i * 0.03 }}
             />
           );
         })}
-        <circle cx="100" cy="100" r="80" fill="none" stroke={colors.text ?? "#64748B"} strokeWidth={2} />
+        <circle cx="100" cy="100" r="80" fill="none" stroke={colors.muted} strokeWidth={2} />
       </svg>
       <p className="text-sm font-medium text-foreground">
         {num}/{den} = {Math.round((num / den) * 100)}%
@@ -304,7 +328,7 @@ function CircleViz({
   onChange: (id: string, v: number) => void;
   onReset: () => void;
 }) {
-  const colors = spec.colors ?? {};
+  const colors = resolvePalette({ paletteId: spec.paletteId, colors: spec.colors });
   const vars = buildVariableMap(values, {});
 
   const turnQuarters =
@@ -433,14 +457,15 @@ function CircleViz({
 }
 
 function CoordinateViz({ spec }: VizProps) {
-  const draggables = spec.draggableObjects ?? [{ id: "p1", label: "Point A", initialX: 2, initialY: 3, color: "#3B82F6" }];
+  const draggables = spec.draggableObjects ?? [{ id: "p1", label: "Point A", initialX: 2, initialY: 3 }];
   const [points, setPoints] = useState(() =>
     Object.fromEntries(
       draggables.map((d) => [d.id, { x: d.initialX ?? 0, y: d.initialY ?? 0 }]),
     ),
   );
   const [dragging, setDragging] = useState<string | null>(null);
-  const colors = spec.colors ?? {};
+  const colors = resolvePalette({ paletteId: spec.paletteId, colors: spec.colors });
+  const panZoom = usePanZoom();
 
   const toSvg = (x: number, y: number) => ({
     sx: 30 + (x + 5) * 20,
@@ -449,63 +474,71 @@ function CoordinateViz({ spec }: VizProps) {
 
   const handlePointer = useCallback(
     (id: string, clientX: number, clientY: number, rect: DOMRect) => {
-      const sx = clientX - rect.left;
-      const sy = clientY - rect.top;
+      const sx = (clientX - rect.left - panZoom.view.x) / panZoom.view.scale;
+      const sy = (clientY - rect.top - panZoom.view.y) / panZoom.view.scale;
       const x = Math.round((sx - 30) / 20 - 5);
       const y = Math.round((170 - sy) / 20 - 5);
-      setPoints((prev) => ({ ...prev, [id]: { x: Math.max(-5, Math.min(5, x)), y: Math.max(-5, Math.min(5, y)) } }));
+      setPoints((prev) => ({
+        ...prev,
+        [id]: { x: Math.max(-5, Math.min(5, x)), y: Math.max(-5, Math.min(5, y)) },
+      }));
     },
-    [],
+    [panZoom.view],
   );
 
   return (
     <div className="flex flex-col items-center gap-3">
       <svg
         viewBox="0 0 240 200"
-        className="w-full max-w-md h-52 rounded-xl border border-border/50 bg-background touch-none"
+        className="w-full max-w-md h-52 rounded-xl border touch-none"
+        style={{ borderColor: colors.gridLine, background: colors.background }}
+        {...panZoom.handlers}
         onPointerMove={(e) => {
+          panZoom.handlers.onPointerMove(e);
           if (!dragging) return;
           const rect = e.currentTarget.getBoundingClientRect();
           handlePointer(dragging, e.clientX, e.clientY, rect);
         }}
-        onPointerUp={() => setDragging(null)}
-        onPointerLeave={() => setDragging(null)}
+        onPointerUp={() => {
+          panZoom.handlers.onPointerUp();
+          setDragging(null);
+        }}
       >
-        {/* grid */}
-        {Array.from({ length: 11 }).map((_, i) => (
-          <g key={i}>
-            <line x1={30 + i * 20} y1="10" x2={30 + i * 20} y2="190" stroke="#E2E8F0" strokeWidth={1} />
-            <line x1="10" y1={10 + i * 18} x2="230" y2={10 + i * 18} stroke="#E2E8F0" strokeWidth={1} />
-          </g>
-        ))}
-        <line x1="30" y1="100" x2="230" y2="100" stroke={colors.text ?? "#64748B"} strokeWidth={1.5} />
-        <line x1="130" y1="10" x2="130" y2="190" stroke={colors.text ?? "#64748B"} strokeWidth={1.5} />
-        {draggables.map((d) => {
-          const p = points[d.id] ?? { x: 0, y: 0 };
-          const { sx, sy } = toSvg(p.x, p.y);
-          return (
-            <g key={d.id}>
-              <circle
-                cx={sx}
-                cy={sy}
-                r={8}
-                fill={d.color ?? colors.primary ?? "#3B82F6"}
-                stroke="white"
-                strokeWidth={2}
-                className="cursor-grab active:cursor-grabbing"
-                onPointerDown={(e) => {
-                  e.currentTarget.setPointerCapture(e.pointerId);
-                  setDragging(d.id);
-                }}
-              />
-              <text x={sx + 12} y={sy - 8} className="fill-foreground text-[10px]">
-                ({p.x}, {p.y})
-              </text>
+        <g transform={panZoom.transform}>
+          {Array.from({ length: 11 }).map((_, i) => (
+            <g key={i}>
+              <line x1={30 + i * 20} y1="10" x2={30 + i * 20} y2="190" stroke={colors.gridLine} strokeWidth={1} />
+              <line x1="10" y1={10 + i * 18} x2="230" y2={10 + i * 18} stroke={colors.gridLine} strokeWidth={1} />
             </g>
-          );
-        })}
+          ))}
+          <line x1="30" y1="100" x2="230" y2="100" stroke={colors.axisLine} strokeWidth={1.5} />
+          <line x1="130" y1="10" x2="130" y2="190" stroke={colors.axisLine} strokeWidth={1.5} />
+          {draggables.map((d) => {
+            const p = points[d.id] ?? { x: 0, y: 0 };
+            const { sx, sy } = toSvg(p.x, p.y);
+            return (
+              <g key={d.id}>
+                <ControlPoint
+                  cx={sx}
+                  cy={sy}
+                  active={dragging === d.id}
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    setDragging(d.id);
+                  }}
+                />
+                <text x={sx + 12} y={sy - 8} fill={colors.text} fontSize={10} fontFamily="ui-monospace, monospace">
+                  ({p.x}, {p.y})
+                </text>
+              </g>
+            );
+          })}
+        </g>
       </svg>
-      <p className="text-xs text-muted-foreground">Drag the points to explore coordinates</p>
+      <p className="text-xs" style={{ color: colors.muted }}>
+        Drag points · scroll to zoom · drag background to pan
+      </p>
     </div>
   );
 }
@@ -514,7 +547,7 @@ function ProbabilityViz({ spec }: VizProps) {
   const [dice, setDice] = useState(1);
   const [coin, setCoin] = useState<"heads" | "tails">("heads");
   const [spinAngle, setSpinAngle] = useState(0);
-  const colors = spec.colors ?? {};
+  const colors = resolvePalette({ paletteId: spec.paletteId, colors: spec.colors });
   const vType = spec.visualizationType.toLowerCase();
 
   const rollDice = () => setDice(Math.floor(Math.random() * 6) + 1);
@@ -620,7 +653,7 @@ function GraphViz({
         <line x1="0" y1={height / 2} x2={width} y2={height / 2} stroke="#CBD5E1" />
         <line x1={width / 2} y1="0" x2={width / 2} y2={height} stroke="#CBD5E1" />
         {points.length > 1 ? (
-          <polyline points={points.join(" ")} fill="none" stroke={spec.colors?.primary ?? "#3B82F6"} strokeWidth={2.5} />
+          <polyline points={points.join(" ")} fill="none" stroke={resolvePalette({ paletteId: spec.paletteId, colors: spec.colors }).primary} strokeWidth={2.5} />
         ) : null}
       </svg>
       <VizControls spec={spec} values={values} onChange={onChange} onReset={onReset} />
@@ -650,7 +683,7 @@ function GenericViz({ spec, values, onChange, onReset }: VizProps & {
                 cx={p.x * 2.5}
                 cy={p.y * 1.2}
                 r={10}
-                fill={d.color ?? spec.colors?.primary ?? "#3B82F6"}
+                fill={d.color || resolvePalette({ paletteId: spec.paletteId, colors: spec.colors }).primary}
                 className="cursor-grab"
                 onPointerDown={() => {}}
               />
@@ -670,10 +703,15 @@ function GenericViz({ spec, values, onChange, onReset }: VizProps & {
   );
 }
 
-export function MathInteractiveVisualization({ spec }: VizProps) {
+export function MathInteractiveVisualization({ spec, classLevel }: VizProps) {
   const sliders = spec.sliders ?? [];
   const initial = useMemo(() => defaultSliderValues(sliders), [sliders]);
   const [values, setValues] = useState(initial);
+  const [sceneAutoRotate, setSceneAutoRotate] = useState(false);
+  const palette = useMemo(
+    () => resolvePalette({ paletteId: spec.paletteId, classLevel, colors: spec.colors }),
+    [spec.paletteId, spec.colors, classLevel],
+  );
 
   const onChange = useCallback((id: string, v: number) => {
     setValues((prev) => ({ ...prev, [id]: v }));
@@ -684,20 +722,57 @@ export function MathInteractiveVisualization({ spec }: VizProps) {
   }, [sliders]);
 
   const vType = (spec.visualizationType ?? "generic").toLowerCase();
+  const scene = sceneFromSpec(spec);
+
+  const shell = (body: React.ReactNode) => (
+    <div
+      className="rounded-2xl border p-4 sm:p-5 space-y-1 shadow-sm"
+      style={{
+        borderColor: palette.gridLine,
+        background: palette.surface,
+        color: palette.text,
+        fontSize: palette.bodyPx,
+      }}
+      data-viz-type={vType}
+    >
+      <h4 className="text-sm font-semibold mb-1 tracking-tight" style={{ color: palette.text }}>
+        {spec.title}
+      </h4>
+      {spec.description ? (
+        <p className="text-xs mb-4 leading-relaxed" style={{ color: palette.muted }}>
+          {spec.description}
+        </p>
+      ) : null}
+      {body}
+    </div>
+  );
+
+  if (scene) {
+    return shell(
+      <div className="space-y-4">
+        <SceneRenderer
+          scene={scene}
+          palette={palette}
+          sliderValues={values}
+          visualizationType={vType}
+          autoRotate={sceneAutoRotate}
+          onChange={onChange}
+        />
+        <VizControls
+          spec={spec}
+          values={values}
+          onChange={onChange}
+          onReset={onReset}
+          palette={palette}
+          onAnimate={() => setSceneAutoRotate((v) => !v)}
+          animating={sceneAutoRotate}
+        />
+      </div>,
+    );
+  }
 
   if (isTopicVisualizationType(vType)) {
-    return (
-      <div
-        className="rounded-xl border border-primary/25 bg-gradient-to-b from-primary/5 to-background p-4 sm:p-5"
-        data-viz-type={vType}
-      >
-        <h4 className="text-sm font-semibold text-foreground mb-1">{spec.title}</h4>
-        {spec.description ? (
-          <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{spec.description}</p>
-        ) : null}
-        <TopicVisualization spec={spec} />
-      </div>
-    );
+    return shell(<TopicVisualization spec={spec} classLevel={classLevel} palette={palette} />);
   }
 
   let body: React.ReactNode;
@@ -716,16 +791,5 @@ export function MathInteractiveVisualization({ spec }: VizProps) {
     body = <GenericViz {...shared} />;
   }
 
-  return (
-    <div
-      className="rounded-xl border border-primary/25 bg-gradient-to-b from-primary/5 to-background p-4 sm:p-5"
-      data-viz-type={vType}
-    >
-      <h4 className="text-sm font-semibold text-foreground mb-1">{spec.title}</h4>
-      {spec.description ? (
-        <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{spec.description}</p>
-      ) : null}
-      {body}
-    </div>
-  );
+  return shell(body);
 }

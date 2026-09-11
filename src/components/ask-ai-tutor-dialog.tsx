@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,9 +17,13 @@ import {
   Lightbulb,
   Loader2,
   MessageCircle,
+  Mic,
+  MicOff,
   PencilLine,
+  PhoneOff,
   Send,
   Sparkles,
+  Square,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/lib/auth-store";
@@ -32,6 +36,9 @@ import {
 } from "@/api/student-assistant";
 import { studentFriendlyError } from "@/lib/student-messages";
 import { AssistantMessageContent } from "@/components/assistant-message-content";
+import { useVoiceTutor } from "@/hooks/voice/useVoiceTutor";
+import { AiWaveform } from "@/components/voice/ai-waveform";
+import type { VoiceState } from "@/types/voice";
 
 interface Message {
   id: string;
@@ -92,6 +99,31 @@ function sanitizeAssistantText(s: string) {
   return s.replace(/\*/g, "");
 }
 
+function voiceStatusLabel(state: VoiceState): string {
+  switch (state) {
+    case "CONNECTING":
+      return "Connecting…";
+    case "LISTENING":
+    case "INTERRUPTED":
+      return "Listening…";
+    case "PROCESSING":
+      return "Hearing you…";
+    case "THINKING":
+      return "Thinking…";
+    case "SPEAKING":
+      return "Speaking…";
+    case "ERROR":
+      return "Voice error";
+    default:
+      return "";
+  }
+}
+
+function isVoiceLive(state: VoiceState, sessionId: string): boolean {
+  if (sessionId) return state !== "ENDED" && state !== "ERROR" && state !== "IDLE";
+  return state === "CONNECTING";
+}
+
 function AskAiTutorChat({
   mode,
   onClose,
@@ -99,7 +131,7 @@ function AskAiTutorChat({
   mode: AskAiTutorMode;
   onClose?: () => void;
 }) {
-  const { user } = useAuthStore();
+  const { user, token } = useAuthStore();
   const [, setLocation] = useLocation();
   const meta = MODE_META[mode];
   const [messages, setMessages] = useState<Message[]>([]);
@@ -111,6 +143,27 @@ function AskAiTutorChat({
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const voiceEndRef = useRef<() => void>(() => undefined);
+
+  const conversationHistory = useMemo(
+    (): ConversationTurn[] =>
+      messages
+        .filter((m) => m.content.trim())
+        .slice(-8)
+        .map((m) => ({ role: m.role, content: m.content })),
+    [messages],
+  );
+
+  const voice = useVoiceTutor({
+    token: token || "",
+    scope: null,
+    agentMode: mode,
+    conversationHistory,
+    greet: false,
+  });
+  voiceEndRef.current = voice.end;
+
+  const voiceLive = isVoiceLive(voice.state, voice.sessionId);
 
   useEffect(() => {
     let cancelled = false;
@@ -143,8 +196,39 @@ function AskAiTutorChat({
   }, [mode]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: streaming ? "auto" : "smooth" });
-  }, [messages, streaming]);
+    return () => {
+      voiceEndRef.current();
+    };
+  }, []);
+
+  // Merge voice transcript lines into the shared message list (including
+  // in-progress assistant text so it appears while the tutor is speaking).
+  useEffect(() => {
+    setMessages((prev) => {
+      const kept = prev.filter((m) => !m.id.startsWith("v-"));
+      const voiceMsgs: Message[] = [];
+      for (const line of voice.transcript) {
+        if (line.pending && line.role !== "user" && line.role !== "assistant") continue;
+        voiceMsgs.push({
+          id: `v-${line.role === "user" ? "u" : "a"}-${line.turnId}`,
+          role: line.role,
+          content:
+            line.role === "assistant" ? sanitizeAssistantText(line.text) : line.text,
+        });
+      }
+      return [...kept, ...voiceMsgs];
+    });
+  }, [voice.transcript]);
+
+  useEffect(() => {
+    if (voice.error) setError(sanitizeAssistantText(voice.error));
+  }, [voice.error]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({
+      behavior: streaming || voiceLive ? "auto" : "smooth",
+    });
+  }, [messages, streaming, voiceLive, voice.state]);
 
   const history = useCallback((): ConversationTurn[] => {
     return messages
@@ -158,10 +242,16 @@ function AskAiTutorChat({
     if (!query || loading || streaming) return;
 
     setError(null);
+    setInput("");
+
+    if (voiceLive && voice.sessionId) {
+      voice.sendText(query);
+      return;
+    }
+
     const userMsg: Message = { id: `u-${Date.now()}`, role: "user", content: query };
     const assistantId = `a-${Date.now()}`;
     setMessages((prev) => [...prev, userMsg, { id: assistantId, role: "assistant", content: "" }]);
-    setInput("");
     setLoading(true);
     setStreaming(true);
 
@@ -191,7 +281,16 @@ function AskAiTutorChat({
     }
   };
 
+  const toggleVoice = () => {
+    if (voiceLive) {
+      voice.end();
+      return;
+    }
+    void voice.start();
+  };
+
   const firstName = user?.fullName?.split(" ")[0] || "Student";
+  const status = voiceStatusLabel(voice.state);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -288,6 +387,45 @@ function AskAiTutorChat({
         }}
         className="shrink-0 border-t bg-background/90 px-4 py-3"
       >
+        {voiceLive ? (
+          <div className="mb-2 flex items-center gap-2 rounded-lg border border-border/60 bg-muted/40 px-2.5 py-1.5">
+            <AiWaveform
+              active={
+                voice.state === "LISTENING" ||
+                voice.state === "SPEAKING" ||
+                voice.state === "PROCESSING"
+              }
+              intensity={voice.state === "SPEAKING" ? 0.55 : Math.max(0.15, voice.level)}
+              variant={voice.state === "SPEAKING" ? "ai" : "student"}
+              className="h-6 w-16 shrink-0"
+            />
+            <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+              {voice.hint || status || "Voice on"}
+            </span>
+            {voice.state === "SPEAKING" ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 shrink-0"
+                onClick={() => voice.interrupt()}
+                title="Interrupt"
+              >
+                <Square className="h-3.5 w-3.5" />
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0 text-destructive"
+              onClick={() => voice.end()}
+              title="End voice"
+            >
+              <PhoneOff className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        ) : null}
         <div className="flex items-end gap-2">
           <Textarea
             ref={inputRef}
@@ -299,11 +437,35 @@ function AskAiTutorChat({
                 void sendMessage(input);
               }
             }}
-            placeholder={meta.placeholder}
+            placeholder={voiceLive ? "Type while talking, or just speak…" : meta.placeholder}
             rows={1}
             className="min-h-[44px] max-h-32 resize-none !border-2 !border-slate-300 bg-white shadow-sm placeholder:text-slate-400 focus-visible:!border-primary dark:!border-slate-500 dark:bg-card"
             disabled={bootLoading || loading}
           />
+          <Button
+            type="button"
+            size="icon"
+            variant="outline"
+            className={cn(
+              "h-11 w-11 shrink-0",
+              voiceLive
+                ? "border-emerald-500/40 text-emerald-700 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/40"
+                : "border-slate-200 text-slate-400 bg-slate-50 opacity-70 dark:border-slate-600 dark:text-slate-500 dark:bg-slate-900/40",
+            )}
+            disabled={bootLoading || !token || voice.state === "CONNECTING"}
+            onClick={toggleVoice}
+            title={voiceLive ? "Mic on — tap to turn off" : "Mic off — tap to talk"}
+            aria-pressed={voiceLive}
+            aria-label={voiceLive ? "Turn microphone off" : "Turn microphone on"}
+          >
+            {voice.state === "CONNECTING" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : voiceLive ? (
+              <Mic className="h-4 w-4" />
+            ) : (
+              <MicOff className="h-4 w-4" />
+            )}
+          </Button>
           <Button
             type="submit"
             size="icon"
@@ -321,6 +483,7 @@ function AskAiTutorChat({
               size="sm"
               className="h-8 gap-1.5 text-xs text-muted-foreground"
               onClick={() => {
+                voice.end();
                 onClose?.();
                 setLocation("/ai-learning-studio");
               }}

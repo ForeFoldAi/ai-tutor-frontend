@@ -243,7 +243,7 @@ function splitSubtopicBlocks(
     return [{ title: "", body: trimmed }];
   }
   // Consume optional trailing `:` so `**Heading**:` does not leave a colon as body.
-  const re = /\*\*([^*]+)\*\*:?/g;
+  const re = /\*{2,3}([^*]+)\*{2,3}:?/g;
   const matches = [...trimmed.matchAll(re)];
   if (matches.length < 2) {
     return [{ title: "", body: trimmed }];
@@ -400,7 +400,8 @@ function TextbookFigureCard({
             src={textbookImageSrc(img.url, token)}
             alt={altText}
             className={cn(
-              "block w-full h-auto max-h-52 object-contain relative z-[1]",
+              "block w-full h-auto object-contain relative z-[1]",
+              count === 1 ? "max-h-96" : "max-h-52",
               !loaded && "opacity-0",
             )}
             loading="eager"

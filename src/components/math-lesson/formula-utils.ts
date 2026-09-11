@@ -18,10 +18,13 @@ export function evaluateFormula(
     .replace(/×/g, "*")
     .replace(/÷/g, "/")
     .replace(/π|pi/gi, String(Math.PI))
-    .replace(/sqrt\s*\(/gi, "Math.sqrt(");
+    .replace(/sqrt\s*\(/gi, "Math.sqrt(")
+    .replace(/\btan\s*\(/gi, "Math.tan(")
+    .replace(/\bsin\s*\(/gi, "Math.sin(")
+    .replace(/\bcos\s*\(/gi, "Math.cos(");
 
   // Allow only safe characters
-  if (!/^[0-9+\-*/().,\sMathsqrtPIe]+$/i.test(expr.replace(/Math\.sqrt/g, ""))) {
+  if (!/^[0-9+\-*/().,\sMathsqrtancPie]+$/i.test(expr.replace(/Math\.(sqrt|tan|sin|cos)/g, ""))) {
     return null;
   }
 
