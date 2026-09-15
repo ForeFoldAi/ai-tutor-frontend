@@ -49,4 +49,23 @@ assert.ok(!math.includes("```"));
 assert.ok(!math.includes("conceptName"));
 assert.ok(!math.includes("---"));
 
+const ATX_HEADING_RE = /^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$/;
+function sanitizeAtx(text: string): string {
+  const out: string[] = [];
+  for (const line of sanitize(text).split("\n")) {
+    const atx = line.match(ATX_HEADING_RE);
+    if (atx) {
+      const label = atx[1].trim();
+      if (label) out.push(`**${label}**`);
+      continue;
+    }
+    out.push(line);
+  }
+  return out.join("\n");
+}
+const atx = sanitizeAtx("### Examples from your textbook:\n• one\n#### Practice with me:");
+assert.ok(!atx.includes("#"));
+assert.ok(atx.includes("**Examples from your textbook:**"));
+assert.ok(atx.includes("**Practice with me:**"));
+
 console.log("render-tutor-text.check: ok");

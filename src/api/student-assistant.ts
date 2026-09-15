@@ -73,8 +73,12 @@ export async function streamStudentAssistantMessage(
     buffer = lines.pop() ?? "";
     for (const line of lines) {
       if (!line.trim()) continue;
-      const evt = JSON.parse(line) as { type: string; content?: string };
-      if (evt.type === "token" && evt.content) handlers.onToken(evt.content);
+      try {
+        const evt = JSON.parse(line) as { type: string; content?: string };
+        if (evt.type === "token" && evt.content) handlers.onToken(evt.content);
+      } catch {
+        // Skip a torn NDJSON line rather than aborting the whole reply.
+      }
     }
   }
 }

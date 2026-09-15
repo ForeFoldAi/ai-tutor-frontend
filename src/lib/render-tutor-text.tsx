@@ -224,6 +224,8 @@ function renderBoldSegments(text: string, keyPrefix: string): ReactNode[] {
 }
 
 const TOPIC_HEADING_RE = /^\*{2,3}[^*\n]+?\*{2,3}:?\s*$/;
+/** ATX headings (`### Title`) — model uses these when `*` is banned in the prompt. */
+const ATX_HEADING_RE = /^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$/;
 const EMPTY_BULLET_RE = /^\s*[•\-*]\s*$/;
 const LEADING_COLON_RE = /^\s*:\s*/;
 const HR_LINE_RE = /^\s*[-*_]{3,}\s*$/;
@@ -245,6 +247,14 @@ export function sanitizeTutorDisplayText(text: string): string {
   const out: string[] = [];
   for (const line of normalized.replace(/\r\n/g, "\n").split("\n")) {
     if (EMPTY_BULLET_RE.test(line) || HR_LINE_RE.test(line) || /^\s*:\s*$/.test(line)) continue;
+    const atx = line.match(ATX_HEADING_RE);
+    if (atx) {
+      const label = atx[1].trim();
+      if (!label) continue;
+      // Reuse **heading** path the prose renderer already understands.
+      out.push(`**${label}**`);
+      continue;
+    }
     const cleaned = line.replace(LEADING_COLON_RE, "");
     if (!cleaned.trim()) {
       if (out.length > 0 && out[out.length - 1].trim() !== "") out.push("");
@@ -489,5 +499,14 @@ if (import.meta.env.DEV) {
       !fenced.includes("---") &&
       fenced.includes("cube root"),
     "sanitizeTutorDisplayText: strip HR and unclosed math-lesson JSON",
+  );
+  const atx = sanitizeTutorDisplayText(
+    "### Examples from your textbook:\n• one\n#### Practice with me:",
+  );
+  console.assert(
+    !atx.includes("#") &&
+      atx.includes("**Examples from your textbook:**") &&
+      atx.includes("**Practice with me:**"),
+    "sanitizeTutorDisplayText: convert ATX headings to **heading**",
   );
 }
