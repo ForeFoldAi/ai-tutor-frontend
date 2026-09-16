@@ -508,7 +508,7 @@ export function AskAiTutorDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="!flex h-[min(88dvh,720px)] w-[calc(100%-1.5rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0 sm:w-full [&>button]:right-3 [&>button]:top-3">
+      <DialogContent className="!flex h-[80dvh] w-[80vw] max-w-[80vw] flex-col gap-0 overflow-hidden p-0 [&>button]:right-3 [&>button]:top-3">
         <DialogHeader className="shrink-0 space-y-0 border-b px-4 py-3 pr-12 text-left">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-brand shadow-sm">
