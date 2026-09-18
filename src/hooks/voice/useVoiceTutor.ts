@@ -236,8 +236,22 @@ export function useVoiceTutor(opts: {
         return;
       }
       if (type === "student_stopped_speaking") {
-        setState("THINKING");
+        // Stay in PROCESSING — Composing/THINKING only when LLM turn actually starts
+        // (ai_started_processing). VAD stop alone is not a question yet.
+        setState("PROCESSING");
         setHint("Processing your speech…");
+        return;
+      }
+      if (type === "ai_stopped_processing") {
+        // Noise / too-short / echo discard — no LLM reply is coming.
+        if (
+          stateRef.current === "THINKING" ||
+          stateRef.current === "PROCESSING"
+        ) {
+          setState("LISTENING");
+          stateRef.current = "LISTENING";
+          setHint("Speak now — pause about 1 second when you finish.");
+        }
         return;
       }
       if (type === "turn_cancelled") {

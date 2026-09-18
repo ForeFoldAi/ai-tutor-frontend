@@ -39,6 +39,11 @@ export const MOTION = {
   dragSettle: { type: "spring" as const, stiffness: 300, damping: 25 },
   correctMs: 250,
   incorrectMs: 300,
+  drawMs: 700,
+  sweepMs: 900,
+  stepPauseMs: 1100,
+  easeOut: { duration: 0.7, ease: [0.22, 1, 0.36, 1] as const },
+  land: { type: "spring" as const, stiffness: 420, damping: 22 },
 };
 
 const LIGHT_BASE = {

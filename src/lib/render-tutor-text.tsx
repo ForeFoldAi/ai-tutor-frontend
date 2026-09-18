@@ -232,6 +232,8 @@ const HR_LINE_RE = /^\s*[-*_]{3,}\s*$/;
 const MARKDOWN_UNWRAP_RE = /```markdown\s*\n?([\s\S]*?)```/gi;
 const CLOSED_FENCE_RE = /```[\s\S]*?```/g;
 const UNCLOSED_FENCE_RE = /```[\s\S]*$/;
+/** Drop emoji / pictographs from tutor prose before paint. */
+const EMOJI_RE = /\p{Extended_Pictographic}|[\uFE0F\u200D]/gu;
 
 /** Drop empty bullets, HR lines, and ```math-lesson JSON so study notes render cleanly. */
 export function sanitizeTutorDisplayText(text: string): string {
@@ -239,7 +241,10 @@ export function sanitizeTutorDisplayText(text: string): string {
   const DISPLAY_BOX_ARTIFACT_RE =
     /[\uFFFD\u25A1\u25A0\u25FB\u25FC\u25FD\u25FE\u2588▌▍▮▯▢▣▤▥▦▧]/g;
 
-  let normalized = cleanDisplayText(text).replace(DISPLAY_BOX_ARTIFACT_RE, "");
+  let normalized = cleanDisplayText(text)
+    .replace(DISPLAY_BOX_ARTIFACT_RE, "")
+    .replace(EMOJI_RE, "")
+    .replace(/[ \t]{2,}/g, " ");
   normalized = normalized.replace(MARKDOWN_UNWRAP_RE, "$1");
   normalized = normalized.replace(CLOSED_FENCE_RE, "");
   normalized = normalized.replace(UNCLOSED_FENCE_RE, "");
@@ -508,5 +513,14 @@ if (import.meta.env.DEV) {
       atx.includes("**Examples from your textbook:**") &&
       atx.includes("**Practice with me:**"),
     "sanitizeTutorDisplayText: convert ATX headings to **heading**",
+  );
+  const noEmoji = sanitizeTutorDisplayText("🌱 Hello 💡 world ✅");
+  console.assert(
+    !noEmoji.includes("🌱") &&
+      !noEmoji.includes("💡") &&
+      !noEmoji.includes("✅") &&
+      noEmoji.includes("Hello") &&
+      noEmoji.includes("world"),
+    "sanitizeTutorDisplayText: strip emojis",
   );
 }

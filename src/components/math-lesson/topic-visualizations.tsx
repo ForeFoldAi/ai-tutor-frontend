@@ -11,8 +11,8 @@ import { ELEMENTARY_RENDERERS } from "./elementary-visualizations";
 import { CalcGrid, SliderPanel, type TopicVizProps } from "./topic-viz-shared";
 import { MATH_TOKENS } from "./math-tokens";
 import { ControlPoint } from "./control-point";
-import { SIGNATURE, resolvePalette } from "./design-tokens";
-import { StepScrubber, VizStage } from "./viz-stage";
+import { SIGNATURE, resolvePalette, MOTION } from "./design-tokens";
+import { StepScrubber, VizNarrative, VizStage } from "./viz-stage";
 import { useAnswerFeedback } from "./use-answer-feedback";
 import { motion } from "framer-motion";
 import {
@@ -1169,6 +1169,295 @@ export function GeometryConstructionViz({ onReset, palette, classLevel, spec }: 
   );
 }
 
+/** Integer legs a≥b≥1 with a²+b²=n (textbook √5 → 2 and 1). */
+function legsForSqrtN(n: number): { a: number; b: number } {
+  const N = Math.max(2, Math.round(n));
+  for (let a = Math.floor(Math.sqrt(N - 1)); a >= 1; a--) {
+    const b2 = N - a * a;
+    const b = Math.round(Math.sqrt(b2));
+    if (b >= 1 && b * b === b2) {
+      return a >= b ? { a, b } : { a: b, b: a };
+    }
+  }
+  // No integer pair (rare for school surds): keep a on the line, b = √(n−a²).
+  const a = Math.max(1, Math.floor(Math.sqrt(N - 1)));
+  const b = Math.sqrt(Math.max(0.25, N - a * a));
+  return { a, b: Math.round(b * 100) / 100 };
+}
+
+/** Compass construction of √n — Cuemath labels: A at 0, B on line, C above B, D = √n; arc C→D. */
+export function SqrtNumberLineViz({ values, onChange, onReset, palette, classLevel, spec }: TopicVizProps) {
+  const [step, setStep] = useState(0);
+  const p = palette ?? resolvePalette({ paletteId: spec.paletteId, classLevel, colors: spec.colors });
+  const n = Math.max(2, Math.round(values.n ?? 5));
+  const { a, b } = legsForSqrtN(n);
+  const hyp = Math.sqrt(n);
+  const approx = Math.round(hyp * 100) / 100;
+
+  useEffect(() => {
+    if (Math.round(values.a ?? 0) !== Math.round(a)) onChange("a", a);
+    if (Math.abs((values.b ?? 0) - b) > 0.02) onChange("b", b);
+  }, [n, a, b, values.a, values.b, onChange]);
+
+  const vbW = 420;
+  const vbH = 280;
+  const padL = 40;
+  const padR = 56;
+  const padT = 28;
+  const padB = 62;
+  const maxX = Math.max(a, hyp, 4) + 0.75;
+  const maxY = Math.max(b, 1.25);
+  const unit = Math.max(
+    12,
+    Math.min((vbW - padL - padR) / maxX, (vbH - padT - padB) / maxY, 56),
+  );
+  // A = origin (0), B = (a,0) on the line, C = (a,b) above B, D = (√n, 0) on the line.
+  const Ax = padL;
+  const Ay = padT + maxY * unit;
+  const Bx = Ax + a * unit;
+  const By = Ay;
+  const Cx = Bx;
+  const Cy = Ay - b * unit;
+  const Dx = Ax + hyp * unit;
+  const Dy = Ay;
+  const lineEnd = Math.min(vbW - 12, Ax + maxX * unit + 24);
+  const tickMax = Math.ceil(maxX);
+  const tickStep = tickMax > 12 ? Math.ceil(tickMax / 8) : tickMax > 8 ? 2 : 1;
+  // Keep D's label from sitting on top of B when √n ≈ a (e.g. √5 ≈ 2.24 next to 2).
+  const dLabelDx = Dx - Bx < 36 ? 18 : 0;
+
+  useEffect(() => {
+    setStep(0);
+  }, [n]);
+
+  const labels = [
+    `Mark A at 0 and B at ${a}`,
+    `Erect perpendicular BC = ${b}`,
+    `Join AC — this length is √${n}`,
+    `Swing an arc from C to D = √${n} on the line`,
+  ];
+  const why = [
+    "A at 0; B on the line at a — base of the right triangle.",
+    `Legs satisfy a² + b² = ${n} (here ${a}² + ${b}² = ${n}).`,
+    "AC is the hypotenuse, so AC = √n by Pythagoras.",
+    "Orange arc C→D (centre A) copies AC onto the number line.",
+  ];
+
+  const draw = prefersReduced()
+    ? { pathLength: 1 }
+    : { pathLength: 1, transition: { duration: MOTION.drawMs / 1000, ease: MOTION.easeOut.ease } };
+
+  const nOnlySpec = {
+    ...spec,
+    sliders: (spec.sliders ?? []).filter((s) => s.id === "n"),
+  };
+
+  return (
+    <div className="space-y-4">
+      <VizNarrative
+        step={step}
+        total={4}
+        labels={labels}
+        why={why}
+        onChange={setStep}
+        palette={p}
+        callout={step >= 3 ? `√${n} ≈ ${approx}` : null}
+      />
+      <p className="text-[12px] text-center tabular-nums" style={{ color: p.muted }}>
+        Legs: AB = {a}, BC = {b} (because {a}² + {b}² = {n})
+      </p>
+      <VizStage
+        palette={p}
+        viewBox={`0 0 ${vbW} ${vbH}`}
+        heightClass="h-64"
+        hint="Orange arc C→D (centre A) copies AC onto the number line."
+      >
+        <motion.line
+          x1={Math.max(12, Ax - 16)}
+          y1={Ay}
+          x2={lineEnd}
+          y2={Ay}
+          stroke={p.axisLine}
+          strokeWidth={2.5}
+          initial={prefersReduced() ? false : { opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.35 }}
+        />
+        {Array.from({ length: Math.floor(tickMax / tickStep) + 1 }).map((_, i) => {
+          const v = i * tickStep;
+          if (v > tickMax) return null;
+          const x = Ax + v * unit;
+          if (x > lineEnd - 4) return null;
+          return (
+            <g key={v}>
+              <line x1={x} y1={Ay - 7} x2={x} y2={Ay + 7} stroke={p.gridLine} strokeWidth={1.5} />
+              <text x={x} y={Ay + 22} textAnchor="middle" fill={p.muted} fontSize={11}>
+                {v}
+              </text>
+            </g>
+          );
+        })}
+        <motion.circle
+          cx={Ax}
+          cy={Ay}
+          r={5}
+          fill={SIGNATURE.blue}
+          initial={prefersReduced() ? false : { scale: 0 }}
+          animate={{ scale: 1 }}
+          transition={MOTION.land}
+        />
+        {/* Point letters above the axis so they don't sit on tick numerals. */}
+        <text x={Ax} y={Ay - 14} textAnchor="middle" fill={p.muted} fontSize={12} fontWeight={600}>
+          A
+        </text>
+        {step >= 0 ? (
+          <>
+            <motion.circle
+              cx={Bx}
+              cy={By}
+              r={5}
+              fill={SIGNATURE.green}
+              initial={prefersReduced() ? false : { scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={MOTION.land}
+            />
+            <text x={Bx} y={By - 14} textAnchor="middle" fill={p.muted} fontSize={12} fontWeight={600}>
+              B
+            </text>
+            <text x={(Ax + Bx) / 2} y={Ay + 36} textAnchor="middle" fill={p.muted} fontSize={11}>
+              {a}
+            </text>
+          </>
+        ) : null}
+        {step >= 1 ? (
+          <>
+            <motion.line
+              x1={Bx}
+              y1={By}
+              x2={Cx}
+              y2={Cy}
+              stroke={SIGNATURE.blue}
+              strokeWidth={2.5}
+              initial={prefersReduced() ? false : { pathLength: 0 }}
+              animate={draw}
+            />
+            <motion.rect
+              x={Bx - 11}
+              y={By - 11}
+              width={11}
+              height={11}
+              fill="none"
+              stroke={p.muted}
+              strokeWidth={1.5}
+              initial={prefersReduced() ? false : { opacity: 0, scale: 0.5 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.25 }}
+            />
+            <motion.circle
+              cx={Cx}
+              cy={Cy}
+              r={5}
+              fill={SIGNATURE.blue}
+              initial={prefersReduced() ? false : { scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{ ...MOTION.land, delay: 0.2 }}
+            />
+            <text x={Cx + 14} y={Cy + 4} fill={p.muted} fontSize={12} fontWeight={600}>
+              C
+            </text>
+            <text x={Cx + 10} y={(By + Cy) / 2} fill={p.muted} fontSize={11}>
+              {b}
+            </text>
+          </>
+        ) : null}
+        {step >= 2 ? (
+          <>
+            <motion.line
+              x1={Ax}
+              y1={Ay}
+              x2={Cx}
+              y2={Cy}
+              stroke={SIGNATURE.blue}
+              strokeWidth={3}
+              initial={prefersReduced() ? false : { pathLength: 0 }}
+              animate={draw}
+            />
+            <text
+              x={(Ax + Cx) / 2 - 6}
+              y={(Ay + Cy) / 2 - 8}
+              fill={SIGNATURE.blue}
+              fontSize={13}
+              fontWeight={600}
+            >
+              √{n}
+            </text>
+          </>
+        ) : null}
+        {step >= 3 ? (
+          <>
+            {/* Orange arc C → D, centre A (copies AC onto the number line). */}
+            <motion.path
+              d={`M ${Cx} ${Cy} A ${hyp * unit} ${hyp * unit} 0 0 1 ${Dx} ${Dy}`}
+              fill="none"
+              stroke={SIGNATURE.orange}
+              strokeWidth={2.5}
+              initial={prefersReduced() ? false : { pathLength: 0 }}
+              animate={{ pathLength: 1 }}
+              transition={{ duration: MOTION.sweepMs / 1000, ease: MOTION.easeOut.ease }}
+            />
+            <motion.circle
+              cx={Dx}
+              cy={Dy}
+              r={7}
+              fill={SIGNATURE.orange}
+              initial={prefersReduced() ? false : { scale: 0 }}
+              animate={{ scale: [0, 1.25, 1] }}
+              transition={{ duration: 0.45, delay: (MOTION.sweepMs / 1000) * 0.7 }}
+            />
+            <text
+              x={Dx + dLabelDx}
+              y={Dy + 40}
+              textAnchor="middle"
+              fill={p.text}
+              fontSize={13}
+              fontWeight={600}
+            >
+              D = √{n}
+            </text>
+          </>
+        ) : null}
+      </VizStage>
+      <SliderPanel
+        spec={nOnlySpec.sliders?.length ? nOnlySpec : spec}
+        values={values}
+        onChange={(id, v) => {
+          setStep(0);
+          onChange(id, v);
+        }}
+        palette={p}
+      />
+      <div className="flex gap-2 justify-center">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            setStep(0);
+            onReset();
+          }}
+        >
+          Reset
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function prefersReduced(): boolean {
+  if (typeof window === "undefined" || !window.matchMedia) return false;
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
 const TOPIC_RENDERERS: Record<string, React.ComponentType<TopicVizProps>> = {
   ...ELEMENTARY_RENDERERS,
   "algebra-tiles": AlgebraTilesViz,
@@ -1190,6 +1479,7 @@ const TOPIC_RENDERERS: Record<string, React.ComponentType<TopicVizProps>> = {
   "probability-coin": ProbabilityCoinViz,
   "circle-tangent": CircleTangentViz,
   "geometry-construction": GeometryConstructionViz,
+  "sqrt-number-line": SqrtNumberLineViz,
   "algebra-stepper": AlgebraStepperViz,
   "compound-interest-visual": CompoundInterestViz,
   "heights-distances-scene": HeightsDistancesViz,

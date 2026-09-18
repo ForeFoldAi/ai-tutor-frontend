@@ -13,6 +13,7 @@ export type VoiceEventType =
   | "student_started_speaking"
   | "student_stopped_speaking"
   | "ai_started_processing"
+  | "ai_stopped_processing"
   | "ai_started_speaking"
   | "ai_stopped_speaking"
   | "ai_interrupted"

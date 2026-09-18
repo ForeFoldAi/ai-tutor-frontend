@@ -331,15 +331,20 @@ function CircleViz({
   const colors = resolvePalette({ paletteId: spec.paletteId, colors: spec.colors });
   const vars = buildVariableMap(values, {});
 
+  const hasTheta =
+    values.theta != null ||
+    (spec.sliders ?? []).some((s) => /theta|sector/i.test(s.id + s.label));
+
   const turnQuarters =
     values.turnSlider ??
     values.turn ??
     values.quarterTurns ??
     values.quarters ??
     null;
-  const isTurnMode = turnQuarters !== null || (spec.sliders ?? []).some((s) =>
-    /turn|quarter|angle/i.test(s.id + s.label),
-  );
+  const isTurnMode =
+    !hasTheta &&
+    (turnQuarters !== null ||
+      (spec.sliders ?? []).some((s) => /turn|quarter/i.test(s.id + s.label)));
 
   if (isTurnMode) {
     const sliderId = spec.sliders?.[0]?.id ?? "turnSlider";
@@ -358,6 +363,18 @@ function CircleViz({
         vars={vars}
         sliderId={sliderId}
         quarters={quarters}
+      />
+    );
+  }
+
+  if (hasTheta) {
+    return (
+      <SectorCircleViz
+        spec={spec}
+        values={values}
+        onChange={onChange}
+        onReset={onReset}
+        colors={colors}
       />
     );
   }
@@ -451,6 +468,94 @@ function CircleViz({
       <p className="text-xs text-center text-muted-foreground -mt-2">
         Drag the orange handle or use the slider below
       </p>
+      <VizControls spec={spec} values={values} onChange={onChange} onReset={onReset} />
+    </div>
+  );
+}
+
+function SectorCircleViz({
+  spec,
+  values,
+  onChange,
+  onReset,
+  colors,
+}: VizProps & {
+  values: Record<string, number>;
+  onChange: (id: string, v: number) => void;
+  onReset: () => void;
+  colors: ReturnType<typeof resolvePalette>;
+}) {
+  const mathR = values.r ?? values.radius ?? 5;
+  const theta = Math.max(0, Math.min(360, values.theta ?? 90));
+  const displayR = Math.min(90, 18 + mathR * 7);
+  const cx = 120;
+  const cy = 120;
+  const rad = (theta * Math.PI) / 180;
+  const x2 = cx + displayR * Math.cos(-Math.PI / 2 + rad);
+  const y2 = cy + displayR * Math.sin(-Math.PI / 2 + rad);
+  const large = theta > 180 ? 1 : 0;
+  const area = (theta / 360) * Math.PI * mathR * mathR;
+  const areaStr = Math.round(area * 100) / 100;
+  const sectorPath = `M ${cx} ${cy} L ${cx} ${cy - displayR} A ${displayR} ${displayR} 0 ${large} 1 ${x2} ${y2} Z`;
+  const reduced =
+    typeof window !== "undefined" &&
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+  return (
+    <div className="flex flex-col items-center gap-3 w-full max-w-md mx-auto">
+      <p className="text-[13px] text-center font-medium" style={{ color: colors.text }}>
+        Sector area = (θ ÷ 360) × πr²
+      </p>
+      <svg viewBox="0 0 240 250" className="w-full max-w-sm h-64">
+        <circle
+          cx={cx}
+          cy={cy}
+          r={displayR}
+          fill="none"
+          stroke={colors.gridLine}
+          strokeWidth={2}
+        />
+        <motion.path
+          d={sectorPath}
+          fill={`${colors.primary ?? "#2d70b3"}44`}
+          stroke={colors.primary ?? "#2d70b3"}
+          strokeWidth={2.5}
+          initial={reduced ? false : { pathLength: 0, opacity: 0.4 }}
+          animate={{ pathLength: 1, opacity: 1 }}
+          transition={{ duration: 0.85, ease: [0.22, 1, 0.36, 1] }}
+          key={`${mathR}-${theta}`}
+        />
+        <line
+          x1={cx}
+          y1={cy}
+          x2={cx}
+          y2={cy - displayR}
+          stroke={colors.accent ?? "#e08a2b"}
+          strokeWidth={2}
+        />
+        <line
+          x1={cx}
+          y1={cy}
+          x2={x2}
+          y2={y2}
+          stroke={colors.accent ?? "#e08a2b"}
+          strokeWidth={2}
+        />
+        <circle cx={cx} cy={cy} r={4} fill={colors.primary ?? "#2d70b3"} />
+        <text x={cx} y={cy + displayR + 28} textAnchor="middle" fill={colors.muted} fontSize={12}>
+          r = {mathR} · θ = {Math.round(theta)}°
+        </text>
+      </svg>
+      <span
+        className="inline-flex rounded-full border px-3 py-1.5 text-xs font-semibold tabular-nums"
+        style={{
+          borderColor: `${colors.accent ?? "#e08a2b"}66`,
+          background: `${colors.accent ?? "#e08a2b"}14`,
+          color: colors.accent ?? "#e08a2b",
+        }}
+      >
+        Area ≈ {areaStr}
+      </span>
       <VizControls spec={spec} values={values} onChange={onChange} onReset={onReset} />
     </div>
   );
