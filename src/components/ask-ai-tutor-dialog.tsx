@@ -282,8 +282,10 @@ function AskAiTutorChat({
   };
 
   const toggleVoice = () => {
+    // Mic = mute/unmute while live; ending the session is PhoneOff only.
+    // Previously this called end()/start(), which cleared transcript on unmute.
     if (voiceLive) {
-      voice.end();
+      voice.setMuted((m) => !m);
       return;
     }
     void voice.start();
@@ -448,19 +450,31 @@ function AskAiTutorChat({
             variant="outline"
             className={cn(
               "h-11 w-11 shrink-0",
-              voiceLive
+              voiceLive && !voice.muted
                 ? "border-emerald-500/40 text-emerald-700 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/40"
                 : "border-slate-200 text-slate-400 bg-slate-50 opacity-70 dark:border-slate-600 dark:text-slate-500 dark:bg-slate-900/40",
             )}
             disabled={bootLoading || !token || voice.state === "CONNECTING"}
             onClick={toggleVoice}
-            title={voiceLive ? "Mic on — tap to turn off" : "Mic off — tap to talk"}
-            aria-pressed={voiceLive}
-            aria-label={voiceLive ? "Turn microphone off" : "Turn microphone on"}
+            title={
+              !voiceLive
+                ? "Mic off — tap to talk"
+                : voice.muted
+                  ? "Mic muted — tap to unmute"
+                  : "Mic on — tap to mute"
+            }
+            aria-pressed={voiceLive && !voice.muted}
+            aria-label={
+              !voiceLive
+                ? "Turn microphone on"
+                : voice.muted
+                  ? "Unmute microphone"
+                  : "Mute microphone"
+            }
           >
             {voice.state === "CONNECTING" ? (
               <Loader2 className="h-4 w-4 animate-spin" />
-            ) : voiceLive ? (
+            ) : voiceLive && !voice.muted ? (
               <Mic className="h-4 w-4" />
             ) : (
               <MicOff className="h-4 w-4" />
