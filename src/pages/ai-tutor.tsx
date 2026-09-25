@@ -40,6 +40,11 @@ import {
   AssistantMessageContent,
   type RelatedTextbookImage,
 } from "@/components/assistant-message-content";
+import {
+  ImageAttachControl,
+  ensureUploadedImageIds,
+  useTutorImageAttach,
+} from "@/components/image-attach-control";
 import type { MathLesson } from "@/types/math-lesson";
 import type { ScienceExperiment } from "@/types/science-experiment";
 import { cn } from "@/lib/utils";
@@ -66,6 +71,7 @@ interface Message {
   relatedImages?: RelatedTextbookImage[];
   mathLesson?: MathLesson | null;
   scienceExperiment?: ScienceExperiment | null;
+  imagePreviewUrl?: string;
 }
 
 interface Conversation {
@@ -265,6 +271,7 @@ async function streamChapterChatMessage(
     onScienceExperiment?: (experiment: ScienceExperiment, cleanAnswer: string) => void;
   },
   conversationHistory?: Array<{ role: string; content: string }>,
+  imageIds?: string[],
 ): Promise<string> {
   const res = await authFetch("/auth/chat/stream", {
     method: "POST",
@@ -281,6 +288,7 @@ async function streamChapterChatMessage(
       chapter_names: ctx.chapterNames,
       conversation_history: conversationHistory ?? [],
       agent_mode: ctx.agentMode ?? undefined,
+      image_ids: imageIds?.length ? imageIds : undefined,
     }),
   });
 
@@ -357,6 +365,7 @@ export default function AITutorPage() {
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const tutorImage = useTutorImageAttach();
   const [isStreaming, setIsStreaming] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -685,24 +694,38 @@ export default function AITutorPage() {
   };
 
   const sendMessage = async (content: string) => {
-    if (!content.trim() || isLoading) return;
+    const trimmed = content.trim();
+    const hasImage = Boolean(tutorImage.attached);
+    if ((!trimmed && !hasImage) || isLoading || tutorImage.uploading) return;
 
     let conversation = activeConversation;
     if (!conversation) {
       conversation = {
         id: Date.now().toString(),
-        title: content.slice(0, 30) + (content.length > 30 ? "..." : ""),
+        title: (trimmed || "Image question").slice(0, 30) + ((trimmed || "").length > 30 ? "..." : ""),
         messages: [],
       };
       setConversations((prev) => [conversation!, ...prev]);
       setActiveConversation(conversation);
     }
 
+    let imageIds: string[] = [];
+    try {
+      imageIds = await ensureUploadedImageIds(tutorImage.attached, tutorImage.setUploading);
+    } catch (e) {
+      tutorImage.setAttachError(studentFriendlyError(e, "Could not upload the image. Please try again."));
+      return;
+    }
+
+    const preview = tutorImage.attached?.file
+      ? URL.createObjectURL(tutorImage.attached.file)
+      : undefined;
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
-      content,
+      content: trimmed || "Please help me with this image.",
       timestamp: new Date(),
+      imagePreviewUrl: preview,
     };
 
     const updatedConversation = {
@@ -715,6 +738,7 @@ export default function AITutorPage() {
       prev.map((c) => (c.id === conversation!.id ? updatedConversation : c))
     );
     setInput("");
+    tutorImage.clear();
     if (inputRef.current) {
       inputRef.current.style.height = "auto";
     }
@@ -767,7 +791,7 @@ export default function AITutorPage() {
           updatedConversation.messages.filter((m) => m.id !== assistantMessage.id),
         );
         const streamed = await streamChapterChatMessage(
-          content,
+          trimmed || "Please help me with this image.",
           chapterCtx,
           {
             onToken: (chunk) => {
@@ -800,6 +824,7 @@ export default function AITutorPage() {
             },
           },
           history,
+          imageIds,
         );
         if (streamed.trim()) {
           fullContent = streamed;
@@ -1329,7 +1354,18 @@ export default function AITutorPage() {
                         }
                       />
                     ) : (
-                      <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
+                      <div className="space-y-2">
+                        {message.imagePreviewUrl ? (
+                          <img
+                            src={message.imagePreviewUrl}
+                            alt="Attached"
+                            className="max-h-48 max-w-full rounded-lg object-contain bg-black/10"
+                          />
+                        ) : null}
+                        {message.content ? (
+                          <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.content}</p>
+                        ) : null}
+                      </div>
                     )}
                   </div>
                   {message.role === "user" && (
@@ -1424,46 +1460,53 @@ export default function AITutorPage() {
             )}
             
             {/* Upload error display */}
-            {uploadError && (
+            {(uploadError || tutorImage.attachError) && (
               <div className="text-sm text-destructive p-2 bg-destructive/10 rounded-md">
-                {uploadError}
+                {tutorImage.attachError || uploadError}
               </div>
             )}
 
             <div className="flex gap-2 items-end">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="application/pdf"
-                onChange={handleFileSelect}
-                className="hidden"
-                id="pdf-upload"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                disabled={isUploading || isLoading}
-                className="flex-shrink-0"
-                title="Upload PDF"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  console.log("Upload button clicked, API_URL:", API_URL);
-                  console.log("File input ref:", fileInputRef.current);
-                  if (fileInputRef.current && !isUploading && !isLoading) {
-                    fileInputRef.current.click();
-                  } else {
-                    console.log("Cannot trigger file input - disabled or ref not available");
-                  }
-                }}
-              >
-                {isUploading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Upload className="h-4 w-4" />
-                )}
-              </Button>
+              {chapterCtx ? (
+                <ImageAttachControl
+                  disabled={isLoading || isUploading || tutorImage.uploading}
+                  attached={tutorImage.attached}
+                  onChange={tutorImage.setAttached}
+                  onError={(msg) => tutorImage.setAttachError(msg)}
+                />
+              ) : (
+                <>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="application/pdf"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                    id="pdf-upload"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    disabled={isUploading || isLoading}
+                    className="flex-shrink-0"
+                    title="Upload PDF"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (fileInputRef.current && !isUploading && !isLoading) {
+                        fileInputRef.current.click();
+                      }
+                    }}
+                  >
+                    {isUploading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Upload className="h-4 w-4" />
+                    )}
+                  </Button>
+                </>
+              )}
               <Textarea
                 ref={inputRef}
                 value={input}
@@ -1475,12 +1518,16 @@ export default function AITutorPage() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
-                    if (input.trim() && !isLoading) {
+                    if ((input.trim() || tutorImage.attached) && !isLoading) {
                       sendMessage(input);
                     }
                   }
                 }}
-                placeholder="Ask me anything..."
+                placeholder={
+                  chapterCtx
+                    ? "Ask a question or attach an image…"
+                    : "Ask me anything..."
+                }
                 disabled={isLoading}
                 rows={1}
                 className="flex-1 min-h-[44px] max-h-32 resize-none py-2.5 text-base leading-relaxed"
@@ -1488,11 +1535,15 @@ export default function AITutorPage() {
               />
               <Button
                 type="submit"
-                disabled={!input.trim() || isLoading}
+                disabled={
+                  (!input.trim() && !tutorImage.attached) ||
+                  isLoading ||
+                  tutorImage.uploading
+                }
                 className="flex-shrink-0"
                 data-testid="button-send-message"
               >
-                {isLoading ? (
+                {isLoading || tutorImage.uploading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Send className="h-4 w-4" />

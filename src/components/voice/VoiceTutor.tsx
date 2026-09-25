@@ -5,6 +5,11 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { TutorMessageProse } from "@/lib/render-tutor-text";
 import { TextbookImageGallery, type RelatedTextbookImage } from "@/components/assistant-message-content";
+import {
+  ImageAttachControl,
+  ensureUploadedImageIds,
+  useTutorImageAttach,
+} from "@/components/image-attach-control";
 import type { TranscriptLine, VoiceState } from "@/types/voice";
 import { AiWaveform } from "./ai-waveform";
 import { VoiceButton } from "./VoiceButton";
@@ -155,10 +160,12 @@ export function VoiceTutor({
   onMute: () => void;
   onInterrupt: () => void;
   onEnd: () => void;
-  onSendText?: (text: string) => void;
+  onSendText?: (text: string, imageIds?: string[]) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [textInput, setTextInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const tutorImage = useTutorImageAttach();
   const live = state !== "IDLE" && state !== "ENDED" && state !== "ERROR";
   const canInterrupt = state === "SPEAKING" || state === "THINKING";
   const tutorTurn = state === "SPEAKING" || state === "THINKING";
@@ -169,12 +176,21 @@ export function VoiceTutor({
   const startDisabled = state === "CONNECTING" || state === "THINKING";
   const showCenterStart = !live && transcript.length === 0;
 
-  const handleSendText = () => {
-    if (!live) return;
+  const handleSendText = async () => {
+    if (!live || !onSendText || sending || tutorImage.uploading) return;
     const trimmed = textInput.trim();
-    if (!trimmed || !onSendText) return;
-    onSendText(trimmed);
-    setTextInput("");
+    if (!trimmed && !tutorImage.attached) return;
+    try {
+      setSending(true);
+      const ids = await ensureUploadedImageIds(tutorImage.attached, tutorImage.setUploading);
+      onSendText(trimmed || "Please help me with this image.", ids.length ? ids : undefined);
+      setTextInput("");
+      tutorImage.clear();
+    } catch (e) {
+      tutorImage.setAttachError(e instanceof Error ? e.message : "Could not upload the image.");
+    } finally {
+      setSending(false);
+    }
   };
 
   const entriesWithTime = useMemo(
@@ -340,7 +356,16 @@ export function VoiceTutor({
           </div>
         )}
         <div className="px-4 pb-3 sm:px-6 sm:pb-3.5">
+          {tutorImage.attachError ? (
+            <div className="mb-2 text-xs text-destructive">{tutorImage.attachError}</div>
+          ) : null}
           <div className="flex items-center gap-2">
+            <ImageAttachControl
+              disabled={!live || sending || tutorImage.uploading}
+              attached={tutorImage.attached}
+              onChange={tutorImage.setAttached}
+              onError={(msg) => tutorImage.setAttachError(msg)}
+            />
             <Input
               value={textInput}
               onChange={(e) => setTextInput(e.target.value)}
@@ -348,7 +373,7 @@ export function VoiceTutor({
                 if (!live) return;
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
-                  handleSendText();
+                  void handleSendText();
                 }
               }}
               placeholder={live ? "Type or speak your question…" : "Tap Start Talking, then type or speak…"}
@@ -359,8 +384,13 @@ export function VoiceTutor({
               type="button"
               size="icon"
               className="h-10 w-10 shrink-0 rounded-full bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-400 hover:to-violet-500 text-white disabled:opacity-50"
-              onClick={handleSendText}
-              disabled={!live || !textInput.trim()}
+              onClick={() => void handleSendText()}
+              disabled={
+                !live ||
+                sending ||
+                tutorImage.uploading ||
+                (!textInput.trim() && !tutorImage.attached)
+              }
               aria-label="Send message"
             >
               <Send className="h-4 w-4" />

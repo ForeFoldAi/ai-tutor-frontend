@@ -470,11 +470,18 @@ export function useVoiceTutor(opts: {
     setHint("");
   }, [sessionId, teardown]);
 
-  const sendText = useCallback((text: string) => {
+  const sendText = useCallback((text: string, imageIds?: string[]) => {
     const trimmed = text.trim();
-    if (!trimmed || !sessionIdRef.current || endedRef.current) return;
+    const ids = (imageIds || []).filter(Boolean);
+    if ((!trimmed && !ids.length) || !sessionIdRef.current || endedRef.current) return;
     setImages([]);
-    sockRef.current?.send({ type: "text", sessionId: sessionIdRef.current, text: trimmed });
+    const payload: Record<string, unknown> = {
+      type: "text",
+      sessionId: sessionIdRef.current,
+      text: trimmed || "Please help me with the attached image.",
+    };
+    if (ids.length) payload.image_ids = ids;
+    sockRef.current?.send(payload);
   }, []);
 
   useEffect(() => {

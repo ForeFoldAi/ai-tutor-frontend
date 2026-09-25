@@ -36,6 +36,11 @@ import {
 } from "@/api/student-assistant";
 import { studentFriendlyError } from "@/lib/student-messages";
 import { AssistantMessageContent } from "@/components/assistant-message-content";
+import {
+  ImageAttachControl,
+  ensureUploadedImageIds,
+  useTutorImageAttach,
+} from "@/components/image-attach-control";
 import { useVoiceTutor } from "@/hooks/voice/useVoiceTutor";
 import { AiWaveform } from "@/components/voice/ai-waveform";
 import type { VoiceState } from "@/types/voice";
@@ -44,6 +49,7 @@ interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
+  imagePreviewUrl?: string;
 }
 
 const MODE_META: Record<
@@ -141,6 +147,7 @@ function AskAiTutorChat({
   const [streaming, setStreaming] = useState(false);
   const [bootLoading, setBootLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const tutorImage = useTutorImageAttach();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const voiceEndRef = useRef<() => void>(() => undefined);
@@ -239,17 +246,37 @@ function AskAiTutorChat({
 
   const sendMessage = async (text: string) => {
     const query = text.trim();
-    if (!query || loading || streaming) return;
+    const hasImage = Boolean(tutorImage.attached);
+    if ((!query && !hasImage) || loading || streaming || tutorImage.uploading) return;
 
     setError(null);
     setInput("");
 
-    if (voiceLive && voice.sessionId) {
-      voice.sendText(query);
+    let imageIds: string[] = [];
+    try {
+      imageIds = await ensureUploadedImageIds(tutorImage.attached, tutorImage.setUploading);
+    } catch (e) {
+      setError(sanitizeAssistantText(studentFriendlyError(e, "Could not upload the image.")));
       return;
     }
 
-    const userMsg: Message = { id: `u-${Date.now()}`, role: "user", content: query };
+    const preview = tutorImage.attached?.file
+      ? URL.createObjectURL(tutorImage.attached.file)
+      : undefined;
+    tutorImage.clear();
+
+    if (voiceLive && voice.sessionId) {
+      if (preview) URL.revokeObjectURL(preview);
+      voice.sendText(query || "Please help me with this image.", imageIds.length ? imageIds : undefined);
+      return;
+    }
+
+    const userMsg: Message = {
+      id: `u-${Date.now()}`,
+      role: "user",
+      content: query || "Please help me with this image.",
+      imagePreviewUrl: preview,
+    };
     const assistantId = `a-${Date.now()}`;
     setMessages((prev) => [...prev, userMsg, { id: assistantId, role: "assistant", content: "" }]);
     setLoading(true);
@@ -257,7 +284,7 @@ function AskAiTutorChat({
 
     try {
       await streamStudentAssistantMessage(
-        query,
+        query || "Please help me with this image.",
         {
           onToken: (chunk) => {
             const safeChunk = sanitizeAssistantText(chunk);
@@ -269,7 +296,8 @@ function AskAiTutorChat({
           },
         },
         history(),
-        mode
+        mode,
+        imageIds.length ? imageIds : undefined,
       );
     } catch (e) {
       setError(sanitizeAssistantText(studentFriendlyError(e, "Something went wrong. Please try again.")));
@@ -337,7 +365,18 @@ function AskAiTutorChat({
                         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                       ) : null
                     ) : (
-                      <p className="whitespace-pre-wrap leading-[1.5]">{msg.content}</p>
+                      <div className="space-y-2">
+                        {msg.imagePreviewUrl ? (
+                          <img
+                            src={msg.imagePreviewUrl}
+                            alt="Attached"
+                            className="max-h-40 max-w-full rounded-lg object-contain bg-black/20"
+                          />
+                        ) : null}
+                        {msg.content ? (
+                          <p className="whitespace-pre-wrap leading-[1.5]">{msg.content}</p>
+                        ) : null}
+                      </div>
                     )}
                   </div>
                   {msg.role === "user" && (
@@ -429,6 +468,12 @@ function AskAiTutorChat({
           </div>
         ) : null}
         <div className="flex items-end gap-2">
+          <ImageAttachControl
+            disabled={bootLoading || loading || tutorImage.uploading}
+            attached={tutorImage.attached}
+            onChange={tutorImage.setAttached}
+            onError={(msg) => setError(msg)}
+          />
           <Textarea
             ref={inputRef}
             value={input}
@@ -484,9 +529,18 @@ function AskAiTutorChat({
             type="submit"
             size="icon"
             className="h-11 w-11 shrink-0 bg-gradient-brand"
-            disabled={bootLoading || loading || !input.trim()}
+            disabled={
+              bootLoading ||
+              loading ||
+              tutorImage.uploading ||
+              (!input.trim() && !tutorImage.attached)
+            }
           >
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            {loading || tutorImage.uploading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4" />
+            )}
           </Button>
         </div>
         {mode === "free" ? (

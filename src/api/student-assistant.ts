@@ -43,6 +43,7 @@ export async function streamStudentAssistantMessage(
   handlers: { onToken: (chunk: string) => void },
   conversationHistory?: ConversationTurn[],
   agentMode: AskAiTutorMode = "free",
+  imageIds?: string[],
 ): Promise<void> {
   const res = await authFetch("/auth/student/assistant/chat/stream", {
     method: "POST",
@@ -51,6 +52,7 @@ export async function streamStudentAssistantMessage(
       query,
       conversation_history: conversationHistory ?? [],
       agent_mode: agentMode,
+      image_ids: imageIds?.length ? imageIds : undefined,
     }),
   });
 
@@ -76,7 +78,9 @@ export async function streamStudentAssistantMessage(
       try {
         const evt = JSON.parse(line) as { type: string; content?: string };
         if (evt.type === "token" && evt.content) handlers.onToken(evt.content);
-      } catch {
+        if (evt.type === "error" && evt.content) throw new Error(evt.content);
+      } catch (e) {
+        if (e instanceof Error && e.message && !e.message.includes("JSON")) throw e;
         // Skip a torn NDJSON line rather than aborting the whole reply.
       }
     }

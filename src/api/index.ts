@@ -51,12 +51,13 @@ async function doFetch(path: string, init: RequestInit = {}, tokenOverride?: str
   const authHeader = tokenOverride ? { Authorization: `Bearer ${tokenOverride}` } : getAuthHeader();
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const isFormData = typeof FormData !== "undefined" && init.body instanceof FormData;
   try {
     return await fetch(`${API_BASE}${path}`, {
       ...init,
       signal: controller.signal,
       headers: {
-        "Content-Type": "application/json",
+        ...(isFormData ? {} : { "Content-Type": "application/json" }),
         ...authHeader,
         ...(init.headers || {}),
       },
