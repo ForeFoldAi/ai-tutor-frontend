@@ -4,6 +4,7 @@ import type {
   BulkSubjectCreateResponse,
   ClassOptionsResponse,
   ClassSubjectMappingsResponse,
+  ClassTextbookOptionsResponse,
   PaginatedClassesResponse,
   PaginatedSubjectsResponse,
   SchoolClassRecord,
@@ -73,14 +74,20 @@ export async function getClassSubjectMappings(): Promise<ClassSubjectMappingsRes
   return apiFetch<ClassSubjectMappingsResponse>("/auth/admin/classes/mappings");
 }
 
+/** `textbooks` omitted = keep each subject's current book choice. */
 export async function saveClassSubjects(
   classId: string | number,
   subjectIds: number[],
+  textbooks?: Record<number, number | null>,
 ): Promise<ClassSubjectMappingsResponse> {
   return apiFetch<ClassSubjectMappingsResponse>(`/auth/admin/classes/${classId}/subjects`, {
     method: "PUT",
-    body: JSON.stringify({ subject_ids: subjectIds }),
+    body: JSON.stringify(textbooks ? { subject_ids: subjectIds, textbooks } : { subject_ids: subjectIds }),
   });
+}
+
+export async function getClassTextbookOptions(classId: string | number): Promise<ClassTextbookOptionsResponse> {
+  return apiFetch<ClassTextbookOptionsResponse>(`/auth/admin/classes/${classId}/textbooks`);
 }
 
 export async function deleteClass(classId: string | number): Promise<{ message: string }> {

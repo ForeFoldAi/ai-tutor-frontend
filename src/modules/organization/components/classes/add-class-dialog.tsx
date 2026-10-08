@@ -51,10 +51,13 @@ export type AddClassesFormValues = z.infer<typeof addClassesSchema>;
 
 const emptyRow = (curriculum = ""): AddClassRowValues => ({ grade: "", section: "", curriculum });
 
+// Catalog ClassEnum covers CLASS_1..CLASS_10.
+const GRADES = Array.from({ length: 10 }, (_, i) => String(i + 1));
+
 // ponytail: one grid template for header + rows; real column minimums so narrow
 // viewports scroll the dialog instead of crushing the inputs.
 const ROW_GRID =
-  "grid grid-cols-[minmax(5rem,0.75fr)_minmax(5rem,0.75fr)_minmax(9rem,1.2fr)_auto] gap-x-3";
+  "grid grid-cols-[minmax(9rem,1.2fr)_minmax(6rem,0.9fr)_minmax(5rem,0.75fr)_auto] gap-x-3";
 
 interface AddClassDialogProps {
   open: boolean;
@@ -93,7 +96,7 @@ export function AddClassDialog({
             <School className="h-5 w-5" />
             Add Classes
           </DialogTitle>
-          <DialogDescription>Add one or more classes with grade, section, and curriculum.</DialogDescription>
+          <DialogDescription>Add one or more classes with curriculum, grade, and section.</DialogDescription>
         </DialogHeader>
         <Form {...form}>
           <form
@@ -110,13 +113,13 @@ export function AddClassDialog({
           >
             <div className={`${ROW_GRID} gap-y-1 border-b border-border/60 pb-2`}>
               <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                Curriculum
+              </span>
+              <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                 Class / Grade
               </span>
               <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                 Section
-              </span>
-              <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                Curriculum
               </span>
               <span className="w-9" aria-hidden />
             </div>
@@ -126,36 +129,6 @@ export function AddClassDialog({
                   key={field.id}
                   className={`${ROW_GRID} items-start`}
                 >
-                  <FormField
-                    control={form.control}
-                    name={`classes.${index}.grade`}
-                    render={({ field: f }) => (
-                      <FormItem>
-                        <FormControl>
-                          <Input placeholder="e.g. 6" autoComplete="off" {...f} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name={`classes.${index}.section`}
-                    render={({ field: f }) => (
-                      <FormItem>
-                        <FormControl>
-                          <Input
-                            placeholder="e.g. A"
-                            className="uppercase"
-                            autoComplete="off"
-                            maxLength={20}
-                            {...f}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
                   <FormField
                     control={form.control}
                     name={`classes.${index}.curriculum`}
@@ -179,6 +152,51 @@ export function AddClassDialog({
                       </FormItem>
                     )}
                   />
+                  <FormField
+                    control={form.control}
+                    name={`classes.${index}.grade`}
+                    render={({ field: f }) => (
+                      <FormItem>
+                        <Select
+                          value={f.value || undefined}
+                          onValueChange={f.onChange}
+                          disabled={!form.watch(`classes.${index}.curriculum`)}
+                        >
+                          <FormControl>
+                            <SelectTrigger className="h-10 bg-background">
+                              <SelectValue placeholder="Select Grade" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {GRADES.map((g) => (
+                              <SelectItem key={g} value={g}>
+                                Grade {g}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name={`classes.${index}.section`}
+                    render={({ field: f }) => (
+                      <FormItem>
+                        <FormControl>
+                          <Input
+                            placeholder="e.g. A"
+                            className="uppercase"
+                            autoComplete="off"
+                            maxLength={20}
+                            {...f}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                   <Button
                     type="button"
                     variant="ghost"
@@ -198,7 +216,7 @@ export function AddClassDialog({
               variant="outline"
               size="sm"
               className="h-8 gap-1 text-xs"
-              onClick={() => append(emptyRow())}
+              onClick={() => append(emptyRow(form.getValues(`classes.${fields.length - 1}.curriculum`) ?? ""))}
             >
               <Plus className="h-3.5 w-3.5" />
               Add more ({fields.length} row{fields.length === 1 ? "" : "s"})

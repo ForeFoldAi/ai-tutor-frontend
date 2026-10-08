@@ -19,8 +19,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useQuery } from "@tanstack/react-query";
+import { getClassTextbookOptions } from "@/api/classes";
+import type { ClassTextbookOption } from "@/api/types";
 import type { ClassOverviewItem, SubjectItem } from "@/modules/organization/types/classes-admin";
 import { classSubjectMappingKey } from "@/modules/organization/utils/classes-subject-helpers";
+
+const DEFAULT_BOOK = "default";
+const NO_CHOICES: Record<string, Record<string, number>> = {};
+
+function bookLabel(book: ClassTextbookOption) {
+  return book.publisher && book.publisher !== book.title ? `${book.publisher} · ${book.title}` : book.title;
+}
 
 function subjectsForCurriculum(subjects: SubjectItem[], curriculum: string) {
   return subjects.filter((s) => {
@@ -48,7 +58,17 @@ interface MapClassSubjectsDialogProps {
   classItem: ClassOverviewItem | null;
   subjects: SubjectItem[];
   mappings: Record<string, Record<string, boolean>>;
-  onSave: (classId: string, curriculum: string, mapped: Record<string, boolean>) => void;
+  /** class key -> subject id -> chosen publisher textbook id */
+  textbookChoices?: Record<string, Record<string, number>>;
+  /** Number of sections sharing this class's grade + curriculum (incl. itself). */
+  sectionsInGrade?: number;
+  onSave: (
+    classId: string,
+    curriculum: string,
+    mapped: Record<string, boolean>,
+    books: Record<string, number | null>,
+    applyToGrade: boolean,
+  ) => void;
 }
 
 export function MapClassSubjectsDialog({
@@ -57,22 +77,35 @@ export function MapClassSubjectsDialog({
   classItem,
   subjects,
   mappings,
+  textbookChoices = NO_CHOICES,
+  sectionsInGrade = 1,
   onSave,
 }: MapClassSubjectsDialogProps) {
   const [curriculum, setCurriculum] = useState("");
   const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [books, setBooks] = useState<Record<string, number | null>>({});
+  const [applyToGrade, setApplyToGrade] = useState(false);
+
+  const optionsQuery = useQuery({
+    queryKey: ["classes", "textbook-options", classItem?.id],
+    queryFn: () => getClassTextbookOptions(classItem!.id),
+    enabled: open && !!classItem,
+  });
+  const bookOptions = optionsQuery.data?.options ?? {};
 
   useEffect(() => {
     if (!open || !classItem) return;
     const first = classItem.curriculums[0] ?? "";
     setCurriculum(first);
     setSelected(selectionState(subjects, first, mappings, classItem.id));
+    setApplyToGrade(false);
   }, [open, classItem, subjects, mappings]);
 
   useEffect(() => {
     if (!open || !classItem || !curriculum) return;
     setSelected(selectionState(subjects, curriculum, mappings, classItem.id));
-  }, [curriculum, open, classItem, subjects, mappings]);
+    setBooks({ ...(textbookChoices[classSubjectMappingKey(classItem.id, curriculum)] ?? {}) });
+  }, [curriculum, open, classItem, subjects, mappings, textbookChoices]);
 
   const availableSubjects = useMemo(
     () => (curriculum ? subjectsForCurriculum(subjects, curriculum) : []),
@@ -85,7 +118,37 @@ export function MapClassSubjectsDialog({
 
   const handleSave = () => {
     if (!classItem || !curriculum) return;
-    onSave(classItem.id, curriculum, selected);
+    onSave(classItem.id, curriculum, selected, books, applyToGrade);
+  };
+
+  const renderBookPicker = (subjectId: string) => {
+    const options = bookOptions[subjectId] ?? [];
+    const alternatives = options.filter((b) => !b.is_default);
+    // Only the default book exists -> nothing to choose.
+    if (alternatives.length === 0) return null;
+    const defaults = options.filter((b) => b.is_default);
+    const chosen = books[subjectId];
+    const value = chosen != null && alternatives.some((b) => b.id === chosen) ? String(chosen) : DEFAULT_BOOK;
+    return (
+      <Select
+        value={value}
+        onValueChange={(v) => setBooks((prev) => ({ ...prev, [subjectId]: v === DEFAULT_BOOK ? null : Number(v) }))}
+      >
+        <SelectTrigger className="h-8 w-full bg-background text-xs sm:w-56" aria-label="Textbook">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={DEFAULT_BOOK}>
+            {defaults.length === 1 ? `Default · ${bookLabel(defaults[0])}` : "Default book"}
+          </SelectItem>
+          {alternatives.map((b) => (
+            <SelectItem key={b.id} value={String(b.id)}>
+              {bookLabel(b)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    );
   };
 
   if (!classItem) return null;
@@ -133,22 +196,32 @@ export function MapClassSubjectsDialog({
               <p className="text-sm text-muted-foreground">No subjects available for this curriculum.</p>
             ) : (
               availableSubjects.map((subject) => (
-                <label
+                <div
                   key={subject.id}
-                  className="flex cursor-pointer items-center gap-3 rounded-lg border border-border/50 px-3 py-2 hover:bg-muted/30"
+                  className="flex flex-col gap-2 rounded-lg border border-border/50 px-3 py-2 hover:bg-muted/30 sm:flex-row sm:items-center sm:justify-between"
                 >
-                  <Checkbox
-                    checked={selected[subject.id] ?? false}
-                    onCheckedChange={(checked) => toggle(subject.id, checked === true)}
-                  />
-                  <div className="min-w-0">
-                    <Label className="cursor-pointer font-normal">{subject.name}</Label>
-                    <p className="text-xs text-muted-foreground">{subject.code}</p>
-                  </div>
-                </label>
+                  <label className="flex min-w-0 cursor-pointer items-center gap-3">
+                    <Checkbox
+                      checked={selected[subject.id] ?? false}
+                      onCheckedChange={(checked) => toggle(subject.id, checked === true)}
+                    />
+                    <div className="min-w-0">
+                      <Label className="cursor-pointer font-normal">{subject.name}</Label>
+                      <p className="text-xs text-muted-foreground">{subject.code}</p>
+                    </div>
+                  </label>
+                  {selected[subject.id] ? renderBookPicker(subject.id) : null}
+                </div>
               ))
             )}
           </div>
+
+          {sectionsInGrade > 1 ? (
+            <label className="flex cursor-pointer items-center gap-3 text-sm">
+              <Checkbox checked={applyToGrade} onCheckedChange={(checked) => setApplyToGrade(checked === true)} />
+              Apply to all {sectionsInGrade} sections of Grade {classItem.grade}
+            </label>
+          ) : null}
         </div>
 
         <DialogFooter className="border-t border-border px-6 py-4">

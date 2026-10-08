@@ -430,3 +430,32 @@
     color: #ffffff;
   }
 }
+
+@keyframes progressShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes progressPulseGlow {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(0.995);
+  }
+}
+
+.animate-progress-shimmer {
+  background-size: 200% 100%;
+  animation: progressShimmer 2s infinite linear;
+}
+
+.animate-pulse-glow {
+  animation: progressPulseGlow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}

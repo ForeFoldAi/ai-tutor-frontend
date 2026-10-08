@@ -278,7 +278,7 @@ export function StudentSettingsContent({
         if (includeSchool) {
           const school = results[nextIdx] as Awaited<ReturnType<typeof getSchoolDetail>>;
           setSchoolName(school.name);
-          setSchoolEmail(school.email ?? "");
+          setSchoolEmail(school.email || profile.email || "");
           setSchoolPhone(school.phone ?? "");
           setWebsite(school.website ?? "");
           setAddress(school.address ?? "");

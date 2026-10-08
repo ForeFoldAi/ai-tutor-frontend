@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import {
   ArrowRight,
@@ -95,6 +95,13 @@ function FormHeader({ eyebrow, title, accountType }: { eyebrow: string; title: s
 
 // ─── Student ───────────────────────────────────────────────────────────────────
 
+/** GET /auth/signup/catalog */
+type SignupCatalogSubject = {
+  subject_name: string;
+  in_syllabus: boolean;
+  publishers: { id: number; publisher: string }[];
+};
+
 export function StudentSignupWizard() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
@@ -113,6 +120,35 @@ export function StudentSignupWizard() {
   const [subjects, setSubjects] = useState<string[]>([]);
   const [goals, setGoals] = useState<string[]>([]);
   const [method, setMethod] = useState("");
+  const [catalog, setCatalog] = useState<SignupCatalogSubject[] | null>(null);
+  const [publisherPicks, setPublisherPicks] = useState<Record<string, string>>({});
+
+  // Board = first curriculum (same rule the backend uses for teaching_board).
+  const catalogKey = grade && curricula[0] ? `${curricula[0]}|${grade.replace("Grade ", "")}` : "";
+  useEffect(() => {
+    setCatalog(null);
+    setPublisherPicks({});
+    if (!catalogKey) return;
+    const [curriculum, g] = catalogKey.split("|");
+    let cancelled = false;
+    fetch(`${API_BASE}/auth/signup/catalog?${new URLSearchParams({ curriculum, grade: g })}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((rows: SignupCatalogSubject[] | null) => {
+        if (cancelled || !rows) return;
+        setCatalog(rows);
+        const offered = new Set(rows.filter((r) => r.in_syllabus).map((r) => r.subject_name));
+        if (offered.size) setSubjects((prev) => prev.filter((s) => offered.has(s)));
+      })
+      .catch(() => null);
+    return () => {
+      cancelled = true;
+    };
+  }, [catalogKey]);
+
+  const offeredSubjects = useMemo(() => {
+    const inSyllabus = catalog?.filter((c) => c.in_syllabus).map((c) => c.subject_name) ?? [];
+    return inSyllabus.length ? inSyllabus : options?.student_subjects ?? [];
+  }, [catalog, options]);
 
   const suggestions = useMemo(() => {
     const base = slugName(fullName);
@@ -168,6 +204,9 @@ export function StudentSignupWizard() {
           parent_phone: parentPhone.trim() || undefined,
           parent_email: parentEmail.trim() || undefined,
           favorite_subjects: subjects,
+          publisher_choices: Object.fromEntries(
+            subjects.filter((s) => publisherPicks[s] && publisherPicks[s] !== "default").map((s) => [s, Number(publisherPicks[s])]),
+          ),
           learning_goals: goals,
           preferred_learning_method: method || undefined,
         }),
@@ -240,6 +279,55 @@ export function StudentSignupWizard() {
             />
           </OptionsSlot>
         </FormField>
+        {catalogKey && (
+          <>
+            <FormField label={F.subjects.label}>
+              <OptionsSlot loading={optionsLoading} error={optionsError} onRetry={retryOptions} variant="pills">
+                <PillSelect
+                  options={offeredSubjects}
+                  value={subjects}
+                  onChange={(v) => setSubjects(v as string[])}
+                  multiple
+                  accountType="student"
+                />
+              </OptionsSlot>
+            </FormField>
+            {subjects.length > 0 && (
+              <FormField label="Textbook Publisher">
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                  {subjects.map((s) => {
+                    const pubs = catalog?.find((c) => c.subject_name === s)?.publishers ?? [];
+                    return (
+                      <div key={s} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+                        <span className="font-medium">{s}</span>
+                        {pubs.length ? (
+                          <Select
+                            value={publisherPicks[s] ?? "default"}
+                            onValueChange={(v) => setPublisherPicks((p) => ({ ...p, [s]: v }))}
+                          >
+                            <SignupSelectTrigger className="h-8 w-40 text-xs">
+                              <SelectValue />
+                            </SignupSelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="default">Default</SelectItem>
+                              {pubs.map((p) => (
+                                <SelectItem key={p.id} value={String(p.id)}>
+                                  {p.publisher}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Default</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </FormField>
+            )}
+          </>
+        )}
       </FormSection>
 
       <FormSection title="Login Details" accountType="student">
@@ -257,17 +345,6 @@ export function StudentSignupWizard() {
       </FormSection>
 
       <FormSection title="Personalize Learning" accountType="student">
-        <FormField label={F.subjects.label}>
-          <OptionsSlot loading={optionsLoading} error={optionsError} onRetry={retryOptions} variant="pills">
-            <PillSelect
-              options={options?.student_subjects ?? []}
-              value={subjects}
-              onChange={(v) => setSubjects(v as string[])}
-              multiple
-              accountType="student"
-            />
-          </OptionsSlot>
-        </FormField>
         <FormField label={F.goals.label}>
           <OptionsSlot loading={optionsLoading} error={optionsError} onRetry={retryOptions} variant="checkboxes">
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">

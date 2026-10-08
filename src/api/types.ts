@@ -284,6 +284,20 @@ export interface BulkClassCreateResponse {
 
 export interface ClassSubjectMappingsResponse {
   mappings: Record<string, Record<string, boolean>>;
+  /** class key -> subject id -> chosen publisher textbook id (absent = default book) */
+  textbooks?: Record<string, Record<string, number>>;
+}
+
+export interface ClassTextbookOption {
+  id: number;
+  title: string;
+  publisher: string | null;
+  is_default: boolean;
+}
+
+export interface ClassTextbookOptionsResponse {
+  /** subject id -> books available for this class's board/grade */
+  options: Record<string, ClassTextbookOption[]>;
 }
 
 /** GET/PATCH /auth/admin/school */
@@ -481,6 +495,7 @@ export interface CreateSchoolAdminPayload extends AdminCreateUserPayload {
   school_name?: string;
   branch?: string;
   board?: string;
+  phone?: string;
 }
 
 export interface AuthUsersSummary {
@@ -507,6 +522,14 @@ export interface SchoolSummary {
   school_admins: SchoolAdminBrief[];
   tutor_count: number;
   student_count: number;
+  class_count?: number;
+  email?: string | null;
+  phone?: string | null;
+  website?: string | null;
+  address?: string | null;
+  grades_offered?: string | null;
+  student_strength?: string | null;
+  curricula?: string[];
 }
 
 /** @deprecated use SchoolSummary */
@@ -582,6 +605,39 @@ export interface TextbookUploadApi {
   ocr_status: ProcessingStatusApi;
   chunk_status: ProcessingStatusApi;
   embedding_status: ProcessingStatusApi;
+  /** Book this chapter was split from; null = standalone chapter (default pool). */
+  textbook_id?: number | null;
+}
+
+export interface TextbookImageAdminApi {
+  id: number;
+  textbook_upload_id: number;
+  page_index: number;
+  sequence: number;
+  file_name: string;
+  image_url: string;
+  caption: string | null;
+  caption_normalized: string | null;
+  image_type: string;
+  figure_number: string | null;
+  title: string | null;
+  educational_role: string;
+  educational_description: string | null;
+  is_decorative: boolean;
+  image_bbox: string | null;
+  structured_content?: string | null;
+  content_kind?: string;
+  created_at?: string | null;
+}
+
+export interface TextbookImageUpdatePayload {
+  caption?: string | null;
+  title?: string | null;
+  figure_number?: string | null;
+  image_type?: string | null;
+  educational_role?: string | null;
+  is_decorative?: boolean | null;
+  educational_description?: string | null;
 }
 
 export type ContentTypeApi = "CHAPTER" | "POEM" | "UNIT" | "LESSON" | "MASTER";
@@ -602,3 +658,149 @@ export interface ProcessResponseApi {
   embedding_status: ProcessingStatusApi;
   message: string;
 }
+
+export interface WorkerNodeApi {
+  name: string;
+  status: "online" | "degraded" | "offline";
+  concurrency: number;
+  active_tasks_count: number;
+  processed_total: number;
+  active_queues: string[];
+}
+
+export interface QueueDepthApi {
+  catalog_ingest: number;
+  lesson_generate: number;
+  mail: number;
+}
+
+export interface ActiveJobApi {
+  task_id: string;
+  task_name: string;
+  args: string[];
+  worker: string;
+  time_start?: number | null;
+  target_label?: string;
+}
+
+export interface RecentProcessApi {
+  id: number;
+  file_name: string;
+  board: string;
+  class_level: string;
+  subject_name: string;
+  chunk_count: number;
+  embedding_status: string;
+  updated_at?: string | null;
+}
+
+export interface WorkerStatusResponseApi {
+  status: "HEALTHY" | "DEGRADED" | "OFFLINE";
+  redis_connected: boolean;
+  workers: WorkerNodeApi[];
+  queue_depths: QueueDepthApi;
+  active_jobs: ActiveJobApi[];
+  total_documents: number;
+  embedded_count: number;
+  failed_count: number;
+  processing_count: number;
+  queued_count: number;
+  total_chunks: number;
+  recent_processes: RecentProcessApi[];
+  vector_backend: string;
+  storage_backend: string;
+}
+
+export interface TextbookChapterApi {
+  id?: number;
+  parent_id?: number | null;
+  chapter_number: string;
+  chapter_title: string;
+  hierarchy_level?: string;
+  start_pdf_page: number;
+  end_pdf_page: number;
+  printed_start_page?: string | null;
+  printed_end_page?: string | null;
+  is_non_chapter_section: boolean;
+  section_type: string;
+  detection_method: string;
+  confidence_score: number;
+  confidence_flags: string[];
+  status: string;
+  error_message?: string | null;
+  textbook_upload_id?: number | null;
+  sub_chapters?: TextbookChapterApi[];
+}
+
+export interface TextbookStructureApi {
+  textbook_id: number;
+  title: string;
+  total_pages: number;
+  pdf_type: string;
+  status: string;
+  page_offset?: number | null;
+  confidence_score?: number | null;
+  detection_method?: string;
+  needs_manual_review?: boolean;
+  review_warnings?: string[];
+  chapters: TextbookChapterApi[];
+  non_chapter_sections: TextbookChapterApi[];
+}
+
+export interface TextbookSummaryApi {
+  id: number;
+  title: string;
+  file_name: string;
+  board: BoardEnumApi;
+  class_level: ClassEnumApi;
+  subject_name: string;
+  publisher?: string | null;
+  is_default?: boolean;
+  total_pages: number;
+  pdf_type: string;
+  status: string;
+  chapter_count: number;
+  completed_chapters?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UserTokenUsageApi {
+  user_id: number;
+  full_name: string;
+  email: string;
+  role: string;
+  school_id: number | null;
+  total_tokens: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  tokens_day: number;
+  tokens_week: number;
+  tokens_month: number;
+}
+
+export interface SchoolTokenUsageApi {
+  school_id: number;
+  school_name: string;
+  branch: string | null;
+  board: string | null;
+  user_count: number;
+  total_tokens: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  tokens_day: number;
+  tokens_week: number;
+  tokens_month: number;
+  quota_limit: number;
+  quota_used_percent: number;
+}
+
+export interface TokenTelemetryResponseApi {
+  timeframe: string;
+  total_platform_tokens: number;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  school_usage: SchoolTokenUsageApi[];
+  user_usage: UserTokenUsageApi[];
+}
+

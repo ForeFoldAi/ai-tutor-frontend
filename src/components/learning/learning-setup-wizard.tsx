@@ -19,7 +19,7 @@ import {
   PlayCircle,
   Trophy,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, cleanDisplayText } from "@/lib/utils";
 import { brandImages } from "@/lib/brand-images";
 import type { StudentSubjectApi } from "@/api/types";
 
@@ -31,6 +31,11 @@ type ChapterStatus = "not_started" | "in_progress" | "completed";
 
 interface ChapterItem {
   id: string;
+  chapterLabel: string;
+  badgeLabel: string;
+  sortNum: number;
+  sortSub: string;
+  isRawPdf: number;
   title: string;
   subtitle: string;
   status: ChapterStatus;
@@ -149,6 +154,65 @@ function StepBadge({ step, title }: { step: number; title: string }) {
   );
 }
 
+export function parseChapterInfo(fileName?: string | null, chapterTitle?: string | null) {
+  const f = cleanDisplayText(fileName);
+  const c = cleanDisplayText(chapterTitle);
+
+  // 1. Try file_name for Chapter X.Y or Chapter X (e.g., "English - Chapter 7.A")
+  let m = f.match(/(?:chapter|unit|ch)\s*[-_.]?\s*(\d+)(?:[.\s_-]*([a-zA-Z]))?\b/i);
+
+  // 2. If not found in file_name, try chapterTitle for Chapter X or Unit X (e.g. "Chapter-1", "Unit 1")
+  if (!m) {
+    m = c.match(/(?:chapter|unit|ch)\s*[-_.]?\s*(\d+)(?:[.\s_-]+([a-zA-Z])\b(?![a-z]))?/i);
+  }
+
+  if (m) {
+    const num = parseInt(m[1], 10);
+    let sub = (m[2] || "").toUpperCase();
+    if (!sub) {
+      // Check if title has "Reading A", "Part A", etc.
+      const rm = c.match(/(?:reading|part|section)\s+([a-zA-Z])\b/i);
+      if (rm) {
+        sub = rm[1].toUpperCase();
+      }
+    }
+    const label = sub ? `Chapter ${num}${sub}` : `Chapter ${num}`;
+    const badge = sub ? `${num}${sub}` : `${num}`;
+    const isRawPdf = f.toLowerCase().endsWith(".pdf") ? 1 : 0;
+    return { num, sub, label, badge, isRawPdf };
+  }
+
+  // Fallback: search for first standalone number
+  const numMatch = c.match(/\b\d+\b/) || f.match(/\b\d+\b/);
+  if (numMatch) {
+    const num = parseInt(numMatch[0], 10);
+    return { num, sub: "", label: `Chapter ${num}`, badge: `${num}`, isRawPdf: 1 };
+  }
+
+  return { num: 9999, sub: "", label: "Chapter", badge: "-", isRawPdf: 1 };
+}
+
+function getChapterSubtitle(
+  subjectName: string,
+  fileName: string | null | undefined,
+  chapterLabel: string
+): string {
+  const f = cleanDisplayText(fileName);
+  if (!f) return `${subjectName} - ${chapterLabel}`;
+
+  // If file_name already has format like "English - Chapter 7.A"
+  if (f.toLowerCase().includes("chapter") && !f.toLowerCase().endsWith(".pdf")) {
+    return f;
+  }
+
+  // If file_name is something like "chapter-2.pdf" or "hepr101.pdf"
+  if (f.toLowerCase().endsWith(".pdf")) {
+    return `${subjectName} - ${chapterLabel}`;
+  }
+
+  return f;
+}
+
 export function LearningSetupWizard({
   open,
   onOpenChange,
@@ -164,18 +228,37 @@ export function LearningSetupWizard({
 
   const chapters: ChapterItem[] = useMemo(() => {
     if (!subject) return [];
-    return subject.chapters.map((ch, idx) => {
+    const items = subject.chapters.map((ch, idx) => {
       const id = String(ch.id);
       const meta = getChapterMeta(id, chapterStatusById, chapterProgressById);
+      const parsed = parseChapterInfo(ch.file_name, ch.chapter);
+      const rawTitle = cleanDisplayText(ch.chapter);
+      const title = rawTitle || parsed.label;
+      const subtitle = cleanDisplayText(ch.file_name) || getChapterSubtitle(subject.subject_name, ch.file_name, parsed.label);
+
       return {
         id,
-        title: ch.chapter || `Chapter ${idx + 1}`,
-        subtitle: ch.file_name,
+        chapterLabel: parsed.label,
+        badgeLabel: parsed.badge,
+        sortNum: parsed.num !== 9999 ? parsed.num : idx + 1,
+        sortSub: parsed.sub,
+        isRawPdf: parsed.isRawPdf,
+        title,
+        subtitle,
         status: meta.status,
         progress: meta.progress,
         iconBg: CHAPTER_ICON_COLORS[idx % CHAPTER_ICON_COLORS.length],
       };
     });
+
+    items.sort((a, b) => {
+      if (a.sortNum !== b.sortNum) return a.sortNum - b.sortNum;
+      if (a.sortSub !== b.sortSub) return a.sortSub.localeCompare(b.sortSub);
+      if (a.isRawPdf !== b.isRawPdf) return a.isRawPdf - b.isRawPdf;
+      return a.title.localeCompare(b.title);
+    });
+
+    return items;
   }, [subject, chapterStatusById, chapterProgressById]);
 
   const filteredChapters = useMemo(() => {
@@ -254,7 +337,14 @@ export function LearningSetupWizard({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-xl gap-0 overflow-hidden p-0 sm:max-w-2xl [&>button]:hidden">
+      <DialogContent
+        className={cn(
+          "max-h-[90vh] gap-0 overflow-hidden p-0 [&>button]:hidden transition-all duration-200",
+          step === 2
+            ? "w-[95vw] max-w-5xl xl:max-w-6xl"
+            : "w-[calc(100%-1.5rem)] max-w-xl sm:max-w-2xl"
+        )}
+      >
         <div className="flex max-h-[90vh] flex-col bg-card">
           {/* Step header strip */}
           <div className="border-b border-border/60 px-5 py-4">
@@ -325,8 +415,8 @@ export function LearningSetupWizard({
                     </p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 gap-3">
-                    {filteredChapters.map((chapter, idx) => {
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
+                    {filteredChapters.map((chapter) => {
                       const isSelected = selectedChapters.has(chapter.id);
                       return (
                         <button
@@ -334,7 +424,7 @@ export function LearningSetupWizard({
                           type="button"
                           onClick={() => toggleChapter(chapter.id)}
                           className={cn(
-                            "relative rounded-2xl border p-3 text-left transition-all sm:p-4",
+                            "relative rounded-2xl border p-3.5 text-left transition-all sm:p-4 min-h-[160px] flex flex-col justify-between",
                             isSelected
                               ? "border-green-500 bg-green-50 shadow-sm ring-1 ring-green-500/25 dark:bg-green-950/25"
                               : "border-border/60 bg-background hover:border-green-500/40"
@@ -357,9 +447,12 @@ export function LearningSetupWizard({
                                 isSelected ? "bg-green-600" : chapter.iconBg
                               )}
                             >
-                              {idx + 1}
+                              {chapter.badgeLabel}
                             </div>
                             <div className="min-w-0">
+                              <p className="text-xs font-bold text-primary">
+                                {chapter.chapterLabel}
+                              </p>
                               <p
                                 className={cn(
                                   "line-clamp-2 text-sm font-semibold leading-snug",
@@ -537,7 +630,7 @@ export function LearningSetupWizard({
                       icon: Layers,
                       label: "Chapters",
                       value: `${selectedChapters.size} Chapter${selectedChapters.size === 1 ? "" : "s"} Selected`,
-                      sub: selectedChapterItems.map((ch) => ch.title).join(", "),
+                      sub: selectedChapterItems.map((ch) => `${ch.chapterLabel}: ${ch.title}`).join(", "),
                     },
                     {
                       icon: Bot,
@@ -585,7 +678,7 @@ export function LearningSetupWizard({
           </div>
 
           {/* Footer */}
-          <div className="border-t border-border/60 bg-card px-5 py-4">
+          <div className="border-t border-border/60 bg-card px-6 py-4">
             {step === 2 && (
               <div className="flex items-center justify-between gap-3">
                 <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-foreground">
@@ -599,7 +692,7 @@ export function LearningSetupWizard({
                   Select All
                 </label>
                 <Button
-                  className="bg-gradient-brand"
+                  className="bg-gradient-brand h-10 px-6 font-semibold shadow-xs"
                   disabled={selectedChapters.size === 0}
                   onClick={() => setStep(3)}
                 >

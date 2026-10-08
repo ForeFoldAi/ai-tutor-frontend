@@ -91,7 +91,14 @@ export default function OrganizationManageClassesPage() {
     [classesQuery.data?.items],
   );
   const subjectMappings = mappingsQuery.data?.mappings ?? {};
+  const textbookChoices = mappingsQuery.data?.textbooks;
   const curricula = optionsQuery.data?.curricula ?? [];
+
+  const sectionsOfGrade = (classId: string, curriculum: string) => {
+    const cls = classes.find((c) => c.id === classId);
+    if (!cls) return [];
+    return classes.filter((c) => c.grade === cls.grade && (c.curriculums[0] ?? "") === curriculum);
+  };
 
   const invalidateAll = async () => {
     await invalidateManyAndBroadcast(qc, ["classes", "dashboard"]);
@@ -185,27 +192,37 @@ export default function OrganizationManageClassesPage() {
   });
 
   const mapSubjectsMutation = useMutation({
-    mutationFn: ({
+    mutationFn: async ({
       classId,
+      curriculum,
       mapped,
+      books,
+      applyToGrade,
     }: {
       classId: string;
       curriculum: string;
       mapped: Record<string, boolean>;
-    }) =>
-      saveClassSubjects(
-        classId,
-        Object.entries(mapped)
-          .filter(([, checked]) => checked)
-          .map(([id]) => Number(id)),
-      ),
-    onSuccess: (_result, variables) => {
+      books: Record<string, number | null>;
+      applyToGrade: boolean;
+    }) => {
+      const subjectIds = Object.entries(mapped)
+        .filter(([, checked]) => checked)
+        .map(([id]) => Number(id));
+      const textbooks = Object.fromEntries(subjectIds.map((id) => [id, books[String(id)] ?? null]));
+      const targets = applyToGrade ? sectionsOfGrade(classId, curriculum).map((c) => c.id) : [classId];
+      await Promise.all(targets.map((id) => saveClassSubjects(id, subjectIds, textbooks)));
+      return targets.length;
+    },
+    onSuccess: (sections, variables) => {
       invalidateAll();
       const count = Object.values(variables.mapped).filter(Boolean).length;
       const cls = classes.find((c) => c.id === variables.classId);
       toast({
         title: "Subjects mapped",
-        description: `${count} subject(s) saved for Grade ${cls?.grade} · Section ${cls?.section} (${variables.curriculum}).`,
+        description:
+          sections > 1
+            ? `${count} subject(s) saved for ${sections} sections of Grade ${cls?.grade} (${variables.curriculum}).`
+            : `${count} subject(s) saved for Grade ${cls?.grade} · Section ${cls?.section} (${variables.curriculum}).`,
       });
     },
     onError: (err) => {
@@ -359,6 +376,7 @@ export default function OrganizationManageClassesPage() {
               subjects={subjects}
               classes={classes}
               subjectMappings={subjectMappings}
+              textbookChoices={textbookChoices}
               onEdit={setEditingSubject}
               onDelete={setSubjectToDelete}
             />
@@ -438,8 +456,10 @@ export default function OrganizationManageClassesPage() {
         classItem={mappingClass}
         subjects={subjects}
         mappings={subjectMappings}
-        onSave={(classId, curriculum, mapped) => {
-          mapSubjectsMutation.mutate({ classId, curriculum, mapped });
+        textbookChoices={textbookChoices}
+        sectionsInGrade={mappingClass ? sectionsOfGrade(mappingClass.id, mappingClass.curriculums[0] ?? "").length : 1}
+        onSave={(classId, curriculum, mapped, books, applyToGrade) => {
+          mapSubjectsMutation.mutate({ classId, curriculum, mapped, books, applyToGrade });
           setMapSubjectsOpen(false);
           setMappingClass(null);
         }}

@@ -25,7 +25,7 @@ export const STUDENT_SIGNUP_FIELDS = {
   userId: { name: "user_id", label: "Choose User ID", required: true, type: "userId" },
   password: { name: "password", label: "Password", required: true, type: "password" },
   confirmPassword: { name: "confirm_password", label: "Confirm Password", required: true, type: "password" },
-  subjects: { name: "favorite_subjects", label: "Favorite Subjects", type: "pills", optionsKey: "student_subjects" },
+  subjects: { name: "favorite_subjects", label: "Select Subjects", type: "pills", optionsKey: "student_subjects" },
   goals: { name: "learning_goals", label: "Learning Goals", type: "checkboxes", optionsKey: "learning_goals" },
   method: { name: "preferred_learning_method", label: "Preferred Learning Method", type: "methods", optionsKey: "learning_methods" },
 } as const satisfies Record<string, SignupFieldDef>;
