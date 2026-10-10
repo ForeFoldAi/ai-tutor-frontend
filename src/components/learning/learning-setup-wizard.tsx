@@ -666,7 +666,7 @@ export function LearningSetupWizard({
                       </p>
                     </div>
                     <img
-                      src="/login-right.png"
+                      src="/login-right.webp"
                       alt=""
                       aria-hidden
                       className="h-20 w-20 shrink-0 object-contain"

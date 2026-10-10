@@ -97,7 +97,7 @@ export function SignupShell({ accountType, onAccountTypeChange, children }: Sign
     <div className="flex h-[100dvh] max-h-[100dvh] w-full overflow-hidden bg-background">
       <aside className="relative hidden h-full min-h-0 shrink-0 flex-col overflow-hidden border-r border-[#d4d2f5] lg:flex lg:w-[35%]">
         <img
-          src="/signup-left.png"
+          src="/signup-left.webp"
           alt=""
           aria-hidden
           className="absolute inset-0 h-full w-full object-cover object-left-bottom"
@@ -116,7 +116,7 @@ export function SignupShell({ accountType, onAccountTypeChange, children }: Sign
 
           <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden py-1">
             <img
-              src="/signup.png"
+              src="/signup.webp"
               alt=""
               aria-hidden
               className="h-full w-full max-h-[min(52vh,440px)] max-w-[min(100%,460px)] object-contain"

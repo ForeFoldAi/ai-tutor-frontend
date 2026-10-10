@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppNavBar } from "@/components/app-nav-bar";
@@ -26,7 +27,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <AppMobileHeader />
           <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto overflow-x-hidden bg-background pb-[calc(3.5rem+env(safe-area-inset-bottom))] lg:pb-0 [&:has(.dashboard-fit)]:overflow-x-hidden [&:has(.dashboard-fit)]:overflow-y-auto">
-            {children}
+            <Suspense fallback={null}>{children}</Suspense>
           </main>
           {showFloatingSettings && <FloatingSettingsButton />}
           <AppNavBar />

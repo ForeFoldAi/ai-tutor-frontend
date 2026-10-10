@@ -3,24 +3,9 @@ import { BarChart3, Bot, Shield } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthLightTheme } from "@/lib/theme-provider";
 import { AuthBrandMark } from "@/components/auth/auth-brand-mark";
+import { ORG, SITE_FEATURES } from "@/seo/site";
 
-export const AUTH_FEATURES = [
-  {
-    icon: Bot,
-    label: "AI-Powered Tutoring",
-    description: "Get instant help and explanations tailored to your needs.",
-  },
-  {
-    icon: BarChart3,
-    label: "Track Your Progress",
-    description: "Monitor performance and improve with smart insights.",
-  },
-  {
-    icon: Shield,
-    label: "Safe & Secure",
-    description: "Your data is protected with enterprise grade security.",
-  },
-];
+export const AUTH_FEATURES = SITE_FEATURES.map((f, i) => ({ ...f, icon: [Bot, BarChart3, Shield][i] }));
 
 function AuthBrandingPanel() {
   return (
@@ -28,7 +13,7 @@ function AuthBrandingPanel() {
       {/* Below ~610px of viewport height the copy runs out of room, so let the illustration bleed off
           the bottom edge instead of colliding with the text. */}
       <img
-        src="/login-left.png"
+        src="/login-left.webp"
         alt=""
         aria-hidden
         className="absolute inset-0 h-full w-full object-cover object-left-bottom"
@@ -122,8 +107,10 @@ export function AuthCardIllustration() {
   return (
     <div className="shrink-0 px-5 pt-[clamp(0.5rem,2vh,1rem)] sm:px-7">
       <img
-        src="/login-right.png"
+        src="/login-right.webp"
         alt="Student learning with Learn Mastro"
+        width={640}
+        height={427}
         className="mx-auto h-auto w-full max-h-[clamp(2.5rem,11vh,7.5rem)] object-contain"
       />
     </div>
@@ -137,12 +124,12 @@ export function AuthCardFooter() {
       <span>
         powered by{" "}
         <a
-          href="https://forefoldai.com/"
+          href={ORG.url}
           target="_blank"
           rel="noopener noreferrer"
           className="font-semibold text-primary transition-colors hover:text-primary-hover hover:underline"
         >
-          ForeFold AI
+          {ORG.name}
         </a>
       </span>
     </div>

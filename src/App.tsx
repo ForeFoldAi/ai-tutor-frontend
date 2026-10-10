@@ -1,4 +1,5 @@
-import { Switch, Route, Redirect } from "wouter";
+import { lazy, Suspense, useEffect } from "react";
+import { Switch, Route, Redirect, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -6,52 +7,54 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/lib/theme-provider";
 import { useAuthStore } from "@/lib/auth-store";
 import { useLiveQuerySync } from "@/hooks/use-live-query-sync";
-import { AppLayout } from "@/components/app-layout";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
 import ForgotPasswordPage from "@/pages/forgot-password";
 import SignupPage from "@/pages/signup";
-import DashboardPage from "@/pages/dashboard";
-import AILearningStudioPage from "@/pages/ai-learning-studio";
-import MyLearningPage from "@/pages/my-learning";
-import AITutorPage from "@/pages/ai-tutor";
-import AiTutorAgentPage from "@/pages/ai-tutor-agent";
-import AskAiTutorPage from "@/pages/ask-ai-tutor";
-import AssignmentsPage from "@/pages/assignments";
-import LiveClassesPage from "@/pages/live-classes";
-import SettingsPage from "@/pages/settings";
-import UsersPage from "@/pages/users";
-import SyllabusPage from "@/pages/syllabus";
-import VoiceTutorPage from "@/pages/tutor/voice-tutor";
+import { applyRouteMeta } from "@/seo/site";
 import { getDashboardPath } from "@/lib/dashboard-routes";
 import { isIndividualStudent } from "@/lib/app-nav-items";
 import { UserRole, type UserRoleType } from "@/types/schema";
-import MasterAdminDashboardModulePage from "@/modules/master-admin/pages/dashboard-page";
-import MasterAdminSchoolsPage from "@/modules/master-admin/pages/schools-page";
-import MasterAdminUsersPage from "@/modules/master-admin/pages/users-page";
-import MasterAdminBoardsSyllabusPage from "@/modules/master-admin/pages/boards-syllabus-page";
-import MasterAdminTextbookUploadsPage from "@/modules/master-admin/pages/textbook-uploads-page";
-import MasterAdminAIEmbeddingsPage from "@/modules/master-admin/pages/ai-embeddings-page";
-import MasterAdminSubscriptionsPage from "@/modules/master-admin/pages/subscriptions-page";
 
-import ManageTutorsPage from "@/modules/master-admin/pages/manage-tutors-page";
-import ManageStudentsPage from "@/modules/master-admin/pages/manage-students-page";
-import MasterAdminReportsPage from "@/modules/master-admin/pages/reports-page";
-import MasterAdminSettingsPage from "@/modules/master-admin/pages/settings-page";
-import OrganizationManageTutorsPage from "@/modules/organization/pages/manage-tutors-page";
-import OrganizationManageStudentsPage from "@/modules/organization/pages/manage-students-page";
-import OrganizationManageClassesPage from "@/modules/organization/pages/manage-classes-page";
-import OrganizationCredentialsPage from "@/modules/organization/pages/credentials-page";
-import OrganizationSettingsPage from "@/modules/organization/pages/settings-page";
-import TutorDashboardModulePage from "@/modules/tutor/pages/dashboard-page";
-import TutorAssignedStudentsPage from "@/modules/tutor/pages/assigned-students-page";
-import TutorStudentProfilePage from "@/modules/tutor/pages/student-profile-page";
-import TutorSessionManagementPage from "@/modules/tutor/pages/session-management-page";
-import TutorLessonPlannerPage from "@/modules/tutor/pages/lesson-planner-page";
-import TutorAIInsightsPage from "@/modules/tutor/pages/ai-insights-page";
-import TutorProgressTrackingPage from "@/modules/tutor/pages/progress-tracking-page";
-import TutorProfileSettingsPage from "@/modules/tutor/pages/profile-settings-page";
-import AssignmentTakePage from "@/pages/assignment-take";
+// Logged-in app is split per route so public pages (home, login, signup) don't download it.
+const AppLayout = lazy(() => import("@/components/app-layout").then((m) => ({ default: m.AppLayout })));
+const DashboardPage = lazy(() => import("@/pages/dashboard"));
+const AILearningStudioPage = lazy(() => import("@/pages/ai-learning-studio"));
+const MyLearningPage = lazy(() => import("@/pages/my-learning"));
+const AITutorPage = lazy(() => import("@/pages/ai-tutor"));
+const AiTutorAgentPage = lazy(() => import("@/pages/ai-tutor-agent"));
+const AskAiTutorPage = lazy(() => import("@/pages/ask-ai-tutor"));
+const AssignmentsPage = lazy(() => import("@/pages/assignments"));
+const LiveClassesPage = lazy(() => import("@/pages/live-classes"));
+const SettingsPage = lazy(() => import("@/pages/settings"));
+const UsersPage = lazy(() => import("@/pages/users"));
+const SyllabusPage = lazy(() => import("@/pages/syllabus"));
+const VoiceTutorPage = lazy(() => import("@/pages/tutor/voice-tutor"));
+const MasterAdminDashboardModulePage = lazy(() => import("@/modules/master-admin/pages/dashboard-page"));
+const MasterAdminSchoolsPage = lazy(() => import("@/modules/master-admin/pages/schools-page"));
+const MasterAdminUsersPage = lazy(() => import("@/modules/master-admin/pages/users-page"));
+const MasterAdminBoardsSyllabusPage = lazy(() => import("@/modules/master-admin/pages/boards-syllabus-page"));
+const MasterAdminTextbookUploadsPage = lazy(() => import("@/modules/master-admin/pages/textbook-uploads-page"));
+const MasterAdminAIEmbeddingsPage = lazy(() => import("@/modules/master-admin/pages/ai-embeddings-page"));
+const MasterAdminSubscriptionsPage = lazy(() => import("@/modules/master-admin/pages/subscriptions-page"));
+const ManageTutorsPage = lazy(() => import("@/modules/master-admin/pages/manage-tutors-page"));
+const ManageStudentsPage = lazy(() => import("@/modules/master-admin/pages/manage-students-page"));
+const MasterAdminReportsPage = lazy(() => import("@/modules/master-admin/pages/reports-page"));
+const MasterAdminSettingsPage = lazy(() => import("@/modules/master-admin/pages/settings-page"));
+const OrganizationManageTutorsPage = lazy(() => import("@/modules/organization/pages/manage-tutors-page"));
+const OrganizationManageStudentsPage = lazy(() => import("@/modules/organization/pages/manage-students-page"));
+const OrganizationManageClassesPage = lazy(() => import("@/modules/organization/pages/manage-classes-page"));
+const OrganizationCredentialsPage = lazy(() => import("@/modules/organization/pages/credentials-page"));
+const OrganizationSettingsPage = lazy(() => import("@/modules/organization/pages/settings-page"));
+const TutorDashboardModulePage = lazy(() => import("@/modules/tutor/pages/dashboard-page"));
+const TutorAssignedStudentsPage = lazy(() => import("@/modules/tutor/pages/assigned-students-page"));
+const TutorStudentProfilePage = lazy(() => import("@/modules/tutor/pages/student-profile-page"));
+const TutorSessionManagementPage = lazy(() => import("@/modules/tutor/pages/session-management-page"));
+const TutorLessonPlannerPage = lazy(() => import("@/modules/tutor/pages/lesson-planner-page"));
+const TutorAIInsightsPage = lazy(() => import("@/modules/tutor/pages/ai-insights-page"));
+const TutorProgressTrackingPage = lazy(() => import("@/modules/tutor/pages/progress-tracking-page"));
+const TutorProfileSettingsPage = lazy(() => import("@/modules/tutor/pages/profile-settings-page"));
+const AssignmentTakePage = lazy(() => import("@/pages/assignment-take"));
 
 function normalizeRole(value: string | undefined | null): string {
   return String(value || "").toLowerCase();
@@ -119,6 +122,11 @@ function SchoolAdminOrIndividualTutorRoute({ children }: { children: React.React
 }
 
 function Router() {
+  const [location] = useLocation();
+  useEffect(() => {
+    applyRouteMeta(location);
+  }, [location]);
+
   return (
     <Switch>
       <Route path="/">
@@ -439,7 +447,9 @@ function App() {
         <TooltipProvider>
           <Toaster />
           <LiveQuerySync />
-          <Router />
+          <Suspense fallback={null}>
+            <Router />
+          </Suspense>
         </TooltipProvider>
       </ThemeProvider>
     </QueryClientProvider>
