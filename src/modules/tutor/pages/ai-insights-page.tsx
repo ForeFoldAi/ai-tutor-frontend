@@ -46,7 +46,7 @@ export default function TutorAIInsightsPage() {
         loading={insightsQuery.isLoading}
         error={insightsQuery.error ? String(insightsQuery.error) : null}
         empty={Boolean(mapped && !mapped.weakTopics.length && !mapped.affectedStudents.length)}
-        emptyText="No LIA insights yet. Insights appear after students use the AI tutor."
+        emptyText="No LIA insights yet. Insights appear after students use Learn Mastro."
         onRetry={() => void insightsQuery.refetch()}
       >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">

@@ -1165,7 +1165,7 @@ export default function AITutorPage() {
                 <span className="text-muted-foreground">{primaryChapterName}</span>
               </p>
             ) : (
-              <p className="text-sm font-semibold text-foreground sm:text-base">AI Tutor</p>
+              <p className="text-sm font-semibold text-foreground sm:text-base">Learn Mastro</p>
             )}
           </div>
         </div>
@@ -1283,12 +1283,12 @@ export default function AITutorPage() {
                           subject: chapterCtx.subject,
                           chapterNames: chapterCtx.chapterNames,
                         })
-                      : `Hello${user?.fullName ? `, ${user.fullName.split(" ")[0]}` : ""}! I'm your AI tutor. Ask me anything about your studies.`)}
+                      : `Hello${user?.fullName ? `, ${user.fullName.split(" ")[0]}` : ""}! I'm Learn Mastro. Ask me anything about your studies.`)}
                 </p>
               </div>
               <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
                 <Sparkles className="h-4 w-4 text-accent" />
-                <span>Powered by AI Tutor</span>
+                <span>Powered by Learn Mastro</span>
               </div>
              
             </div>

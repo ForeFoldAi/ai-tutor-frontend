@@ -368,11 +368,11 @@ export default function MyLearningPage() {
                 Need help understanding a topic?
               </p>
               <p className="text-xs text-muted-foreground">
-                Ask your AI Tutor for step-by-step explanations.
+                Ask Learn Mastro for step-by-step explanations.
               </p>
             </div>
             <AskAiTutorButton className="h-8 w-auto shrink-0 px-3 text-sm">
-              Ask AI Tutor
+              Ask Learn Mastro
             </AskAiTutorButton>
           </CardContent>
         </Card>

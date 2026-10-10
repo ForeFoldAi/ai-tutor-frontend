@@ -275,7 +275,7 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
               <p className="mt-1 text-xl font-bold text-foreground">
                 {formatStudyTime(stats?.total_study_seconds ?? 0)}
               </p>
-              <p className="text-xs text-muted-foreground">AI Tutor + Voice</p>
+              <p className="text-xs text-muted-foreground">Learn Mastro + Voice</p>
             </div>
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 dark:bg-amber-950/40">
               <Clock className="h-4 w-4 text-amber-600" />
@@ -414,7 +414,7 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
                     ) : (
                       <>
                         <h3 className="text-sm font-bold leading-snug text-foreground sm:text-base">
-                          Start learning with AI Tutor
+                          Start learning with Learn Mastro
                         </h3>
                         <p className="mt-2 text-xs text-muted-foreground">
                           Pick a subject from your class to begin.
@@ -423,7 +423,7 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
                           asChild
                           className="mt-4 h-9 w-auto min-w-[9rem] rounded-xl bg-gradient-brand px-4 sm:h-10 sm:min-w-[11rem] sm:px-6"
                         >
-                          <Link href="/ai-learning-studio">Go to AI Tutor</Link>
+                          <Link href="/ai-learning-studio">Go to Learn Mastro</Link>
                         </Button>
                       </>
                     )}

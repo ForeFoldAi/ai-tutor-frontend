@@ -204,7 +204,7 @@ function StudioHomeView({
           </p>
         </div>
         <AskAiTutorButton className="h-8 shrink-0 px-3 sm:h-9 sm:px-4">
-          Ask AI Tutor
+          Ask Learn Mastro
         </AskAiTutorButton>
       </div>
 
@@ -259,7 +259,7 @@ function StudioHomeView({
 
       <div>
         <h2 className="text-base font-semibold text-foreground sm:text-lg">
-          Quick Start with AI Tutor
+          Quick Start with Learn Mastro
         </h2>
         <p className="mt-0.5 text-sm text-muted-foreground">
           Ask, practice, or get an explanation — subject is detected from your question
@@ -294,7 +294,7 @@ function StudioHomeView({
             </h2>
           </div>
           <p className="mb-3 text-sm text-muted-foreground">
-            Topics picked from your progress — tap one to start with AI Tutor
+            Topics picked from your progress — tap one to start with Learn Mastro
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             {recommendedTopics.map((topic) => {

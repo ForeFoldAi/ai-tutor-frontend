@@ -548,7 +548,7 @@ export function VoiceLiveCall({
                 : "border-border text-muted-foreground bg-muted/50 cursor-not-allowed opacity-50",
             )}
             onClick={onInterrupt}
-            aria-label="Interrupt AI tutor"
+            aria-label="Interrupt Learn Mastro"
           >
             <Square className="h-3.5 w-3.5 fill-current" />
           </Button>

@@ -63,7 +63,7 @@ const MODE_META: Record<
   }
 > = {
   free: {
-    title: "Ask AI Tutor",
+    title: "Ask Learn Mastro",
     subtitle: "Platform help + school questions — including outside the textbook",
     placeholder: "Ask about school topics, homework, progress, or the platform…",
     icon: MessageCircle,
@@ -71,7 +71,7 @@ const MODE_META: Record<
   },
   ask: {
     title: "Ask Textbook Q&A",
-    subtitle: "Short textbook Q&A — out-of-book? Use Ask AI Tutor",
+    subtitle: "Short textbook Q&A — out-of-book? Use Ask Learn Mastro",
     placeholder: "Ask a question from your textbook subjects…",
     icon: MessageCircle,
     fallbackPrompts: [

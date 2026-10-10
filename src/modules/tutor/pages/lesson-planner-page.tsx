@@ -277,7 +277,7 @@ export default function TutorLessonPlannerPage() {
                 <p className="mb-2 shrink-0 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
                   {individual
                     ? "No classes yet on your profile. Open Classes, add your board/curriculum and teaching classes, then return here to plan lessons."
-                    : "No class or curriculum is assigned to your tutor profile. Ask your school admin to set board and teaching classes — the student AI tutor works because that profile already has them."}
+                    : "No class or curriculum is assigned to your tutor profile. Ask your school admin to set board and teaching classes — student Learn Mastro works because that profile already has them."}
                 </p>
               ) : null}
               <LessonPlanForm

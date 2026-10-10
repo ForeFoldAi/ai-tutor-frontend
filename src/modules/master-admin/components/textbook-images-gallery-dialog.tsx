@@ -712,7 +712,7 @@ export function TextbookImagesGalleryDialog({
               </p>
               <p className="font-semibold text-foreground">
                 This will delete the image file and remove its vector embeddings from Qdrant/Chroma.
-                It will no longer appear in student AI tutor sessions.
+                It will no longer appear in student Learn Mastro sessions.
               </p>
             </AlertDialogDescription>
           </AlertDialogHeader>

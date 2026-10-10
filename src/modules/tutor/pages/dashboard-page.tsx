@@ -267,7 +267,7 @@ export default function TutorDashboardModulePage() {
         <CardContent className="space-y-3">
           {aiRecommendations.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              Recommendations will appear as students learn with AI Tutor.
+              Recommendations will appear as students learn with Learn Mastro.
             </p>
           ) : (
             aiRecommendations.map((item) => {

@@ -813,7 +813,7 @@ export function TextbookStructureDialog({
                     <Info className="h-4 w-4 text-amber-500" />
                     <span>
                       These sections are detected as preliminary material (covers, preface, TOC) or back matter
-                      (appendices, listening transcripts) and are <strong>excluded from AI tutor RAG chunking</strong> to
+                      (appendices, listening transcripts) and are <strong>excluded from Learn Mastro RAG chunking</strong> to
                       prevent hallucination and prompt contamination.
                     </span>
                   </div>

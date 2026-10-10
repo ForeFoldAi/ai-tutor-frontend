@@ -47,7 +47,7 @@ const OVERVIEW_COLORS = {
 const TIPS_FOR_SUCCESS = [
   "Start pending quizzes early so you have time to review tricky questions.",
   "Read each question carefully and check your answers before submitting.",
-  "Use AI Tutor to practice weak topics before you open a graded quiz.",
+  "Use Learn Mastro to practice weak topics before you open a graded quiz.",
 ] as const;
 
 function formatDate(iso: string): string {
@@ -445,11 +445,11 @@ export default function AssignmentsPage() {
                   Need help with an assignment?
                 </p>
                 <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">
-                  Ask AI Tutor for explanations, help with questions, or study tips.
+                  Ask Learn Mastro for explanations, help with questions, or study tips.
                 </p>
               </div>
               <AskAiTutorButton className="h-9 w-full shrink-0 px-4 sm:h-10 sm:w-auto sm:px-5">
-                Ask AI Tutor
+                Ask Learn Mastro
               </AskAiTutorButton>
             </CardContent>
           </Card>

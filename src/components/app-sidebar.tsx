@@ -96,7 +96,7 @@ export function AppSidebar() {
           >
             <img
               src="/logo.png"
-              alt="AI Tutor"
+              alt="Learn Mastro"
               className="h-7 w-7 object-contain"
             />
           </Link>

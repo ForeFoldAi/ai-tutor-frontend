@@ -63,7 +63,7 @@ const METHOD_OPTIONS: {
 }[] = [
   {
     id: "ai-tutor",
-    title: "AI Tutor (Text to Text)",
+    title: "Learn Mastro (Text to Text)",
     description:
       "Interactive chat with AI. Get step-by-step explanations, solve doubts, and practice questions.",
     icon: Bot,
@@ -581,7 +581,7 @@ export function LearningSetupWizard({
                 <div className="rounded-2xl border border-border/60 bg-gradient-to-r from-primary/5 via-accent/5 to-brand-secondary/5 p-4">
                   <div className="flex items-center gap-4">
                     <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-foreground">Why use AI Tutor?</p>
+                      <p className="font-semibold text-foreground">Why use Learn Mastro?</p>
                       <ul className="mt-2 space-y-1.5 text-sm text-muted-foreground">
                         {[
                           "Personalized explanations",

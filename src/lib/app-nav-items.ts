@@ -29,7 +29,7 @@ export type AppNavItem = {
 const studentMenuItems: AppNavItem[] = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "My Learning", url: "/my-learning", icon: BookOpen },
-  { title: "AI Tutor", url: "/ai-learning-studio", imageIcon: "/icon.png" },
+  { title: "Learn Mastro", url: "/ai-learning-studio", imageIcon: "/icon.png" },
   { title: "Session", url: "/live-classes", icon: Video },
   { title: "Assignments", url: "/assignments", icon: FileText },
 ];

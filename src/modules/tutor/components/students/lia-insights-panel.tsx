@@ -54,7 +54,7 @@ export function LiaInsightsPanel({ studentId, className }: LiaInsightsPanelProps
           loading={loading}
           error={error ? String(error) : null}
           empty={!summaryQuery.data && !mapQuery.data && !loading}
-          emptyText="LIA insights will appear after the student interacts with the AI tutor."
+          emptyText="LIA insights will appear after the student interacts with Learn Mastro."
           onRetry={() => {
             void summaryQuery.refetch();
             void mapQuery.refetch();

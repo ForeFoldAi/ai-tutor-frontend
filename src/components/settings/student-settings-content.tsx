@@ -60,7 +60,7 @@ const fieldClass = cn(
 );
 
 const LEARNING_METHOD_META: Record<string, { title: string; description: string; icon: typeof Bot }> = {
-  "ai-tutor": { title: "AI Tutor (Text to Text)", description: "Chat with AI for step-by-step explanations.", icon: Bot },
+  "ai-tutor": { title: "Learn Mastro (Text to Text)", description: "Chat with AI for step-by-step explanations.", icon: Bot },
   "ai-voice": { title: "AI Voice Tutor", description: "Learn hands-free with voice interaction.", icon: Mic },
   videos: { title: "Pre-recorded Videos", description: "Watch concept videos at your own pace.", icon: PlayCircle },
 };

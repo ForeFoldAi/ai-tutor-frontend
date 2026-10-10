@@ -20,7 +20,7 @@ export function AuthBrandMark({
   const logo = (
     <img
       src="/logo.png"
-      alt="AI Tutor"
+      alt="Learn Mastro"
       className={cn(
         "object-contain",
         isCompact
@@ -70,7 +70,7 @@ export function AuthBrandMark({
                   : "text-2xl text-[#2d2060] dark:text-foreground xl:text-3xl"
           )}
         >
-          AI Tutor
+          Learn Mastro
         </p>
         {!isCompact ? (
           <p

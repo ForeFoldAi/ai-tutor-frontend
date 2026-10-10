@@ -347,7 +347,7 @@ export function StudentProfileView({ student }: StudentProfileViewProps) {
             <div className="min-w-0 space-y-1 pr-2">
               <CardTitle className="flex items-center gap-2 text-base text-blue-900 dark:text-blue-100">
                 <Sparkles className="h-4 w-4 text-primary" />
-                Recent AI Tutor Activity
+                Recent Learn Mastro Activity
               </CardTitle>
               <CardDescription>Completed study sessions (start – end)</CardDescription>
             </div>
@@ -358,7 +358,7 @@ export function StudentProfileView({ student }: StudentProfileViewProps) {
           <CardContent className="flex flex-1 flex-col space-y-2.5 pt-4">
             {student.aiActivity.length === 0 ? (
               <p className="flex flex-1 items-center justify-center rounded-xl border border-dashed border-slate-300 px-3 py-8 text-center text-sm text-muted-foreground dark:border-slate-600">
-                No recent AI tutor activity.
+                No recent Learn Mastro activity.
               </p>
             ) : (
               aiActivityPreview.map((item, idx) => (
@@ -371,7 +371,7 @@ export function StudentProfileView({ student }: StudentProfileViewProps) {
         <ViewMoreDialog
           open={aiActivityOpen}
           onOpenChange={setAiActivityOpen}
-          title="All AI Tutor Activity"
+          title="All Learn Mastro Activity"
           description="Completed study sessions with start and end times"
         >
           {student.aiActivity.map((item, idx) => (

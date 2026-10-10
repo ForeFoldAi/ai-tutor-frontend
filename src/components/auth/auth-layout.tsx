@@ -43,7 +43,7 @@ function AuthBrandingPanel() {
         <div className="mt-[2em] flex min-h-0 flex-1 flex-col justify-start">
           <h1 className="max-w-md text-[1.75em] font-bold leading-tight tracking-tight text-[#1a1040] dark:text-foreground">
             Smarter Learning With{" "}
-            <span className="bg-gradient-brand bg-clip-text text-transparent">AI Tutors</span>
+            <span className="bg-gradient-brand bg-clip-text text-transparent">Learn Mastro</span>
           </h1>
           <p className="mt-[0.85em] max-w-md text-[1em] leading-relaxed text-[#4a4070] dark:text-body-foreground">
             Personalized learning, real-time support and progress that matters.
@@ -123,7 +123,7 @@ export function AuthCardIllustration() {
     <div className="shrink-0 px-5 pt-[clamp(0.5rem,2vh,1rem)] sm:px-7">
       <img
         src="/login-right.png"
-        alt="Student learning with AI tutor"
+        alt="Student learning with Learn Mastro"
         className="mx-auto h-auto w-full max-h-[clamp(2.5rem,11vh,7.5rem)] object-contain"
       />
     </div>

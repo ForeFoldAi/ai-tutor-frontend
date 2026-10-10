@@ -38,7 +38,7 @@ interface MasterAdminSettingsState {
 }
 
 const DEFAULT_SETTINGS: MasterAdminSettingsState = {
-  platformName: "AI Tutor Smart Learning",
+  platformName: "Learn Mastro",
   tagline: "Enterprise Multi-Tenant AI Tutoring & RAG Platform",
   adminEmail: "masteradmin@aitutor.io",
   supportEmail: "support@aitutor.io",

@@ -313,7 +313,7 @@ export function SuccessPanel({
         <img src="/login-right.png" alt="" aria-hidden className="mx-auto h-24 w-auto object-contain" />
         <h2 className="mt-4 text-xl font-bold text-foreground">Account Created Successfully!</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Welcome to AI Tutor, <span className="font-semibold text-foreground">{name}</span>! Your account has been
+          Welcome to Learn Mastro, <span className="font-semibold text-foreground">{name}</span>! Your account has been
           created successfully.
         </p>
 

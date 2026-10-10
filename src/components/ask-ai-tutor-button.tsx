@@ -14,7 +14,7 @@ interface AskAiTutorButtonProps {
 export function AskAiTutorButton({
   className,
   labelClassName,
-  shortLabel = "AI Tutor",
+  shortLabel = "Learn Mastro",
   children,
 }: AskAiTutorButtonProps) {
   const openAskAiTutor = useAskAiTutorStore((s) => s.openAskAiTutor);
@@ -28,7 +28,7 @@ export function AskAiTutorButton({
       <AiTutorButtonIcon />
       {children ?? (
         <>
-          <span className={cn("hidden sm:inline", labelClassName)}>Ask AI Tutor</span>
+          <span className={cn("hidden sm:inline", labelClassName)}>Ask Learn Mastro</span>
           <span className="sm:hidden">{shortLabel}</span>
         </>
       )}
