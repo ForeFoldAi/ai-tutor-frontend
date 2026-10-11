@@ -227,8 +227,8 @@ export function StudentSignupWizard() {
         name={fullName.split(" ")[0] || "Student"}
         userId={userId || slugName(fullName)}
         accountType="student"
-        dashboardLabel="Go to Dashboard"
-        onDashboard={() => navigate("/login")}
+        dashboardLabel="Continue"
+        onDashboard={() => navigate("/pending-approval")}
         features={["Secure your progress", "Personalized learning path", "AI-powered help anytime"]}
       />
     );
@@ -478,8 +478,8 @@ export function TeacherSignupWizard() {
         name={fullName.split(" ")[0] || "Teacher"}
         userId={userId || slugName(fullName)}
         accountType="teacher"
-        dashboardLabel="Go to Teacher Dashboard"
-        onDashboard={() => navigate("/login")}
+        dashboardLabel="Continue"
+        onDashboard={() => navigate("/pending-approval")}
         features={["Create & manage classes", "Track student progress", "AI tools to teach better"]}
       />
     );
@@ -706,10 +706,10 @@ export function SchoolSignupWizard() {
           </div>
           <button
             type="button"
-            onClick={() => navigate("/login")}
+            onClick={() => navigate("/pending-approval")}
             className={cn("mt-6 inline-flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-white", SIGNUP_THEMES.school.button)}
           >
-            Go to School Dashboard
+            Continue
             <ArrowRight className="h-4 w-4" />
           </button>
         </SignupSuccessCard>
