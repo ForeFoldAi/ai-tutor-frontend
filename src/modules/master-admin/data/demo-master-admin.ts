@@ -1,6 +1,6 @@
 export type SubscriptionPlanName = "Starter" | "Growth" | "Enterprise";
 export type OrgStatus = "Active" | "Suspended" | "Pending";
-export type UserStatus = "Active" | "Suspended" | "Invited";
+export type UserStatus = "Active" | "Suspended" | "Invited" | "Pending approval";
 export type RecordStatus = "Queued" | "Processing" | "Embedded" | "Failed";
 export type EmbeddingPipelineStep = "Uploaded" | "OCR" | "Chunked" | "Embedded" | "Active";
 

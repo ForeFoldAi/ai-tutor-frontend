@@ -25,6 +25,7 @@ export interface ApiUser {
   role: RoleApi;
   is_active: boolean;
   is_verified: boolean;
+  approved_at?: string | null;
   school_id: number | null;
   phone?: string | null;
   designation?: string | null;

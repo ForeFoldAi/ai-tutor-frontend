@@ -22,6 +22,9 @@ const loginSchema = z.object({
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
+// Must match ACCOUNT_PENDING_APPROVAL in the backend's app/core/student_messages.py.
+const PENDING_APPROVAL_DETAIL = "awaiting admin approval";
+
 const roleMap: Record<string, string> = {
   STUDENT: UserRole.STUDENT,
   TUTOR: UserRole.TUTOR,
@@ -54,6 +57,10 @@ export default function LoginPage() {
         body: JSON.stringify({ email: data.username, password: data.password }),
       });
       const loginText = await loginResponse.text();
+      if (loginResponse.status === 403 && loginText.includes(PENDING_APPROVAL_DETAIL)) {
+        navigate("/pending-approval");
+        return;
+      }
       if (!loginResponse.ok) {
         throw new Error(studentFriendlyApiError(loginText, loginResponse.status, MSG.loginFailed));
       }

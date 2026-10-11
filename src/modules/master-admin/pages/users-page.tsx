@@ -38,8 +38,11 @@ import {
   Pencil,
   Trash2,
   BookOpen,
+  UserCheck,
+  Clock,
 } from "lucide-react";
 import {
+  approveUser,
   deleteAdminUser,
   getAdminUsers,
   getMasterAdminSchools,
@@ -53,6 +56,9 @@ import { invalidateManyAndBroadcast } from "@/lib/query-broadcast";
 import type { ApiUser, SchoolSummary, UserTokenUsageApi } from "@/api/types";
 
 const roleLabel = (role: string) => role.replace(/_/g, " ");
+
+const isPending = (u: ApiUser) => u.approved_at === null;
+const userStatus = (u: ApiUser) => (isPending(u) ? "Pending approval" : u.is_active ? "Active" : "Suspended");
 
 function formatDate(iso?: string | null) {
   if (!iso) return "—";
@@ -151,6 +157,16 @@ export default function MasterAdminUsersPage() {
     onError: () => toast({ title: "Failed to update status", variant: "destructive" }),
   });
 
+  const approveMutation = useMutation({
+    mutationFn: (id: number) => approveUser(id),
+    onSuccess: async () => {
+      await invalidateManyAndBroadcast(qc, ["users", "students", "teachers", "dashboard"]);
+      setSelectedUser(null);
+      toast({ title: "User Approved", description: "They can sign in now and have been emailed." });
+    },
+    onError: () => toast({ title: "Failed to approve user", variant: "destructive" }),
+  });
+
   const updateMutation = useMutation({
     mutationFn: ({ id, form }: { id: number; form: EditForm }) =>
       patchAdminUser(id, {
@@ -202,8 +218,9 @@ export default function MasterAdminUsersPage() {
     const students = users.filter((u) => u.role === "STUDENT").length;
     const tutors = users.filter((u) => u.role === "TUTOR").length;
     const schoolAdmins = users.filter((u) => u.role === "SCHOOL_ADMIN").length;
-    const activeCount = users.filter((u) => u.is_active).length;
-    return { total, students, tutors, schoolAdmins, activeCount };
+    const pendingCount = users.filter(isPending).length;
+    const activeCount = users.filter((u) => u.is_active && !isPending(u)).length;
+    return { total, students, tutors, schoolAdmins, activeCount, pendingCount };
   }, [users]);
 
   // Roles available in actual database
@@ -215,7 +232,7 @@ export default function MasterAdminUsersPage() {
     return users.filter((u) => {
       if (q && !u.full_name.toLowerCase().includes(q) && !u.email.toLowerCase().includes(q)) return false;
       if (roleFilter !== "all" && u.role !== roleFilter) return false;
-      if (statusFilter !== "all" && String(u.is_active) !== statusFilter) return false;
+      if (statusFilter !== "all" && statusFilter !== (isPending(u) ? "pending" : String(u.is_active))) return false;
       if (schoolFilter !== "all" && String(u.school_id ?? "none") !== schoolFilter) return false;
       return true;
     });
@@ -246,8 +263,8 @@ export default function MasterAdminUsersPage() {
     return (
       <PageShell>
         <Skeleton className="h-8 w-48" />
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {Array.from({ length: 5 }).map((_, i) => (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-24 w-full" />
           ))}
         </div>
@@ -292,7 +309,7 @@ export default function MasterAdminUsersPage() {
                   Phone: u.phone ?? "",
                   Role: u.role,
                   School: u.school_id ? schoolMap[u.school_id]?.name || `School #${u.school_id}` : "Global",
-                  Status: u.is_active ? "Active" : "Suspended",
+                  Status: userStatus(u),
                   Tokens: userTokenMap[u.id]?.total_tokens ?? 0,
                   Created: formatDate(u.created_at),
                 })),
@@ -318,7 +335,38 @@ export default function MasterAdminUsersPage() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <button
+          type="button"
+          onClick={() => {
+            setStatusFilter(statusFilter === "pending" ? "all" : "pending");
+            setPage(1);
+          }}
+          aria-pressed={statusFilter === "pending"}
+          className="text-left rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Card
+            className={`shadow-sm h-full transition-colors hover:border-amber-500/50 ${
+              statusFilter === "pending" ? "border-amber-500 ring-1 ring-amber-500/40" : ""
+            } ${metrics.pendingCount ? "bg-amber-500/5" : ""}`}
+          >
+            <CardContent className="pt-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Pending Approval</p>
+                  <p className="text-2xl font-bold mt-1 text-amber-600 dark:text-amber-400">{metrics.pendingCount}</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    {statusFilter === "pending" ? "Showing pending · click to clear" : "Click to review"}
+                  </p>
+                </div>
+                <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-600">
+                  <Clock className="h-5 w-5" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </button>
+
         <Card className="shadow-sm">
           <CardContent className="pt-5">
             <div className="flex items-center justify-between">
@@ -480,6 +528,7 @@ export default function MasterAdminUsersPage() {
                   <SelectItem value="all">All Status</SelectItem>
                   <SelectItem value="true">Active</SelectItem>
                   <SelectItem value="false">Suspended</SelectItem>
+                  <SelectItem value="pending">Pending approval</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -560,7 +609,7 @@ export default function MasterAdminUsersPage() {
                           <div className="flex items-center gap-2">
                             <div
                               className={`w-2 h-2 rounded-full shrink-0 ${
-                                u.is_active ? "bg-emerald-500" : "bg-rose-500"
+                                isPending(u) ? "bg-amber-500" : u.is_active ? "bg-emerald-500" : "bg-rose-500"
                               }`}
                             />
                             <span>{u.full_name}</span>
@@ -591,7 +640,7 @@ export default function MasterAdminUsersPage() {
                           )}
                         </TableCell>
                         <TableCell className="text-center">
-                          <StatusPill status={u.is_active ? "Active" : "Suspended"} />
+                          <StatusPill status={userStatus(u)} />
                         </TableCell>
                         <TableCell>
                           {(() => {
@@ -613,6 +662,18 @@ export default function MasterAdminUsersPage() {
                         </TableCell>
                         <TableCell className="text-right pr-3">
                           <div className="flex items-center justify-end gap-1">
+                            {isPending(u) && (
+                              <Button
+                                size="sm"
+                                className="h-8 gap-1 bg-emerald-600 text-white hover:bg-emerald-700"
+                                title="Approve User"
+                                disabled={approveMutation.isPending}
+                                onClick={() => approveMutation.mutate(u.id)}
+                              >
+                                <UserCheck className="h-4 w-4" />
+                                Approve
+                              </Button>
+                            )}
                             <Button
                               variant="ghost"
                               size="icon"
@@ -697,7 +758,7 @@ export default function MasterAdminUsersPage() {
                 <div>
                   <p className="text-muted-foreground">Account Status</p>
                   <div className="mt-0.5">
-                    <StatusPill status={selectedUser.is_active ? "Active" : "Suspended"} />
+                    <StatusPill status={userStatus(selectedUser)} />
                   </div>
                 </div>
                 <div>
@@ -839,7 +900,18 @@ export default function MasterAdminUsersPage() {
                 </p>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex flex-wrap justify-end gap-2 pt-2">
+                {isPending(selectedUser) && (
+                  <Button
+                    size="sm"
+                    className="gap-1 bg-emerald-600 text-white hover:bg-emerald-700"
+                    disabled={approveMutation.isPending}
+                    onClick={() => approveMutation.mutate(selectedUser.id)}
+                  >
+                    <UserCheck className="h-4 w-4" />
+                    {approveMutation.isPending ? "Approving…" : "Approve Account"}
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"

@@ -86,7 +86,7 @@ export function useVoiceTutor(opts: {
       !endedRef.current &&
       (stateRef.current === "LISTENING" || stateRef.current === "INTERRUPTED")
     ) {
-      setHint("Speak now — pause about 1 second when you finish.");
+      setHint("Speak now — take your time, I reply once you stop.");
     }
   }, []);
 
@@ -215,7 +215,7 @@ export function useVoiceTutor(opts: {
           }
           await playback.unlock();
           markAudioReady();
-          setHint("Speak now — pause about 1 second when you finish.");
+          setHint("Speak now — take your time, I reply once you stop.");
         } catch (err) {
           const code = (err as { code?: string }).code || "error";
           failConnect(code === "denied" || code === "missing" || code === "inuse" || code === "unsupported"
@@ -228,6 +228,7 @@ export function useVoiceTutor(opts: {
         // Last turn's figures belong to last turn's answer.
         setImages([]);
         setState("PROCESSING");
+        stateRef.current = "PROCESSING";
         setHint("Hearing you…");
         return;
       }
@@ -250,7 +251,7 @@ export function useVoiceTutor(opts: {
         ) {
           setState("LISTENING");
           stateRef.current = "LISTENING";
-          setHint("Speak now — pause about 1 second when you finish.");
+          setHint("Speak now — take your time, I reply once you stop.");
         }
         return;
       }
@@ -265,7 +266,7 @@ export function useVoiceTutor(opts: {
           void playback.stop();
           setState("LISTENING");
           stateRef.current = "LISTENING";
-          setHint("Speak now — pause about 1 second when you finish.");
+          setHint("Speak now — take your time, I reply once you stop.");
         }
         return;
       }
@@ -285,15 +286,18 @@ export function useVoiceTutor(opts: {
         markAudioReady();
       }
       if (type === "ai_stopped_speaking") {
-        listenMuteUntilRef.current = Date.now() + 1000;
+        // Also sent when a reply is dropped before any audio (student kept talking):
+        // muting then would cut the rest of their question.
+        if (stateRef.current === "PROCESSING") return;
+        if (stateRef.current === "SPEAKING") listenMuteUntilRef.current = Date.now() + 1000;
         setState("LISTENING");
-        setHint("Speak now — pause about 1 second when you finish.");
+        setHint("Speak now — take your time, I reply once you stop.");
       }
       if (type === "ai_interrupted") {
         listenMuteUntilRef.current = Date.now() + 800;
         void playback.stop();
         setState("INTERRUPTED");
-        setHint("Speak now — pause about 1 second when you finish.");
+        setHint("Speak now — take your time, I reply once you stop.");
       }
       if (type === "voice_error") {
         setError(String(msg.message || MSG.voiceError));
@@ -445,7 +449,7 @@ export function useVoiceTutor(opts: {
     void playback.stop();
     sockRef.current?.send({ type: "interrupt", sessionId });
     setState("LISTENING");
-    setHint("Speak now — pause about 1 second when you finish.");
+    setHint("Speak now — take your time, I reply once you stop.");
   }, [playback, sessionId]);
 
   const end = useCallback(() => {
@@ -491,7 +495,7 @@ export function useVoiceTutor(opts: {
       return;
     }
     if (!audioReady) return;
-    if (level >= 0.02) setHint("Mic is picking you up — pause ~1s when done.");
+    if (level >= 0.02) setHint("Mic is picking you up — I reply once you stop.");
   }, [audioReady, level, muted, state]);
 
   const teardownRef = useRef(teardown);

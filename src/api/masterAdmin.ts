@@ -80,6 +80,10 @@ export async function patchUserStatus(userId: number, is_active: boolean): Promi
   });
 }
 
+export async function approveUser(userId: number): Promise<ApiUser> {
+  return apiFetch<ApiUser>(`/auth/admin/users/${userId}/approve`, { method: "POST" });
+}
+
 export type AdminUserUpdatePayload = {
   full_name?: string;
   email?: string;

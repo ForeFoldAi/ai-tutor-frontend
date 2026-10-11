@@ -11,6 +11,7 @@ import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
 import ForgotPasswordPage from "@/pages/forgot-password";
 import SignupPage from "@/pages/signup";
+import PendingApprovalPage from "@/pages/pending-approval";
 import { applyRouteMeta } from "@/seo/site";
 import { getDashboardPath } from "@/lib/dashboard-routes";
 import { isIndividualStudent } from "@/lib/app-nav-items";
@@ -148,6 +149,12 @@ function Router() {
       <Route path="/signup">
         <PublicRoute>
           <SignupPage />
+        </PublicRoute>
+      </Route>
+
+      <Route path="/pending-approval">
+        <PublicRoute>
+          <PendingApprovalPage />
         </PublicRoute>
       </Route>
       
