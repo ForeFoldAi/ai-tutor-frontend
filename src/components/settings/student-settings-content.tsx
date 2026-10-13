@@ -36,6 +36,7 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/lib/auth-store";
 import { useTheme } from "@/lib/theme-provider";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { getMyProfile, updateMyProfile } from "@/api/profile";
@@ -1236,9 +1237,12 @@ export function StudentSettingsContent({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 sm:gap-4">
-      <div className="shrink-0">
-        <h1 className="text-xl font-bold text-foreground sm:text-2xl">Settings</h1>
-        <p className="text-sm text-muted-foreground">Manage your account and preferences</p>
+      <div className="flex min-w-0 items-start justify-between gap-2 sm:gap-3 lg:items-center lg:gap-4 shrink-0">
+        <div>
+          <h1 className="text-xl font-bold text-foreground sm:text-2xl">Settings</h1>
+          <p className="text-sm text-muted-foreground">Manage your account and preferences</p>
+        </div>
+        <ThemeToggle className="hidden lg:flex" />
       </div>
       <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[clamp(12rem,17vw,16rem)_minmax(0,1fr)] lg:gap-4">
         <Card className="h-fit shrink-0 shadow-card lg:h-full lg:max-h-none">

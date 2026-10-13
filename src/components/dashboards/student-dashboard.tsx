@@ -8,16 +8,13 @@ import { Badge } from "@/components/ui/badge";
 import {
   BookOpen,
   Calculator,
-  CheckCircle2,
   ChevronRight,
   Clock,
   FlaskConical,
   Globe,
   Monitor,
-  Moon,
   Play,
   Sparkles,
-  Sun,
   TrendingUp,
   Trophy,
   Video,
@@ -33,8 +30,8 @@ import { fetchStudentLiveSessions, type LiveSessionApi } from "@/api/tutor";
 import { useStudentDashboard } from "@/hooks/use-student-dashboard";
 import { GlobalSearchInput } from "@/modules/search";
 import { getTodaysLearningTip } from "@/data/learning-tips";
-import { useTheme } from "@/lib/theme-provider";
 import { isIndividualStudent } from "@/lib/app-nav-items";
+import { chapterSelectionPath } from "@/lib/tutor-chapter-nav";
 
 interface StudentDashboardProps {
   user: User;
@@ -54,8 +51,14 @@ const SUBJECT_STYLE: Record<
 
 const FALLBACK = { icon: BookOpen, color: "bg-primary", text: "text-primary" };
 
-const desktopThemeBtn =
-  "relative h-10 w-10 shrink-0 rounded-full border border-border bg-background shadow-sm hover:bg-muted/50";
+
+const STATUS_LABEL = { not_started: "Not started", in_progress: "In progress", completed: "Completed" } as const;
+
+/** "Unit 1: Family" -> { unit: "Unit 1", title: "Family" }; anything else stays whole. */
+function splitChapterTitle(name: string): { unit: string | null; title: string } {
+  const m = name.match(/^((?:unit|chapter|lesson)\s*\d+[a-z]?)\s*[:.\-–]\s*(.+)$/i);
+  return m ? { unit: m[1], title: m[2] } : { unit: null, title: name };
+}
 
 function subjectStyle(name: string) {
   return SUBJECT_STYLE[name] ?? FALLBACK;
@@ -144,7 +147,6 @@ function formatSessionWhen(dateStr: string, durationMinutes: number) {
 
 export default function StudentDashboard({ user }: StudentDashboardProps) {
   const firstName = user.fullName?.split(" ")[0] || "Student";
-  const { theme, toggleTheme } = useTheme();
   const individual = isIndividualStudent(user.role, user.schoolId, user.createdBy);
   const { data } = useStudentDashboard();
   const { data: sessions = [] } = useQuery({
@@ -156,10 +158,6 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
   const stats = data?.stats;
   const subjects = data?.subjects ?? [];
   const continueLearning = data?.continue_learning ?? null;
-  // ponytail: cap at 10 on the client; bump if the summary API grows a limit param
-  const recentLessons = individual
-    ? (data?.recent_lessons ?? []).slice(0, 7)
-    : (data?.recent_lessons ?? []);
   const overallProgress = data?.overall_progress ?? 0;
   const totalChapters = data?.total_chapters ?? 0;
   const continueHref = continueLearning
@@ -173,6 +171,11 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
         greet: true,
       })
     : "/ai-learning-studio";
+  const continueTitle = splitChapterTitle(cleanDisplayText(continueLearning?.chapter_name) || "Continue chapter");
+  const upNext = (data?.recent_lessons ?? [])
+    .filter((l) => l.chapter_id !== continueLearning?.chapter_id)
+    .slice(0, 2);
+
 
   const sessionsToday = useMemo(
     () =>
@@ -210,25 +213,7 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
             data-testid="student-dashboard-search"
           />
           <AskAiTutorButton className="h-8 shrink-0 px-3 sm:h-9 sm:px-4" />
-          <DashboardHeaderActions
-            className="hidden lg:flex"
-            leading={
-              <Button
-                variant="outline"
-                size="icon"
-                className={desktopThemeBtn}
-                onClick={toggleTheme}
-                aria-label="Toggle light or dark mode"
-                data-testid="student-dashboard-theme-toggle"
-              >
-                {theme === "light" ? (
-                  <Moon className="h-4 w-4 text-muted-foreground" />
-                ) : (
-                  <Sun className="h-4 w-4 text-muted-foreground" />
-                )}
-              </Button>
-            }
-          />
+          <DashboardHeaderActions className="hidden lg:flex" />
         </div>
       </div>
 
@@ -307,7 +292,7 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
           individual ? "lg:items-stretch" : "items-start",
         )}
       >
-        <div className="order-1 lg:col-span-3">
+        <div className={cn("order-1", individual ? "lg:col-span-5" : "lg:col-span-3")}>
           <Card className="hover:translate-y-0 hover:shadow-card shadow-card">
             <CardContent className="p-4 lg:p-4">
               <h2 className="mb-3 text-sm font-semibold text-foreground sm:text-base">
@@ -332,7 +317,7 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
                     return (
                       <div
                         key={subject.id}
-                        className="flex min-w-0 flex-col items-center rounded-xl border border-border/60 bg-muted/20 p-2 text-center sm:p-2.5"
+                        className="flex min-w-0 flex-col items-center rounded-xl border border-border/60 bg-card p-2 text-center shadow-card transition-shadow hover:shadow-card-hover sm:p-2.5"
                       >
                         <div
                           className={cn(
@@ -371,141 +356,129 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
                     View All
                   </Link>
                 </div>
-                <div className="grid grid-cols-[6.5rem_1fr] items-center gap-3 sm:grid-cols-[10.5rem_1fr] sm:gap-4 lg:grid-cols-[11.5rem_1fr]">
-                  <div className="flex aspect-square w-full max-w-[11.5rem] shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-[#EEF2FF] dark:bg-primary/10">
-                    <img
-                      src={brandImages.book}
-                      alt="Learning illustration"
-                      className="h-[92%] w-[92%] object-contain"
-                    />
-                  </div>
-                  <div className="min-w-0">
-                    {continueLearning ? (
-                      <>
-                        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                          <h3 className="min-w-0 flex-1 text-sm font-bold leading-snug text-foreground sm:text-base">
-                            {cleanDisplayText(continueLearning.chapter_name) || "Continue chapter"}
-                          </h3>
-                          <Button
-                            asChild
-                            className="h-8 shrink-0 rounded-xl bg-gradient-brand px-3 text-xs sm:h-9 sm:px-4 sm:text-sm"
-                          >
-                            <Link href={continueHref} className="inline-flex items-center gap-1.5 sm:gap-2">
-                              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/25">
-                                <Play className="h-2.5 w-2.5 fill-white text-white" />
+                <div className={cn("grid gap-3", upNext.length > 0 && "lg:grid-cols-2")}>
+                  <div className="flex items-center gap-3 rounded-2xl border border-border/60 bg-card p-3 shadow-card sm:gap-4 sm:p-4">
+                    <div className="flex aspect-square w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#EEF2FF] dark:bg-primary/10 sm:w-36">
+                      <img src={brandImages.book} alt="" className="h-[88%] w-[88%] object-contain" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      {continueLearning ? (
+                        <>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {continueTitle.unit ? (
+                              <span className="rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                                {continueTitle.unit}
                               </span>
-                              Continue Lesson
-                            </Link>
+                            ) : null}
+                            <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground/80">
+                              {continueLearning.subject_name}
+                            </span>
+                          </div>
+                          <h3 className="mt-1.5 line-clamp-2 text-sm font-bold leading-snug text-foreground sm:text-base">
+                            {continueTitle.title}
+                          </h3>
+                          <div className="mt-2 flex items-center gap-2.5">
+                            <span className="shrink-0 text-xs text-muted-foreground">
+                              {continueLearning.progress}% complete
+                            </span>
+                            <Progress
+                              value={continueLearning.progress}
+                              className="h-1.5 flex-1 [&>div]:bg-gradient-brand"
+                            />
+                          </div>
+                          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                            <Button
+                              asChild
+                              className="h-8 rounded-full bg-gradient-brand px-3 text-xs sm:h-9 sm:px-4 sm:text-sm"
+                            >
+                              <Link href={continueHref} className="inline-flex items-center gap-1.5 sm:gap-2">
+                                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/25">
+                                  <Play className="h-2.5 w-2.5 fill-white text-white" />
+                                </span>
+                                Continue Learning
+                              </Link>
+                            </Button>
+                            <Button
+                              asChild
+                              variant="secondary"
+                              className="h-8 rounded-full px-3 text-xs sm:h-9 sm:px-4 sm:text-sm"
+                            >
+                              <Link href={chapterSelectionPath(String(continueLearning.subject_id))}>
+                                View Details
+                                <ChevronRight className="ml-1 h-3.5 w-3.5" />
+                              </Link>
+                            </Button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <h3 className="text-sm font-bold leading-snug text-foreground sm:text-base">
+                            Start learning with Learn Mastro
+                          </h3>
+                          <p className="mt-1.5 text-xs text-muted-foreground">
+                            Pick a subject from your class to begin.
+                          </p>
+                          <Button asChild className="mt-3 h-9 rounded-full bg-gradient-brand px-4">
+                            <Link href="/ai-learning-studio">Go to Learn Mastro</Link>
                           </Button>
-                        </div>
-                        <Badge className="mt-2 w-fit border-0 bg-primary/10 text-primary hover:bg-primary/10">
-                          {continueLearning.subject_name}
-                        </Badge>
-                        <div className="mt-3 flex items-center gap-2.5">
-                          <span className="shrink-0 text-xs text-muted-foreground sm:text-sm">
-                            {continueLearning.progress}% complete
-                          </span>
-                          <Progress
-                            value={continueLearning.progress}
-                            className="h-2 flex-1 [&>div]:bg-gradient-brand"
-                          />
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <h3 className="text-sm font-bold leading-snug text-foreground sm:text-base">
-                          Start learning with Learn Mastro
-                        </h3>
-                        <p className="mt-2 text-xs text-muted-foreground">
-                          Pick a subject from your class to begin.
-                        </p>
-                        <Button
-                          asChild
-                          className="mt-4 h-9 w-auto min-w-[9rem] rounded-xl bg-gradient-brand px-4 sm:h-10 sm:min-w-[11rem] sm:px-6"
-                        >
-                          <Link href="/ai-learning-studio">Go to Learn Mastro</Link>
-                        </Button>
-                      </>
-                    )}
+                        </>
+                      )}
+                    </div>
                   </div>
+
+                  {upNext.length > 0 ? (
+                    <ul className="flex flex-col gap-2">
+                      {upNext.map((lesson) => {
+                        const style = subjectStyle(lesson.subject_name);
+                        const Icon = style.icon;
+                        return (
+                          <li key={`${lesson.subject_id}-${lesson.chapter_id}`} className="flex-1">
+                            <Link
+                              href={tutorResumeHref({
+                                board: lesson.board,
+                                class_level: lesson.class_level,
+                                subject_name: lesson.subject_name,
+                                subject_id: lesson.subject_id,
+                                chapter_id: lesson.chapter_id,
+                                chapter_name: lesson.chapter_name,
+                              })}
+                              className="flex h-full items-center gap-3 rounded-2xl border border-border/60 bg-card px-3 py-2.5 shadow-card transition-shadow hover:shadow-card-hover"
+                            >
+                              <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-full", style.color)}>
+                                <Icon className="h-4 w-4 text-white" />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-semibold text-foreground">
+                                  {cleanDisplayText(lesson.chapter_name) || "Chapter"}
+                                </p>
+                                <p className="truncate text-xs text-muted-foreground">
+                                  {lesson.subject_name} • {STATUS_LABEL[lesson.status]}
+                                </p>
+                                <div className="mt-1 flex items-center gap-2">
+                                  <Progress value={lesson.progress} className="h-1.5 flex-1 [&>div]:bg-gradient-brand" />
+                                  <span className="w-8 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">
+                                    {lesson.progress}%
+                                  </span>
+                                </div>
+                              </div>
+                              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                                <Play className="h-3.5 w-3.5 fill-primary text-primary" />
+                              </span>
+                            </Link>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : null}
                 </div>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        <div
-          className={cn(
-            "order-2 lg:col-span-2 lg:row-span-2",
-            individual ? "flex min-h-0 flex-col lg:h-full" : "grid gap-3",
-          )}
-        >
-          <Card
-            className={cn(
-              "hover:translate-y-0 hover:shadow-card shadow-card",
-              individual && "flex min-h-0 flex-1 flex-col",
-            )}
-          >
-            <CardContent
-              className={cn(
-                "p-4 lg:p-3",
-                individual && "flex min-h-0 flex-1 flex-col",
-              )}
-            >
-              <div className="mb-3 flex shrink-0 items-center justify-between gap-2 lg:mb-2">
-                <h2 className="text-sm font-semibold text-foreground sm:text-base">Recent Lessons</h2>
-                <Link
-                  href="/my-learning"
-                  className="shrink-0 text-xs font-medium text-primary hover:underline sm:text-sm"
-                >
-                  View All
-                </Link>
-              </div>
-              <ul
-                className={cn(
-                  "space-y-2 overflow-y-auto pr-0.5",
-                  individual ? "min-h-0 flex-1" : "max-h-[22rem]",
-                )}
-              >
-                {recentLessons.length === 0 ? (
-                  <li className="text-sm text-muted-foreground">No recent lessons yet.</li>
-                ) : (
-                  recentLessons.map((lesson) => (
-                    <li key={`${lesson.subject_id}-${lesson.chapter_id}`}>
-                      <Link
-                        href={tutorResumeHref({
-                          board: lesson.board,
-                          class_level: lesson.class_level,
-                          subject_name: lesson.subject_name,
-                          subject_id: lesson.subject_id,
-                          chapter_id: lesson.chapter_id,
-                          chapter_name: lesson.chapter_name,
-                        })}
-                      >
-                        <div className="flex items-center gap-2.5 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5 transition-colors hover:border-primary/30">
-                          {lesson.status === "completed" ? (
-                            <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
-                          ) : (
-                            <Play className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          )}
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium text-foreground">
-                              {cleanDisplayText(lesson.chapter_name || lesson.file_name || lesson.subject_name)}
-                            </p>
-                            <p className="truncate text-xs text-muted-foreground">
-                              {lesson.subject_name}
-                            </p>
-                          </div>
-                        </div>
-                      </Link>
-                    </li>
-                  ))
-                )}
-              </ul>
-            </CardContent>
-          </Card>
-
-          {!individual && sessionsToday.length > 0 ? (
+        {!individual ? (
+          <div className="order-2 grid gap-3 lg:col-span-2 lg:row-span-2">
+            {sessionsToday.length > 0 ? (
             <Card className="hover:translate-y-0 hover:shadow-card shadow-card">
               <CardContent className="p-4 lg:p-3">
                 <div className="mb-3 flex items-center justify-between gap-2 lg:mb-2">
@@ -552,8 +525,7 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
             </Card>
           ) : null}
 
-          {!individual ? (
-            <Card className="hover:translate-y-0 hover:shadow-card shadow-card">
+          <Card className="hover:translate-y-0 hover:shadow-card shadow-card">
               <CardContent className="p-4 lg:p-3">
                 <div className="mb-3 flex items-center justify-between gap-2 lg:mb-2">
                   <h2 className="text-sm font-semibold text-foreground sm:text-base">
@@ -596,10 +568,12 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
                 </ul>
               </CardContent>
             </Card>
-          ) : null}
-        </div>
-
-        <Card className="order-3 overflow-hidden border-0 bg-gradient-to-r from-primary/10 via-accent/10 to-brand-secondary/10 hover:translate-y-0 hover:shadow-card shadow-card lg:col-span-3">
+          </div>
+        ) : null}
+        <Card className={cn(
+          "order-3 overflow-hidden border-0 bg-gradient-to-r from-primary/10 via-accent/10 to-brand-secondary/10 hover:translate-y-0 hover:shadow-card shadow-card",
+          individual ? "lg:col-span-5" : "lg:col-span-3",
+        )}>
           <CardContent className="flex flex-row items-center gap-3 p-3 sm:gap-4 sm:p-4 lg:gap-3 lg:p-3">
             <div className="relative h-12 w-20 shrink-0 overflow-hidden rounded-lg sm:h-16 sm:w-28 lg:h-14 lg:w-24">
               <img

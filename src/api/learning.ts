@@ -20,6 +20,7 @@ export interface LearningSubjectApi {
   board: BoardEnumApi;
   class_level: ClassEnumApi;
   subject_name: string;
+  image_url?: string | null;
   chapters: LearningChapterApi[];
   completed_chapters: number;
   total_chapters: number;

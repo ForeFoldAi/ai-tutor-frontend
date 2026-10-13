@@ -51,6 +51,8 @@ interface LearningSetupWizardProps {
   chapterStatusById?: Record<string, ChapterStatus>;
   /** Topic-coverage % per chapter id (0–100). */
   chapterProgressById?: Record<string, number>;
+  initialStep?: WizardStep;
+  initialSelectedChapters?: string[];
 }
 
 const METHOD_OPTIONS: {
@@ -219,6 +221,8 @@ export function LearningSetupWizard({
   subject,
   chapterStatusById,
   chapterProgressById,
+  initialStep,
+  initialSelectedChapters,
 }: LearningSetupWizardProps) {
   const [, setLocation] = useLocation();
   const [step, setStep] = useState<WizardStep>(2);
@@ -281,8 +285,23 @@ export function LearningSetupWizard({
       setSelectedMethod("ai-tutor");
       return;
     }
-    setSelectedChapters(new Set());
-  }, [open, subject?.id, subject?.chapters.length]);
+
+    const searchParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+    const chaptersParam = searchParams?.get("chapters");
+    const stepParam = searchParams?.get("step");
+
+    if (initialSelectedChapters && initialSelectedChapters.length > 0) {
+      setSelectedChapters(new Set(initialSelectedChapters));
+      setStep(initialStep ?? (stepParam === "3" ? 3 : 2));
+    } else if (chaptersParam) {
+      const ids = chaptersParam.split(",").map((s) => s.trim()).filter(Boolean);
+      setSelectedChapters(new Set(ids));
+      setStep(stepParam === "3" ? 3 : (initialStep ?? 2));
+    } else {
+      setSelectedChapters(new Set());
+      setStep(initialStep ?? 2);
+    }
+  }, [open, subject?.id, subject?.chapters.length, initialStep, initialSelectedChapters]);
 
   const toggleChapter = (chapterId: string) => {
     setSelectedChapters((prev) => {

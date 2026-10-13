@@ -13,7 +13,7 @@ import ForgotPasswordPage from "@/pages/forgot-password";
 import SignupPage from "@/pages/signup";
 import PendingApprovalPage from "@/pages/pending-approval";
 import { applyRouteMeta } from "@/seo/site";
-import { getDashboardPath } from "@/lib/dashboard-routes";
+import { getDashboardPath, getHomePath } from "@/lib/dashboard-routes";
 import { isIndividualStudent } from "@/lib/app-nav-items";
 import { UserRole, type UserRoleType } from "@/types/schema";
 
@@ -71,11 +71,17 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <AppLayout>{children}</AppLayout>;
 }
 
+/** "/" must render (not redirect) for logged-out visitors so search engines can index it. */
+function HomeRoute() {
+  const { isAuthenticated, user } = useAuthStore();
+  return isAuthenticated ? <Redirect to={getHomePath(user?.role)} /> : <LoginPage />;
+}
+
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, user } = useAuthStore();
   
   if (isAuthenticated) {
-    return <Redirect to={getDashboardPath(user?.role)} />;
+    return <Redirect to={getHomePath(user?.role)} />;
   }
   
   return <>{children}</>;
@@ -131,7 +137,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/">
-        <Redirect to="/dashboard" />
+        <HomeRoute />
       </Route>
       
       <Route path="/login">

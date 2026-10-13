@@ -84,7 +84,18 @@ export function GlobalSearchInput({
                 onClick={() => {
                   setMenuOpen(false);
                   setQuery("");
-                  setLocation(hit.href);
+                  let targetHref = hit.href;
+                  if (hit.entity === "lessons" && targetHref.startsWith("/ai-tutor?")) {
+                    const params = new URLSearchParams(targetHref.slice("/ai-tutor?".length));
+                    const subjectId = params.get("subjectId");
+                    const chapterId = params.get("chapters");
+                    if (subjectId && chapterId) {
+                      params.set("step", "3");
+                      params.set("from", "dashboard");
+                      targetHref = `/ai-learning-studio/subject/${subjectId}?${params.toString()}`;
+                    }
+                  }
+                  setLocation(targetHref);
                 }}
               >
                 <span className="text-sm font-medium leading-tight">{hit.title}</span>

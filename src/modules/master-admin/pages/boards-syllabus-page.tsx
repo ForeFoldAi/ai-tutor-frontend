@@ -35,8 +35,11 @@ import {
   getCatalogEnums,
   getSyllabusSubjects,
   updateSyllabusSubject,
+  uploadSyllabusSubjectImage,
 } from "@/api/masterAdmin";
 import type { BoardEnumApi, ClassEnumApi } from "@/api/types";
+import { textbookImageSrc } from "@/components/voice/voice-image-utils";
+import { useAuthStore } from "@/lib/auth-store";
 import {
   BookOpen,
   GitBranch,
@@ -65,10 +68,13 @@ type AddSyllabusValues = z.infer<typeof addSyllabusSchema>;
 
 const classLabel = (cls: string) => cls.replace("CLASS_", "Class ");
 
-type SyllabusRow = { id: string; board: string; class_level: string; subject_name: string };
+type SyllabusRow = { id: string; board: string; class_level: string; subject_name: string; image_url?: string | null };
 
 export default function MasterAdminBoardsSyllabusPage() {
   const { toast } = useToast();
+  const token = useAuthStore((s) => s.token);
+  const [newImages, setNewImages] = useState<(File | undefined)[]>([]);
+  const [editImage, setEditImage] = useState<File | null>(null);
   const [loading, setLoading] = useState(true);
   const [boards, setBoards] = useState<Array<{ id: string; board: BoardEnumApi; country: string }>>([]);
   const [classes, setClasses] = useState<ClassEnumApi[]>([]);
@@ -107,6 +113,7 @@ export default function MasterAdminBoardsSyllabusPage() {
         board: r.board,
         class_level: r.class_level,
         subject_name: r.subject_name,
+        image_url: r.image_url,
       })),
     );
   };
@@ -117,6 +124,12 @@ export default function MasterAdminBoardsSyllabusPage() {
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => setEditImage(null), [editRow?.id]);
+  const editImagePreview = useMemo(() => (editImage ? URL.createObjectURL(editImage) : null), [editImage]);
+  useEffect(() => () => {
+    if (editImagePreview) URL.revokeObjectURL(editImagePreview);
+  }, [editImagePreview]);
 
   const boardStats = useMemo(() => {
     const map = new Map<string, { classes: Set<string>; subjects: Set<string> }>();
@@ -396,7 +409,13 @@ export default function MasterAdminBoardsSyllabusPage() {
                   />
                 </div>
 
-                <Dialog open={addSyllabusOpen} onOpenChange={setAddSyllabusOpen}>
+                <Dialog
+                  open={addSyllabusOpen}
+                  onOpenChange={(open) => {
+                    if (open) setNewImages([]);
+                    setAddSyllabusOpen(open);
+                  }}
+                >
                   <DialogTrigger asChild>
                     <Button size="sm" className="h-8 gap-1.5 text-xs">
                       <Plus className="h-3.5 w-3.5" />
@@ -414,15 +433,39 @@ export default function MasterAdminBoardsSyllabusPage() {
                       <form
                         className="space-y-3 pt-2"
                         onSubmit={addSyllabusForm.handleSubmit(async (v) => {
-                          await createSyllabusSubjects({
+                          const created = await createSyllabusSubjects({
                             board: v.board,
                             class_names: v.class_names as ClassEnumApi[],
                             subject_names: v.subject_names.map((s) => s.trim()).filter(Boolean),
                           });
+                          const imageFailed: string[] = [];
+                          await Promise.all(
+                            created.map(async (row) => {
+                              const idx = v.subject_names.findIndex(
+                                (s) => s.trim().toLowerCase() === row.subject_name.toLowerCase(),
+                              );
+                              const file = idx >= 0 ? newImages[idx] : undefined;
+                              if (!file) return;
+                              try {
+                                await uploadSyllabusSubjectImage(row.id, file);
+                              } catch {
+                                imageFailed.push(row.subject_name);
+                              }
+                            }),
+                          );
                           await refresh();
                           setAddSyllabusOpen(false);
                           addSyllabusForm.reset();
-                          toast({ title: "Syllabus added successfully" });
+                          setNewImages([]);
+                          toast(
+                            imageFailed.length
+                              ? {
+                                  title: "Syllabus added, but some images failed",
+                                  description: `Re-upload from Edit: ${[...new Set(imageFailed)].join(", ")}`,
+                                  variant: "destructive",
+                                }
+                              : { title: "Syllabus added successfully" },
+                          );
                         })}
                       >
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -490,9 +533,25 @@ export default function MasterAdminBoardsSyllabusPage() {
                                 name={`subject_names.${index}`}
                                 render={({ field }) => (
                                   <FormItem>
-                                    <FormControl>
-                                      <Input {...field} placeholder={`Subject ${index + 1}`} className="h-9 text-xs" />
-                                    </FormControl>
+                                    <div className="flex gap-2">
+                                      <FormControl>
+                                        <Input {...field} placeholder={`Subject ${index + 1}`} className="h-9 text-xs" />
+                                      </FormControl>
+                                      <Input
+                                        type="file"
+                                        accept="image/*"
+                                        aria-label={`Image for subject ${index + 1}`}
+                                        className="h-9 w-44 shrink-0 text-xs"
+                                        onChange={(e) => {
+                                          const file = e.target.files?.[0];
+                                          setNewImages((prev) => {
+                                            const next = [...prev];
+                                            next[index] = file;
+                                            return next;
+                                          });
+                                        }}
+                                      />
+                                    </div>
                                     <FormMessage />
                                   </FormItem>
                                 )}
@@ -666,7 +725,12 @@ export default function MasterAdminBoardsSyllabusPage() {
       </AlertDialog>
 
       {/* Edit Syllabus Entry */}
-      <Dialog open={editRow !== null} onOpenChange={(open) => !open && setEditRow(null)}>
+      <Dialog
+        open={editRow !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditRow(null);
+        }}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Edit Syllabus Entry</DialogTitle>
@@ -686,6 +750,7 @@ export default function MasterAdminBoardsSyllabusPage() {
                     class_level: editRow.class_level as ClassEnumApi,
                     subject_name: editRow.subject_name.trim(),
                   });
+                  if (editImage) await uploadSyllabusSubjectImage(editRow.id, editImage);
                   await refresh();
                   setEditRow(null);
                   toast({ title: "Syllabus entry updated" });
@@ -740,6 +805,31 @@ export default function MasterAdminBoardsSyllabusPage() {
                   onChange={(e) => setEditRow({ ...editRow, subject_name: e.target.value })}
                   className="h-9 text-xs"
                 />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="edit-subject-image" className="text-xs">
+                  Subject Image
+                </Label>
+                <div className="flex items-center gap-3">
+                  {editImagePreview || editRow.image_url ? (
+                    <img
+                      src={editImagePreview ?? textbookImageSrc(editRow.image_url!, token)}
+                      alt={`${editRow.subject_name} cover`}
+                      className="h-14 w-14 shrink-0 rounded-lg border object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border bg-muted/30">
+                      <BookOpen className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                  )}
+                  <Input
+                    id="edit-subject-image"
+                    type="file"
+                    accept="image/*"
+                    className="h-9 text-xs"
+                    onChange={(e) => setEditImage(e.target.files?.[0] ?? null)}
+                  />
+                </div>
               </div>
               <div className="flex justify-between gap-2 pt-3 border-t">
                 <Button

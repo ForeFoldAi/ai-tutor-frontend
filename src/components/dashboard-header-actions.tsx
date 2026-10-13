@@ -14,6 +14,8 @@ import { getSettingsPath } from "@/lib/dashboard-routes";
 import { UserRole } from "@/types/schema";
 import { cn } from "@/lib/utils";
 
+import { ThemeToggle } from "@/components/theme-toggle";
+
 const ROLE_LABEL: Record<string, string> = {
   [UserRole.STUDENT]: "Student",
   [UserRole.TUTOR]: "Tutor",
@@ -28,9 +30,15 @@ type DashboardHeaderActionsProps = {
   className?: string;
   /** Extra controls rendered before the notification bell (e.g. search). */
   leading?: ReactNode;
+  /** Whether to show the day & light theme toggle. Defaults to true. */
+  showThemeToggle?: boolean;
 };
 
-export function DashboardHeaderActions({ className, leading }: DashboardHeaderActionsProps) {
+export function DashboardHeaderActions({
+  className,
+  leading,
+  showThemeToggle = true,
+}: DashboardHeaderActionsProps) {
   const { user, logout } = useAuthStore();
   const [, setLocation] = useLocation();
 
@@ -53,6 +61,7 @@ export function DashboardHeaderActions({ className, leading }: DashboardHeaderAc
   return (
     <div className={cn("flex flex-wrap items-center gap-2 sm:gap-3", className)}>
       {leading}
+      {showThemeToggle ? <ThemeToggle buttonClassName={iconBtn} /> : null}
       <NotificationBell
         buttonClassName={iconBtn}
         data-testid="dashboard-header-notifications"

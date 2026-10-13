@@ -70,7 +70,7 @@ const MODE_META: Record<
     fallbackPrompts: [],
   },
   ask: {
-    title: "Ask Textbook Q&A",
+    title: "Ask Questions",
     subtitle: "Short textbook Q&A — out-of-book? Use Ask Learn Mastro",
     placeholder: "Ask a question from your textbook subjects…",
     icon: MessageCircle,

@@ -18,6 +18,7 @@ import {
   Search,
 } from "lucide-react";
 import { AskAiTutorButton } from "@/components/ask-ai-tutor-button";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { brandImages } from "@/lib/brand-images";
 
 type AssignmentTab = "all" | "pending" | "in_progress" | "graded";
@@ -217,15 +218,29 @@ export default function AssignmentsPage() {
       contentClassName="min-h-0 flex-1"
     >
       <div className="flex shrink-0 flex-col gap-2">
-        <div className="min-w-0 space-y-0.5">
-          <h1 className="text-xl font-bold text-blue-900 dark:text-blue-100 sm:text-2xl">
-            Assignments
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Complete worksheets, quizzes, and homework from your teachers.
-          </p>
+        <div className="flex min-w-0 items-start justify-between gap-2 sm:gap-3 lg:items-center lg:gap-4">
+          <div className="min-w-0 flex-1 space-y-0.5">
+            <h1 className="text-xl font-bold text-blue-900 dark:text-blue-100 sm:text-2xl">
+              Assignments
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Complete worksheets, quizzes, and homework from your teachers.
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <div className="relative hidden w-full sm:max-w-xs lg:block">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground sm:left-3 sm:h-4 sm:w-4" />
+              <Input
+                placeholder="Search assignments..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-9 border border-border/70 bg-background pl-8 text-sm shadow-sm sm:pl-9"
+              />
+            </div>
+            <ThemeToggle className="hidden lg:flex" />
+          </div>
         </div>
-        <div className="relative w-full sm:max-w-xs">
+        <div className="relative w-full sm:max-w-xs lg:hidden">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground sm:left-3 sm:h-4 sm:w-4" />
           <Input
             placeholder="Search assignments..."
