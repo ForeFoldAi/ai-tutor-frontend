@@ -8,7 +8,8 @@ export const SITE_NAME = "Learn Mastro";
 export const SITE_TAGLINE = "Smart Learning";
 export const SITE_HEADLINE = "Smarter Learning With Learn Mastro";
 export const SITE_SUMMARY = "Personalized learning, real-time support and progress that matters.";
-export const SITE_LOGO = { path: "/favicon.png", width: 262, height: 246 };
+// Google only shows square logos/favicons (multiples of 48px).
+export const SITE_LOGO = { path: "/icon-512.png", width: 512, height: 512 };
 export const SITE_FEATURES = [
   { label: "AI-Powered Tutoring", description: "Get instant help and explanations tailored to your needs." },
   { label: "Track Your Progress", description: "Monitor performance and improve with smart insights." },
@@ -38,18 +39,20 @@ export interface PageMeta {
   index: boolean;
   /** Link label in llms.txt. */
   label: string;
+  /** Duplicate of another page: canonical points there and it stays out of the sitemap. */
+  canonical?: string;
 }
 
 export const PAGES: PageMeta[] = [
   {
-    // "/" only redirects into the app, and index.html is also the shell for every logged-in
-    // route — so noindex here; it keeps title/OG tags for shared links.
+    // Logged-out visitors see the login screen right here (no redirect), so "/" is the
+    // indexable homepage. Logged-in users are redirected client-side into the app.
     path: "/",
     label: "Home",
     title: "Smarter Learning With Learn Mastro | AI Tutor for Students",
     description:
       "Personalized learning, real-time support and progress that matters. Learn Mastro by Forefold AI gives students AI-powered tutoring with instant explanations and smart progress insights.",
-    index: false,
+    index: true,
   },
   {
     path: "/login",
@@ -58,6 +61,7 @@ export const PAGES: PageMeta[] = [
     description:
       "Log in to Learn Mastro: personalized learning, real-time support and progress that matters. Get instant AI-powered help and track your progress with smart insights.",
     index: true,
+    canonical: "/",
   },
   {
     path: "/signup",
@@ -169,7 +173,7 @@ export function headTags(page: PageMeta): string {
     );
     if (page.index) {
       tags.push(
-        `<link rel="canonical" href="${absUrl(page.path)}" />`,
+        `<link rel="canonical" href="${absUrl(page.canonical ?? page.path)}" />`,
         `<script type="application/ld+json">${jsonLdString(jsonLd(page))}</script>`,
       );
     }
@@ -195,7 +199,7 @@ export function applyRouteMeta(path: string) {
   const canonical = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
   if (page?.index && SITE_URL) {
     const link = canonical ?? document.head.appendChild(Object.assign(document.createElement("link"), { rel: "canonical" }));
-    link.href = absUrl(path);
+    link.href = absUrl(page.canonical ?? path);
   } else {
     canonical?.remove();
   }
@@ -204,7 +208,7 @@ export function applyRouteMeta(path: string) {
 export function sitemapXml(): string {
   // ponytail: one sitemap, no <lastmod> — no real per-page modification dates exist yet.
   // Split into a sitemap index only if public URLs ever approach 50,000.
-  const urls = PAGES.filter((p) => p.index)
+  const urls = PAGES.filter((p) => p.index && !p.canonical)
     .map((p) => `  <url><loc>${esc(absUrl(p.path))}</loc></url>`)
     .join("\n");
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;

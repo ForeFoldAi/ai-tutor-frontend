@@ -13,6 +13,11 @@ export function getDashboardPath(role?: string | null): string {
   }
 }
 
+/** Where a user lands after login (or when opening the app root). */
+export function getHomePath(role?: string | null): string {
+  return role === UserRole.STUDENT ? "/my-learning" : getDashboardPath(role);
+}
+
 export function getSettingsPath(role?: string | null): string {
   switch (role) {
     case UserRole.TUTOR:

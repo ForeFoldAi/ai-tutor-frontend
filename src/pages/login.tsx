@@ -10,7 +10,7 @@ import { useAuthStore } from "@/lib/auth-store";
 import { useToast } from "@/hooks/use-toast";
 import { ArrowRight, Eye, EyeOff, Loader2, Lock, User } from "lucide-react";
 import { API_BASE } from "@/api";
-import { getDashboardPath } from "@/lib/dashboard-routes";
+import { getHomePath } from "@/lib/dashboard-routes";
 import { MSG, studentFriendlyApiError, studentFriendlyError } from "@/lib/student-messages";
 import { UserRole } from "@/types/schema";
 import { AuthCardFooter, AuthCardIllustration, AuthLayout } from "@/components/auth/auth-layout";
@@ -107,7 +107,7 @@ export default function LoginPage() {
         title: "Welcome back!",
         description: `Logged in as ${mappedUser.fullName}`,
       });
-      navigate(getDashboardPath(mappedUser.role), { replace: true });
+      navigate(getHomePath(mappedUser.role), { replace: true });
     } catch (error: any) {
       toast({
         title: "Couldn't sign you in",

@@ -17,6 +17,7 @@ import {
   CheckCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 interface Subject {
   id: number;
@@ -121,15 +122,18 @@ export default function SubjectsPage() {
           <h1 className="text-xl sm:text-2xl font-semibold">Subjects</h1>
           <p className="text-sm sm:text-base text-muted-foreground">Explore and learn from your enrolled subjects.</p>
         </div>
-        <div className="relative w-full sm:w-64">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search subjects..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
-            data-testid="input-search-subjects"
-          />
+        <div className="flex shrink-0 items-center gap-2">
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search subjects..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9"
+              data-testid="input-search-subjects"
+            />
+          </div>
+          <ThemeToggle className="hidden lg:flex" />
         </div>
       </div>
 

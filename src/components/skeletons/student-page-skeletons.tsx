@@ -181,37 +181,24 @@ export function AiTutorStudioSkeleton() {
     <PageShell>
       <div className="flex flex-col gap-5">
         <HeaderSkeleton />
-      <Card className="overflow-hidden shadow-card">
-        <CardContent className="p-0">
-          <div className="flex flex-col sm:flex-row">
-            <Skeleton className="h-36 w-full sm:h-40 sm:w-52" />
-            <div className="flex flex-1 flex-col gap-3 p-4 sm:p-5">
-              <Skeleton className="h-5 w-40" />
-              <Skeleton className="h-4 w-56" />
-              <Skeleton className="h-2 w-full rounded-full" />
-              <Skeleton className="h-3 w-32" />
-            </div>
+        <div>
+          <Skeleton className="mb-1 h-5 w-48" />
+          <Skeleton className="mb-3 h-4 w-64" />
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-28 rounded-2xl" />
+            ))}
           </div>
-        </CardContent>
-      </Card>
-      <div>
-        <Skeleton className="mb-1 h-5 w-48" />
-        <Skeleton className="mb-3 h-4 w-64" />
-        <div className="grid gap-3 sm:grid-cols-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-32 rounded-2xl" />
-          ))}
         </div>
-      </div>
-      <div>
-        <Skeleton className="mb-3 h-5 w-32" />
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-36 rounded-card" />
-          ))}
+        <div>
+          <Skeleton className="mb-1 h-5 w-48" />
+          <Skeleton className="mb-3 h-4 w-64" />
+          <div className="grid gap-3 sm:grid-cols-2">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <Skeleton key={i} className="h-24 rounded-2xl" />
+            ))}
+          </div>
         </div>
-      </div>
-      <Skeleton className="h-20 w-full rounded-card" />
       </div>
     </PageShell>
   );

@@ -12,6 +12,7 @@ export interface StudentDashboardStatsApi {
 export interface StudentDashboardSubjectApi {
   id: number;
   subject_name: string;
+  image_url?: string | null;
   board: BoardEnumApi;
   class_level: ClassEnumApi;
   progress: number;

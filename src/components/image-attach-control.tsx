@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { uploadTutorImage, validateTutorImageFile } from "@/api/tutor-images";
 import { cn } from "@/lib/utils";
+import { ImageCropDialog } from "@/components/image-crop-dialog";
 
 export type AttachedTutorImage = {
   file: File;
@@ -38,6 +39,7 @@ export function ImageAttachControl({
   const galleryRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const uid = useId();
+  const [toCrop, setToCrop] = useState<File | null>(null);
 
   const clear = useCallback(() => {
     if (attached?.previewUrl) URL.revokeObjectURL(attached.previewUrl);
@@ -75,8 +77,23 @@ export function ImageAttachControl({
         capture="environment"
         className="hidden"
         onChange={(e) => {
-          pick(e.target.files?.[0]);
+          const file = e.target.files?.[0];
           e.target.value = "";
+          if (!file) return;
+          if (attached) {
+            onError?.("Please remove the current image before attaching another.");
+            return;
+          }
+          // Size is checked after cropping, since the crop usually shrinks large camera photos.
+          setToCrop(file);
+        }}
+      />
+      <ImageCropDialog
+        file={toCrop}
+        onCancel={() => setToCrop(null)}
+        onDone={(cropped) => {
+          setToCrop(null);
+          pick(cropped);
         }}
       />
       <input

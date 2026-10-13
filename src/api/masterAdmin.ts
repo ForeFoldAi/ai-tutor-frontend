@@ -189,6 +189,15 @@ export async function updateSyllabusSubject(
   });
 }
 
+export async function uploadSyllabusSubjectImage(id: string | number, file: File): Promise<SyllabusSubjectResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiFetch<SyllabusSubjectResponse>(`/auth/admin/catalog/syllabus/${id}/image`, {
+    method: "PUT",
+    body: formData,
+  });
+}
+
 export async function deleteSyllabusSubject(id: string | number): Promise<{ message: string }> {
   return apiFetch<{ message: string }>(`/auth/admin/catalog/syllabus/${id}`, { method: "DELETE" });
 }

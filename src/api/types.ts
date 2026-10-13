@@ -573,6 +573,7 @@ export interface SyllabusSubjectResponse {
   board: BoardEnumApi;
   class_level: ClassEnumApi;
   subject_name: string;
+  image_url?: string | null;
   created_at: string;
 }
 
@@ -587,6 +588,7 @@ export interface StudentSubjectApi {
   board: BoardEnumApi;
   class_level: ClassEnumApi;
   subject_name: string;
+  image_url?: string | null;
   chapters: StudentChapterApi[];
 }
 

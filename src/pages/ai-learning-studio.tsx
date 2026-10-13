@@ -1,24 +1,23 @@
 import { useEffect, useState } from "react";
 import { useLocation, useRoute } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
+
 import {
   BookOpen,
   AlertCircle,
   RefreshCw,
   Calculator,
+  ChevronRight,
   FlaskConical,
   Globe,
   Monitor,
-  MessageCircle,
-  PencilLine,
   Lightbulb,
   Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PageShell } from "@/components/page-shell";
 import { AskAiTutorButton } from "@/components/ask-ai-tutor-button";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { useAskAiTutorStore, type AskAiTutorMode } from "@/lib/ask-ai-tutor-store";
 import { AiTutorStudioSkeleton } from "@/components/skeletons/student-page-skeletons";
 import { useAuthStore } from "@/lib/auth-store";
@@ -86,36 +85,32 @@ function getSubjectConfig(name: string) {
 const QUICK_START: Array<{
   title: string;
   description: string;
-  icon: typeof MessageCircle;
-  iconColor: string;
+  image: string;
   bg: string;
   mode: AskAiTutorMode;
 }> = [
-  {
-    title: "Ask Textbook Q&A",
-    description: "Ask about the textbook",
-    icon: MessageCircle,
-    iconColor: "text-blue-600",
-    bg: "bg-blue-50 dark:bg-blue-950/30",
-    mode: "ask",
-  },
-  {
-    title: "Practice Problems",
-    description: "Textbook drills",
-    icon: PencilLine,
-    iconColor: "text-pink-600",
-    bg: "bg-pink-50 dark:bg-pink-950/30",
-    mode: "practice",
-  },
-  {
-    title: "Explain a Topic",
-    description: "Step-by-step lesson",
-    icon: Lightbulb,
-    iconColor: "text-amber-600",
-    bg: "bg-amber-50 dark:bg-amber-950/30",
-    mode: "explain",
-  },
-];
+    {
+      title: "Ask Questions",
+      description: "Ask anything from your textbook",
+      image: "/assests/ask.png",
+      bg: "bg-blue-50 dark:bg-blue-950/30",
+      mode: "ask",
+    },
+    {
+      title: "Practice Problems",
+      description: "Practice what you've learned",
+      image: "/assests/pratice.png",
+      bg: "bg-pink-50 dark:bg-pink-950/30",
+      mode: "practice",
+    },
+    {
+      title: "Explain a Topic",
+      description: "Learn it step by step",
+      image: "/assests/explain.png",
+      bg: "bg-amber-50 dark:bg-amber-950/30",
+      mode: "explain",
+    },
+  ];
 
 function toStudentSubject(s: LearningSubjectApi): StudentSubjectApi {
   return {
@@ -132,19 +127,15 @@ function toStudentSubject(s: LearningSubjectApi): StudentSubjectApi {
 }
 
 function StudioHomeView({
-  subjects,
   recommendedTopics,
   loading,
   error,
-  onSubjectSelect,
   onRetry,
   retrying,
 }: {
-  subjects: LearningSubjectApi[];
   recommendedTopics: RecommendedTopicApi[];
   loading: boolean;
   error: string | null;
-  onSubjectSelect: (subjectId: string) => void;
   onRetry: () => void;
   retrying?: boolean;
 }) {
@@ -203,59 +194,14 @@ function StudioHomeView({
             Your personal AI learning assistant
           </p>
         </div>
-        <AskAiTutorButton className="h-8 shrink-0 px-3 sm:h-9 sm:px-4">
-          Ask Learn Mastro
-        </AskAiTutorButton>
+        <div className="flex shrink-0 items-center gap-2">
+          <AskAiTutorButton className="h-8 shrink-0 px-3 sm:h-9 sm:px-4">
+            Ask Learn Mastro
+          </AskAiTutorButton>
+          <ThemeToggle className="hidden lg:flex" />
+        </div>
       </div>
 
-      <div>
-        <h2 className="mb-3 text-base font-semibold text-foreground sm:text-lg">Your Subjects</h2>
-
-        {subjects.length === 0 ? (
-          <Card className="shadow-card">
-            <CardContent className="flex flex-col items-center p-8 text-center">
-              <BookOpen className="mb-3 h-10 w-10 text-muted-foreground/50" />
-              <p className="font-medium text-foreground">No subjects available yet</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Subjects will appear here once your school assigns them to your class.
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {subjects.map((subject) => {
-              const config = getSubjectConfig(subject.subject_name);
-              const SubjectIcon = config.icon;
-              return (
-                <Card
-                  key={subject.id}
-                  className="cursor-pointer shadow-card transition-all hover:border-primary/30 hover:shadow-card-hover"
-                  onClick={() => onSubjectSelect(String(subject.id))}
-                >
-                  <CardContent className="flex flex-col items-center p-4 text-center">
-                    <div
-                      className={cn(
-                        "mb-3 flex h-11 w-11 items-center justify-center rounded-xl",
-                        config.bg
-                      )}
-                    >
-                      <SubjectIcon className="h-5 w-5 text-white" />
-                    </div>
-                    <p className="truncate text-sm font-semibold text-foreground">
-                      {subject.subject_name}
-                    </p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">
-                      {subject.progress}% covered · {subject.completed_chapters}/
-                      {subject.total_chapters} chapters
-                    </p>
-                    <Progress value={subject.progress} className="mt-2 h-1.5 w-full" />
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        )}
-      </div>
 
       <div>
         <h2 className="text-base font-semibold text-foreground sm:text-lg">
@@ -264,22 +210,27 @@ function StudioHomeView({
         <p className="mt-0.5 text-sm text-muted-foreground">
           Ask, practice, or get an explanation — subject is detected from your question
         </p>
-        <div className="mt-3 grid grid-cols-3 gap-2 sm:gap-3">
+        <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-3 sm:gap-3">
           {QUICK_START.map((item) => (
             <button
               key={item.title}
               type="button"
               onClick={() => openAskAiTutor(item.mode)}
               className={cn(
-                "h-full rounded-2xl border border-border/60 p-2.5 text-left shadow-card transition-all hover:border-primary/30 hover:shadow-card-hover sm:p-4 lg:text-center",
+                "flex h-full items-center overflow-hidden rounded-2xl border border-border/60 text-left shadow-card transition-all hover:border-primary/30 hover:shadow-card-hover active:scale-[0.99] sm:flex-col sm:items-stretch lg:text-center",
                 item.bg
               )}
             >
-              <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-xl bg-background/80 shadow-sm sm:mb-3 sm:h-10 sm:w-10 lg:mx-auto">
-                <item.icon className={cn("h-4 w-4 sm:h-5 sm:w-5", item.iconColor)} />
+              <img
+                src={item.image}
+                alt=""
+                className="aspect-[4/3] w-28 shrink-0 object-cover sm:aspect-video sm:w-full"
+              />
+              <div className="min-w-0 flex-1 px-3 py-2 sm:p-4">
+                <p className="text-sm font-semibold leading-snug text-foreground">{item.title}</p>
+                <p className="mt-0.5 text-xs leading-snug text-muted-foreground sm:mt-1 sm:truncate">{item.description}</p>
               </div>
-              <p className="text-[11px] font-semibold leading-snug text-foreground sm:text-sm">{item.title}</p>
-              <p className="mt-0.5 truncate text-[9px] leading-snug text-muted-foreground sm:mt-1 sm:text-xs">{item.description}</p>
+              <ChevronRight className="mr-3 h-4 w-4 shrink-0 text-muted-foreground sm:hidden" />
             </button>
           ))}
         </div>
@@ -364,19 +315,25 @@ export default function AILearningStudioPage() {
   useEffect(() => {
     if (match && params?.subjectId && subjects.length > 0 && !loading) {
       const from = new URLSearchParams(window.location.search).get("from");
-      setWizardReturnTo(from === "my-learning" ? "/my-learning" : "/ai-learning-studio");
+      setWizardReturnTo(
+        from === "my-learning"
+          ? "/my-learning"
+          : from === "dashboard"
+            ? "/dashboard"
+            : from?.startsWith("/")
+              ? from
+              : "/ai-learning-studio"
+      );
       openWizard(params.subjectId);
     }
-  }, [match, params?.subjectId, subjects.length, loading]);
+  }, [match, params?.subjectId, subjects.length, loading, window.location.search]);
 
   return (
     <>
       <StudioHomeView
-        subjects={subjects}
         recommendedTopics={data?.recommended_topics ?? []}
         loading={loading}
         error={error ? studentFriendlyError(error, MSG.subjectsLoad) : null}
-        onSubjectSelect={openWizard}
         onRetry={() => void refetch()}
         retrying={retrying}
       />
@@ -387,15 +344,15 @@ export default function AILearningStudioPage() {
         chapterStatusById={
           wizardSubjectApi
             ? Object.fromEntries(
-                wizardSubjectApi.chapters.map((c) => [String(c.id), c.status])
-              )
+              wizardSubjectApi.chapters.map((c) => [String(c.id), c.status])
+            )
             : undefined
         }
         chapterProgressById={
           wizardSubjectApi
             ? Object.fromEntries(
-                wizardSubjectApi.chapters.map((c) => [String(c.id), c.progress ?? 0])
-              )
+              wizardSubjectApi.chapters.map((c) => [String(c.id), c.progress ?? 0])
+            )
             : undefined
         }
       />

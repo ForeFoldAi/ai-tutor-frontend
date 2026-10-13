@@ -21,6 +21,7 @@ import {
 import { cn } from "@/lib/utils";
 import { PageShell } from "@/components/page-shell";
 import { AskAiTutorButton } from "@/components/ask-ai-tutor-button";
+import { ThemeToggle } from "@/components/theme-toggle";
 import {
   fetchStudentLiveSessions,
   joinStudentLiveSession,
@@ -228,6 +229,7 @@ export default function LiveClassesPage() {
               />
             </div>
             <AskAiTutorButton className="h-8 shrink-0 px-3 sm:h-9 sm:px-4" />
+            <ThemeToggle className="hidden lg:flex" />
           </div>
         </div>
         <div className="relative min-w-0 w-full lg:hidden">
