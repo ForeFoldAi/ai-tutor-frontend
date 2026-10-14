@@ -206,7 +206,7 @@ export default function MyLearningPage() {
               </CardContent>
             </Card>
           ) : (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
               {filteredSubjects.map((subject) => {
                 const config = getSubjectConfig(subject.subject_name);
                 const SubjectIcon = config.icon;

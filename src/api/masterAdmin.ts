@@ -14,6 +14,8 @@ import type {
   SchoolSummary,
   ProcessingStatusApi,
   ProcessResponseApi,
+  SubjectImageApi,
+  SubjectImageUploadApi,
   SyllabusSubjectResponse,
   TextbookChapterApi,
   TextbookImageAdminApi,
@@ -181,7 +183,7 @@ export async function createSyllabusSubjects(payload: {
 
 export async function updateSyllabusSubject(
   id: string | number,
-  payload: { board?: string; class_level?: ClassEnumApi; subject_name?: string },
+  payload: { board?: string; class_level?: ClassEnumApi; subject_name?: string; image_id?: number | null },
 ): Promise<SyllabusSubjectResponse> {
   return apiFetch<SyllabusSubjectResponse>(`/auth/admin/catalog/syllabus/${id}`, {
     method: "PATCH",
@@ -189,13 +191,21 @@ export async function updateSyllabusSubject(
   });
 }
 
-export async function uploadSyllabusSubjectImage(id: string | number, file: File): Promise<SyllabusSubjectResponse> {
+export async function listSubjectImages(): Promise<SubjectImageApi[]> {
+  return apiFetch<SubjectImageApi[]>("/auth/admin/catalog/subject-images");
+}
+
+export async function uploadSubjectImages(files: File[]): Promise<SubjectImageUploadApi> {
   const formData = new FormData();
-  formData.append("file", file);
-  return apiFetch<SyllabusSubjectResponse>(`/auth/admin/catalog/syllabus/${id}/image`, {
-    method: "PUT",
+  for (const file of files) formData.append("files", file);
+  return apiFetch<SubjectImageUploadApi>("/auth/admin/catalog/subject-images", {
+    method: "POST",
     body: formData,
   });
+}
+
+export async function deleteSubjectImage(id: number): Promise<{ message: string }> {
+  return apiFetch<{ message: string }>(`/auth/admin/catalog/subject-images/${id}`, { method: "DELETE" });
 }
 
 export async function deleteSyllabusSubject(id: string | number): Promise<{ message: string }> {

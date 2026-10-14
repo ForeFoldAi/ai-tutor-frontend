@@ -573,8 +573,23 @@ export interface SyllabusSubjectResponse {
   board: BoardEnumApi;
   class_level: ClassEnumApi;
   subject_name: string;
+  image_id?: number | null;
   image_url?: string | null;
   created_at: string;
+}
+
+export interface SubjectImageApi {
+  id: number;
+  file_name: string;
+  image_url: string;
+  created_at: string;
+  /** Subjects using this image, e.g. "CBSE Class 8 English". */
+  used_by: string[];
+}
+
+export interface SubjectImageUploadApi {
+  created: SubjectImageApi[];
+  skipped: { file_name: string; reason: string }[];
 }
 
 export interface StudentChapterApi {
