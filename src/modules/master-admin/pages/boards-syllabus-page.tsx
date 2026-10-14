@@ -35,13 +35,19 @@ import {
   getCatalogEnums,
   getSyllabusSubjects,
   updateSyllabusSubject,
-  uploadSyllabusSubjectImage,
 } from "@/api/masterAdmin";
 import type { BoardEnumApi, ClassEnumApi } from "@/api/types";
-import { textbookImageSrc } from "@/components/voice/voice-image-utils";
-import { useAuthStore } from "@/lib/auth-store";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  SUBJECT_IMAGES_KEY,
+  SubjectImagePicker,
+  SubjectImagePool,
+  SubjectImageThumb,
+  useSubjectImages,
+} from "@/modules/master-admin/components/subject-image-picker";
 import {
   BookOpen,
+  Image as ImageIcon,
   GitBranch,
   Layers,
   List as ListIcon,
@@ -68,13 +74,13 @@ type AddSyllabusValues = z.infer<typeof addSyllabusSchema>;
 
 const classLabel = (cls: string) => cls.replace("CLASS_", "Class ");
 
-type SyllabusRow = { id: string; board: string; class_level: string; subject_name: string; image_url?: string | null };
+type SyllabusRow = { id: string; board: string; class_level: string; subject_name: string; image_id: number | null };
 
 export default function MasterAdminBoardsSyllabusPage() {
   const { toast } = useToast();
-  const token = useAuthStore((s) => s.token);
-  const [newImages, setNewImages] = useState<(File | undefined)[]>([]);
-  const [editImage, setEditImage] = useState<File | null>(null);
+  const queryClient = useQueryClient();
+  const { data: poolImages = [] } = useSubjectImages();
+  const [newImageIds, setNewImageIds] = useState<(number | null)[]>([]);
   const [loading, setLoading] = useState(true);
   const [boards, setBoards] = useState<Array<{ id: string; board: BoardEnumApi; country: string }>>([]);
   const [classes, setClasses] = useState<ClassEnumApi[]>([]);
@@ -113,9 +119,10 @@ export default function MasterAdminBoardsSyllabusPage() {
         board: r.board,
         class_level: r.class_level,
         subject_name: r.subject_name,
-        image_url: r.image_url,
+        image_id: r.image_id ?? null,
       })),
     );
+    void queryClient.invalidateQueries({ queryKey: SUBJECT_IMAGES_KEY });
   };
 
   useEffect(() => {
@@ -124,12 +131,6 @@ export default function MasterAdminBoardsSyllabusPage() {
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => setEditImage(null), [editRow?.id]);
-  const editImagePreview = useMemo(() => (editImage ? URL.createObjectURL(editImage) : null), [editImage]);
-  useEffect(() => () => {
-    if (editImagePreview) URL.revokeObjectURL(editImagePreview);
-  }, [editImagePreview]);
 
   const boardStats = useMemo(() => {
     const map = new Map<string, { classes: Set<string>; subjects: Set<string> }>();
@@ -255,6 +256,10 @@ export default function MasterAdminBoardsSyllabusPage() {
           <TabsTrigger value="syllabus" className="gap-2 text-xs">
             <Layers className="h-3.5 w-3.5" />
             Syllabus Hierarchy ({syllabus.length})
+          </TabsTrigger>
+          <TabsTrigger value="images" className="gap-2 text-xs">
+            <ImageIcon className="h-3.5 w-3.5" />
+            Subject Images ({poolImages.length})
           </TabsTrigger>
         </TabsList>
 
@@ -412,7 +417,7 @@ export default function MasterAdminBoardsSyllabusPage() {
                 <Dialog
                   open={addSyllabusOpen}
                   onOpenChange={(open) => {
-                    if (open) setNewImages([]);
+                    if (open) setNewImageIds([]);
                     setAddSyllabusOpen(open);
                   }}
                 >
@@ -444,10 +449,10 @@ export default function MasterAdminBoardsSyllabusPage() {
                               const idx = v.subject_names.findIndex(
                                 (s) => s.trim().toLowerCase() === row.subject_name.toLowerCase(),
                               );
-                              const file = idx >= 0 ? newImages[idx] : undefined;
-                              if (!file) return;
+                              const imageId = idx >= 0 ? newImageIds[idx] : null;
+                              if (imageId == null) return;
                               try {
-                                await uploadSyllabusSubjectImage(row.id, file);
+                                await updateSyllabusSubject(row.id, { image_id: imageId });
                               } catch {
                                 imageFailed.push(row.subject_name);
                               }
@@ -456,12 +461,12 @@ export default function MasterAdminBoardsSyllabusPage() {
                           await refresh();
                           setAddSyllabusOpen(false);
                           addSyllabusForm.reset();
-                          setNewImages([]);
+                          setNewImageIds([]);
                           toast(
                             imageFailed.length
                               ? {
-                                  title: "Syllabus added, but some images failed",
-                                  description: `Re-upload from Edit: ${[...new Set(imageFailed)].join(", ")}`,
+                                  title: "Syllabus added, but some images were not assigned",
+                                  description: `Pick them from Edit: ${[...new Set(imageFailed)].join(", ")}`,
                                   variant: "destructive",
                                 }
                               : { title: "Syllabus added successfully" },
@@ -537,20 +542,39 @@ export default function MasterAdminBoardsSyllabusPage() {
                                       <FormControl>
                                         <Input {...field} placeholder={`Subject ${index + 1}`} className="h-9 text-xs" />
                                       </FormControl>
-                                      <Input
-                                        type="file"
-                                        accept="image/*"
-                                        aria-label={`Image for subject ${index + 1}`}
-                                        className="h-9 w-44 shrink-0 text-xs"
-                                        onChange={(e) => {
-                                          const file = e.target.files?.[0];
-                                          setNewImages((prev) => {
-                                            const next = [...prev];
-                                            next[index] = file;
-                                            return next;
-                                          });
-                                        }}
-                                      />
+                                      <Popover>
+                                        <PopoverTrigger asChild>
+                                          <Button
+                                            type="button"
+                                            variant="outline"
+                                            aria-label={`Image for subject ${index + 1}`}
+                                            className="h-9 w-32 shrink-0 justify-start gap-2 px-2 text-xs font-normal"
+                                          >
+                                            {newImageIds[index] != null ? (
+                                              <span className="h-6 w-6 shrink-0 overflow-hidden rounded">
+                                                <SubjectImageThumb
+                                                  image={poolImages.find((im) => im.id === newImageIds[index])}
+                                                />
+                                              </span>
+                                            ) : (
+                                              <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                                            )}
+                                            {newImageIds[index] != null ? "Change" : "Pick image"}
+                                          </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-[340px] p-3" align="end">
+                                          <SubjectImagePicker
+                                            value={newImageIds[index] ?? null}
+                                            onChange={(id) =>
+                                              setNewImageIds((prev) => {
+                                                const next = [...prev];
+                                                next[index] = id;
+                                                return next;
+                                              })
+                                            }
+                                          />
+                                        </PopoverContent>
+                                      </Popover>
                                     </div>
                                     <FormMessage />
                                   </FormItem>
@@ -694,6 +718,21 @@ export default function MasterAdminBoardsSyllabusPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Tab 3: Subject image pool */}
+        <TabsContent value="images">
+          <Card className="shadow-sm">
+            <CardHeader className="pb-3 border-b">
+              <CardTitle className="text-base font-bold">Subject Images</CardTitle>
+              <CardDescription className="text-xs">
+                Shared cover images students see on their subject cards.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-4">
+              <SubjectImagePool />
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
 
       {/* Delete Confirmation */}
@@ -749,8 +788,8 @@ export default function MasterAdminBoardsSyllabusPage() {
                     board: editRow.board,
                     class_level: editRow.class_level as ClassEnumApi,
                     subject_name: editRow.subject_name.trim(),
+                    image_id: editRow.image_id,
                   });
-                  if (editImage) await uploadSyllabusSubjectImage(editRow.id, editImage);
                   await refresh();
                   setEditRow(null);
                   toast({ title: "Syllabus entry updated" });
@@ -807,29 +846,11 @@ export default function MasterAdminBoardsSyllabusPage() {
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="edit-subject-image" className="text-xs">
-                  Subject Image
-                </Label>
-                <div className="flex items-center gap-3">
-                  {editImagePreview || editRow.image_url ? (
-                    <img
-                      src={editImagePreview ?? textbookImageSrc(editRow.image_url!, token)}
-                      alt={`${editRow.subject_name} cover`}
-                      className="h-14 w-14 shrink-0 rounded-lg border object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg border bg-muted/30">
-                      <BookOpen className="h-5 w-5 text-muted-foreground" />
-                    </div>
-                  )}
-                  <Input
-                    id="edit-subject-image"
-                    type="file"
-                    accept="image/*"
-                    className="h-9 text-xs"
-                    onChange={(e) => setEditImage(e.target.files?.[0] ?? null)}
-                  />
-                </div>
+                <Label className="text-xs">Subject Image</Label>
+                <SubjectImagePicker
+                  value={editRow.image_id}
+                  onChange={(id) => setEditRow({ ...editRow, image_id: id })}
+                />
               </div>
               <div className="flex justify-between gap-2 pt-3 border-t">
                 <Button
