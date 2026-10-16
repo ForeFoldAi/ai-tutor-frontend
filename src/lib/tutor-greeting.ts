@@ -11,6 +11,7 @@ export function buildStartLearningGreeting(opts: {
   fullName?: string | null;
   subject: string;
   chapterNames?: string[];
+  topic?: string | null;
 }): string {
   const first = opts.firstName || studentFirstName(opts.fullName);
   const names = (opts.chapterNames || []).map((n) => n.trim()).filter(Boolean);
@@ -25,6 +26,10 @@ export function buildStartLearningGreeting(opts: {
     from = `${names[0]}, ${names[1]}, and more`;
   } else {
     from = subject;
+  }
+
+  if (opts.topic?.trim()) {
+    return `Hi ${first}, welcome back! Let's explore "${opts.topic.trim()}" from ${from}. What would you like to understand first?`;
   }
 
   return `Hi ${first}, welcome back. What would you like to learn today from ${from}?`;

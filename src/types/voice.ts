@@ -1,3 +1,5 @@
+import type { RelatedTextbookImage } from "@/components/assistant-message-content";
+
 export type VoiceState =
   | "IDLE"
   | "CONNECTING"
@@ -35,6 +37,8 @@ export type TranscriptLine = {
   action?: string;
   /** User line emitted before runTurn completes; cleared on commit or cancel. */
   pending?: boolean;
+  /** Textbook figures for this assistant answer — kept with the line, never cleared by later turns. */
+  images?: RelatedTextbookImage[];
 };
 
 export type VoiceScope = {

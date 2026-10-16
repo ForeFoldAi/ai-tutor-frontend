@@ -215,7 +215,7 @@ function AskAiTutorChat({
       const kept = prev.filter((m) => !m.id.startsWith("v-"));
       const voiceMsgs: Message[] = [];
       for (const line of voice.transcript) {
-        if (line.pending && line.role !== "user" && line.role !== "assistant") continue;
+        if (!line.text) continue;
         voiceMsgs.push({
           id: `v-${line.role === "user" ? "u" : "a"}-${line.turnId}`,
           role: line.role,

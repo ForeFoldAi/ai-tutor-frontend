@@ -55,7 +55,6 @@ export default defineConfig({
       // ponytail: "/voice" prefix also matches SPA /voice-tutor — use "/voice/" + explicit roots
       "/voice/": backendProxy(),
       "/voice-stream": backendProxy(),
-      "/voice-transcribe": backendProxy(),
       "/voice-session-end": backendProxy(),
       "/health": backendProxy(),
       "/api": backendProxy(),

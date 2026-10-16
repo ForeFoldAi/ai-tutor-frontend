@@ -1,4 +1,6 @@
 import { useEffect, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { LEARNING_OVERVIEW_KEY } from "@/hooks/use-learning-overview";
 import {
   endLearningSession,
   startLearningSession,
@@ -17,13 +19,15 @@ export function useStudySession(opts: {
   chapterName?: string | null;
   mode?: StudyMode;
   agentMode?: AgentMode | null;
+  topic?: string | null;
 }) {
+  const queryClient = useQueryClient();
   const sessionIdRef = useRef<number | null>(null);
   const startedKeyRef = useRef<string>("");
 
   useEffect(() => {
     if (!opts.enabled || !opts.subjectName?.trim()) return;
-    const key = `${opts.subjectName}|${opts.chapterId ?? ""}|${opts.mode ?? "ai_tutor"}|${opts.agentMode ?? "free"}`;
+    const key = `${opts.subjectName}|${opts.chapterId ?? ""}|${opts.mode ?? "ai_tutor"}|${opts.agentMode ?? "free"}|${opts.topic ?? ""}`;
     if (startedKeyRef.current === key && sessionIdRef.current != null) return;
 
     let cancelled = false;
@@ -37,6 +41,7 @@ export function useStudySession(opts: {
           chapter_name: opts.chapterName ?? null,
           mode: opts.mode ?? "ai_tutor",
           agent_mode: opts.agentMode ?? "free",
+          topic: opts.topic ?? null,
         });
         if (cancelled) {
           void endLearningSession(res.session_id).catch(() => {});
@@ -53,6 +58,8 @@ export function useStudySession(opts: {
       const id = sessionIdRef.current;
       sessionIdRef.current = null;
       if (id != null) void endLearningSession(id).catch(() => {});
+      // ponytail: invalidate overview on session exit so studio shows fresh progress & recommendations
+      void queryClient.invalidateQueries({ queryKey: LEARNING_OVERVIEW_KEY });
     };
   }, [
     opts.enabled,
@@ -61,5 +68,7 @@ export function useStudySession(opts: {
     opts.chapterName,
     opts.mode,
     opts.agentMode,
+    opts.topic,
+    queryClient,
   ]);
 }

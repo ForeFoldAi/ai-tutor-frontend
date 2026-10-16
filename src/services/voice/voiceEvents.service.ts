@@ -7,7 +7,8 @@ export function voiceWsUrl(token: string): string {
 }
 
 export type VoiceSock = {
-  send: (msg: Record<string, unknown>) => void;
+  /** False when the socket is not open and the message was dropped. */
+  send: (msg: Record<string, unknown>) => boolean;
   sendBinary: (buf: ArrayBuffer) => void;
   close: () => void;
 };
@@ -43,7 +44,9 @@ export function connectVoiceEvents(
   ws.onclose = onClose;
   return {
     send(msg) {
-      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
+      if (ws.readyState !== WebSocket.OPEN) return false;
+      ws.send(JSON.stringify(msg));
+      return true;
     },
     sendBinary(buf) {
       if (ws.readyState === WebSocket.OPEN) ws.send(buf);
