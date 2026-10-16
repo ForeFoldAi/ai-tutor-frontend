@@ -7,7 +7,6 @@ import {
   AlertCircle,
   RefreshCw,
   Calculator,
-  ChevronRight,
   FlaskConical,
   Globe,
   Monitor,
@@ -153,6 +152,7 @@ function StudioHomeView({
         subject_id: topic.subject_id,
         chapter_id: topic.chapter_id,
         chapter_name: topic.chapter_name,
+        topic: topic.title,
         agent_mode: "explain",
         greet: true,
       })
@@ -210,27 +210,24 @@ function StudioHomeView({
         <p className="mt-0.5 text-sm text-muted-foreground">
           Ask, practice, or get an explanation — subject is detected from your question
         </p>
-        <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-3 sm:gap-3">
+        <div className="mt-3 grid grid-cols-3 gap-2 sm:gap-3">
           {QUICK_START.map((item) => (
             <button
               key={item.title}
               type="button"
               onClick={() => openAskAiTutor(item.mode)}
               className={cn(
-                "flex h-full items-center overflow-hidden rounded-2xl border border-border/60 text-left shadow-card transition-all hover:border-primary/30 hover:shadow-card-hover active:scale-[0.99] sm:flex-col sm:items-stretch lg:text-center",
+                "flex h-full flex-col overflow-hidden rounded-2xl border border-border/60 text-center shadow-card transition-all hover:border-primary/30 hover:shadow-card-hover active:scale-[0.99] sm:text-left lg:text-center",
                 item.bg
               )}
             >
-              <img
-                src={item.image}
-                alt=""
-                className="aspect-[4/3] w-28 shrink-0 object-cover sm:aspect-video sm:w-full"
-              />
-              <div className="min-w-0 flex-1 px-3 py-2 sm:p-4">
-                <p className="text-sm font-semibold leading-snug text-foreground">{item.title}</p>
-                <p className="mt-0.5 text-xs leading-snug text-muted-foreground sm:mt-1 sm:truncate">{item.description}</p>
+              <img src={item.image} alt="" className="aspect-square w-full object-cover sm:aspect-video" />
+              <div className="min-w-0 flex-1 p-2 sm:p-4">
+                <p className="text-xs font-semibold leading-snug text-foreground sm:text-sm">{item.title}</p>
+                <p className="mt-1 hidden truncate text-xs leading-snug text-muted-foreground sm:block">
+                  {item.description}
+                </p>
               </div>
-              <ChevronRight className="mr-3 h-4 w-4 shrink-0 text-muted-foreground sm:hidden" />
             </button>
           ))}
         </div>
@@ -238,11 +235,24 @@ function StudioHomeView({
 
       {recommendedTopics.length > 0 ? (
         <div>
-          <div className="mb-3 flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-primary" />
-            <h2 className="text-base font-semibold text-foreground sm:text-lg">
-              AI Recommended for you
-            </h2>
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              <h2 className="text-base font-semibold text-foreground sm:text-lg">
+                AI Recommended for you
+              </h2>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onRetry}
+              disabled={retrying}
+              className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <RefreshCw className={cn("h-3.5 w-3.5", retrying && "animate-spin")} />
+              Refresh
+            </Button>
           </div>
           <p className="mb-3 text-sm text-muted-foreground">
             Topics picked from your progress — tap one to start with Learn Mastro

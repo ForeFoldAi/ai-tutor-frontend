@@ -120,6 +120,31 @@ describe("applyTranscriptEvent", () => {
     assert.equal(lines.length, 0);
   });
 
+  it("keeps each turn's figures on its own answer across later turns", () => {
+    const fig1 = [{ url: "/a.png" }] as never;
+    const fig2 = [{ url: "/b.png" }] as never;
+    let lines = applyTranscriptEvent([], { role: "user", text: "Q1", turnId: 1, pending: true });
+    // Figures land before the first spoken sentence.
+    lines = applyTranscriptEvent(lines, { type: "related_images", turnId: 1, images: fig1 });
+    lines = applyTranscriptEvent(lines, { role: "user", text: "Q1", turnId: 1, pending: false });
+    lines = applyTranscriptEvent(lines, { role: "assistant", text: "A1", turnId: 1 });
+    lines = applyTranscriptEvent(lines, { role: "assistant", text: "A1 longer", turnId: 1 });
+    lines = applyTranscriptEvent(lines, { role: "user", text: "Q2", turnId: 2, pending: true });
+    lines = applyTranscriptEvent(lines, { type: "related_images", turnId: 2, images: fig2 });
+    lines = applyTranscriptEvent(lines, { role: "assistant", text: "A2", turnId: 2 });
+    assert.deepEqual(
+      lines.map((l) => `${l.turnId}:${l.role[0]}:${l.images?.[0]?.url ?? ""}`),
+      ["1:u:", "1:a:/a.png", "2:u:", "2:a:/b.png"],
+    );
+  });
+
+  it("drops a figures-only placeholder when its turn is cancelled", () => {
+    let lines = applyTranscriptEvent([], { role: "user", text: "Q", turnId: 4, pending: true });
+    lines = applyTranscriptEvent(lines, { type: "related_images", turnId: 4, images: [{ url: "/x.png" }] as never });
+    lines = applyTranscriptEvent(lines, { type: "turn_cancelled", turnId: 4 });
+    assert.equal(lines.length, 0);
+  });
+
   it("simulates delayed async ordering with stable turnIds", () => {
     let lines: ReturnType<typeof applyTranscriptEvent> extends infer T ? T : never = [];
     const events = [

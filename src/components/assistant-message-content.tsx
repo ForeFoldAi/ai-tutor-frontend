@@ -376,7 +376,12 @@ function TextbookFigureCard({
   count: number;
 }) {
   const [loaded, setLoaded] = useState(false);
-  const [failed, setFailed] = useState(false);
+  // Keyed by src: the token refresh rewrites the URL, which must clear a stale failure.
+  const baseSrc = textbookImageSrc(img.url, token);
+  const [retriedSrc, setRetriedSrc] = useState("");
+  const [failedSrc, setFailedSrc] = useState("");
+  const failed = failedSrc === baseSrc;
+  const src = retriedSrc === baseSrc ? `${baseSrc}${baseSrc.includes("?") ? "&" : "?"}retry=1` : baseSrc;
   const figLabel = figureNumberLabel(img);
   const captionBody = figureCaptionText(img, idx);
   const altText = displayFigureCaption(img, idx);
@@ -397,7 +402,7 @@ function TextbookFigureCard({
         ) : null}
         {!failed ? (
           <img
-            src={textbookImageSrc(img.url, token)}
+            src={src}
             alt={altText}
             className={cn(
               "block w-full h-auto object-contain relative z-[1]",
@@ -407,8 +412,9 @@ function TextbookFigureCard({
             loading="eager"
             onLoad={() => setLoaded(true)}
             onError={() => {
-              setFailed(true);
               setLoaded(false);
+              if (retriedSrc !== baseSrc) setRetriedSrc(baseSrc);
+              else setFailedSrc(baseSrc);
             }}
           />
         ) : (

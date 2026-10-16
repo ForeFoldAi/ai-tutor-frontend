@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { TutorMessageProse } from "@/lib/render-tutor-text";
-import { TextbookImageGallery, type RelatedTextbookImage } from "@/components/assistant-message-content";
+import { TextbookImageGallery } from "@/components/assistant-message-content";
 import {
   ImageAttachControl,
   ensureUploadedImageIds,
@@ -54,11 +54,14 @@ function voiceStateHint(state: VoiceState, hint: string, subject: string): strin
 function MessageBubble({
   line,
   timeSec,
+  accessToken,
 }: {
   line: TranscriptLine;
   timeSec: number;
+  accessToken?: string | null;
 }) {
   const isUser = line.role === "user";
+  const images = line.images ?? [];
   return (
     <div className={cn("flex gap-2.5 items-end min-w-0", isUser ? "flex-row-reverse" : "flex-row")}>
       <div
@@ -94,7 +97,14 @@ function MessageBubble({
             line.pending && "opacity-70",
           )}
         >
-          {isUser ? line.text : <TutorMessageProse text={line.text} className="break-words tutor-message-content" />}
+          {isUser ? (
+            line.text
+          ) : line.text ? (
+            <TutorMessageProse text={line.text} className="break-words tutor-message-content" />
+          ) : null}
+          {images.length > 0 ? (
+            <TextbookImageGallery images={images} token={accessToken} className={line.text ? undefined : "mt-0 pt-0 border-t-0"} />
+          ) : null}
         </div>
       </div>
     </div>
@@ -130,7 +140,6 @@ export function VoiceTutor({
   error,
   hint = "",
   transcript,
-  images = [],
   accessToken,
   muted,
   level,
@@ -148,8 +157,6 @@ export function VoiceTutor({
   error: string;
   hint?: string;
   transcript: TranscriptLine[];
-  /** Textbook figures for the answer being spoken right now. */
-  images?: RelatedTextbookImage[];
   accessToken?: string | null;
   muted: boolean;
   level: number;
@@ -293,14 +300,10 @@ export function VoiceTutor({
           ) : null}
 
           {entriesWithTime.map(({ line, timeSec }) => (
-            <MessageBubble key={`${line.turnId}-${line.role}`} line={line} timeSec={timeSec} />
+            <MessageBubble key={`${line.turnId}-${line.role}`} line={line} timeSec={timeSec} accessToken={accessToken} />
           ))}
 
           {showThinking ? <ThinkingBubble /> : null}
-
-          {images.length > 0 ? (
-            <TextbookImageGallery images={images} token={accessToken} className="mt-0" />
-          ) : null}
 
           {error ? <p className="text-center text-sm text-destructive px-4">{error}</p> : null}
         </div>

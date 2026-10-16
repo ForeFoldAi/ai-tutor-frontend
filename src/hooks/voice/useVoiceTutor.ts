@@ -4,7 +4,6 @@ import { MSG } from "@/lib/student-messages";
 import { stripGreetSearchParam } from "@/lib/tutor-greeting";
 import { connectVoiceEvents, type VoiceSock } from "@/services/voice/voiceEvents.service";
 import { applyTranscriptEvent } from "@/lib/voice-transcript";
-import type { RelatedTextbookImage } from "@/components/assistant-message-content";
 import type {
   TranscriptLine,
   VoiceConversationTurn,
@@ -46,7 +45,6 @@ export function useVoiceTutor(opts: {
   const [error, setError] = useState("");
   const [hint, setHint] = useState("");
   const [transcript, setTranscript] = useState<TranscriptLine[]>([]);
-  const [images, setImages] = useState<RelatedTextbookImage[]>([]);
   const [muted, setMuted] = useState(false);
   const [level, setLevel] = useState(0);
   const [sessionId, setSessionId] = useState("");
@@ -55,6 +53,7 @@ export function useVoiceTutor(opts: {
   const streamRef = useRef<MediaStream | null>(null);
   const captureRef = useRef<AudioContext | null>(null);
   const sampleRateRef = useRef(16000);
+  const heldPcmRef = useRef<ArrayBuffer[]>([]);
   const mutedRef = useRef(false);
   const stateRef = useRef<VoiceState>("IDLE");
   const sessionIdRef = useRef("");
@@ -90,8 +89,10 @@ export function useVoiceTutor(opts: {
     }
   }, []);
 
+  const lastAudioAtRef = useRef(0);
   const playPcm = useCallback(
     (buf: ArrayBuffer) => {
+      lastAudioAtRef.current = Date.now();
       markAudioReady();
       void playback.play(buf).catch(() => undefined);
     },
@@ -167,14 +168,22 @@ export function useVoiceTutor(opts: {
         // frames are ready the instant session_ready attaches sessionId.
         const st = stateRef.current;
         const blockUplink = st === "SPEAKING" || Date.now() < listenMuteUntilRef.current;
+        const pkt = packPcm(i16, sampleRateRef.current, false);
         if (!blockUplink) {
-          sockRef.current?.sendBinary(packPcm(i16, sampleRateRef.current, false));
+          sockRef.current?.sendBinary(pkt);
+          if (heldPcmRef.current.length) heldPcmRef.current = [];
+        } else {
+          // Last ~0.5 s (2 × 256 ms frames) — the words that triggered a barge-in.
+          heldPcmRef.current.push(pkt);
+          if (heldPcmRef.current.length > 2) heldPcmRef.current.shift();
         }
         void vad.push(i16).then((hits) => {
           if (!bargeInEnabled) return;
           if (hits.includes("start") && stateRef.current === "SPEAKING" && playback.playingRef.current) {
             playback.stop();
             sockRef.current?.send({ type: "interrupt", sessionId: sessionIdRef.current });
+            for (const held of heldPcmRef.current) sockRef.current?.sendBinary(held);
+            heldPcmRef.current = [];
             setState("INTERRUPTED");
           }
         });
@@ -225,15 +234,13 @@ export function useVoiceTutor(opts: {
         return;
       }
       if (type === "student_started_speaking") {
-        // Last turn's figures belong to last turn's answer.
-        setImages([]);
         setState("PROCESSING");
         stateRef.current = "PROCESSING";
         setHint("Hearing you…");
         return;
       }
       if (type === "related_images") {
-        setImages((msg.images as RelatedTextbookImage[] | undefined) ?? []);
+        setTranscript((t) => applyTranscriptEvent(t, msg));
         return;
       }
       if (type === "student_stopped_speaking") {
@@ -300,6 +307,11 @@ export function useVoiceTutor(opts: {
         setHint("Speak now — take your time, I reply once you stop.");
       }
       if (type === "voice_error") {
+        // Recoverable: the turn failed but the session is fine — say so and keep listening.
+        if (msg.recoverable) {
+          setHint(String(msg.message || MSG.voiceError));
+          return;
+        }
         setError(String(msg.message || MSG.voiceError));
         setState("ERROR");
       }
@@ -397,7 +409,6 @@ export function useVoiceTutor(opts: {
     setError("");
     setHint("");
     setTranscript([]);
-    setImages([]);
     setAudioReady(false);
     endedRef.current = false;
     userEndedRef.current = false;
@@ -445,6 +456,39 @@ export function useVoiceTutor(opts: {
     return () => window.clearInterval(id);
   }, [pushFreshToken, sessionId]);
 
+  // Watchdog: a lost server event must never leave the student stuck with no reply and a deaf mic.
+  useEffect(() => {
+    if (!sessionId) return;
+    const enteredAt = Date.now();
+    const id = window.setInterval(() => {
+      if (endedRef.current) return;
+      const st = stateRef.current;
+      const since = Date.now() - enteredAt;
+      // 45 s is past the server's own worst case (RAG timeout + one Edge retry), which answers with a spoken fallback.
+      if ((st === "PROCESSING" || st === "THINKING") && since > 45_000) {
+        sockRef.current?.send({ type: "interrupt", sessionId: sessionIdRef.current });
+        setState("LISTENING");
+        setHint("That took too long — please ask again.");
+      } else if (
+        st === "SPEAKING" &&
+        !playback.playingRef.current &&
+        Date.now() - Math.max(lastAudioAtRef.current, enteredAt) > 10_000
+      ) {
+        setState("LISTENING");
+        setHint("Speak now — take your time, I reply once you stop.");
+      } else if (st === "CONNECTING" && sessionIdRef.current && since > 20_000) {
+        // Resume never answered (server restarted / session gone): start a fresh session.
+        sessionIdRef.current = "";
+        resumeOnOpenRef.current = false;
+        reconnectAttemptRef.current = 0;
+        openSocketRef.current();
+      } else if (st === "CONNECTING" && since > 45_000) {
+        failConnect(MSG.voiceConnection);
+      }
+    }, 2000);
+    return () => window.clearInterval(id);
+  }, [failConnect, playback, sessionId, state]);
+
   const interrupt = useCallback(() => {
     void playback.stop();
     sockRef.current?.send({ type: "interrupt", sessionId });
@@ -478,14 +522,15 @@ export function useVoiceTutor(opts: {
     const trimmed = text.trim();
     const ids = (imageIds || []).filter(Boolean);
     if ((!trimmed && !ids.length) || !sessionIdRef.current || endedRef.current) return;
-    setImages([]);
     const payload: Record<string, unknown> = {
       type: "text",
       sessionId: sessionIdRef.current,
       text: trimmed || "Please help me with the attached image.",
     };
     if (ids.length) payload.image_ids = ids;
-    sockRef.current?.send(payload);
+    if (!sockRef.current?.send(payload)) {
+      setHint("Reconnecting — send that again in a moment.");
+    }
   }, []);
 
   useEffect(() => {
@@ -508,7 +553,6 @@ export function useVoiceTutor(opts: {
     error,
     hint,
     transcript,
-    images,
     muted,
     setMuted,
     level,

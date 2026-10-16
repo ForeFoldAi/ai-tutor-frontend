@@ -7,9 +7,10 @@ export type TranscriptWsMessage = {
   turnId?: number;
   pending?: boolean;
   action?: string;
+  images?: TranscriptLine["images"];
 };
 
-/** Apply a voice WS transcript / turn_cancelled event to transcript state. */
+/** Apply a voice WS transcript / turn_cancelled / related_images event to transcript state. */
 export function applyTranscriptEvent(
   lines: TranscriptLine[],
   msg: TranscriptWsMessage,
@@ -17,11 +18,28 @@ export function applyTranscriptEvent(
   if (msg.type === "turn_cancelled") {
     const turnId = Number(msg.turnId);
     if (!Number.isFinite(turnId) || turnId <= 0) return lines;
-    return lines.filter((l) => !(l.role === "user" && l.turnId === turnId && l.pending));
+    return lines.filter(
+      (l) =>
+        !(l.turnId === turnId && ((l.role === "user" && l.pending) || (l.role === "assistant" && !l.text))),
+    );
   }
 
   const turnId = Number(msg.turnId);
   if (!Number.isFinite(turnId) || turnId <= 0) return lines;
+
+  if (msg.type === "related_images") {
+    const images = Array.isArray(msg.images) ? msg.images : [];
+    if (!images.length) return lines;
+    const idx = lines.findIndex((l) => l.role === "assistant" && l.turnId === turnId);
+    if (idx >= 0) {
+      const next = lines.slice();
+      next[idx] = { ...lines[idx], images };
+      return next;
+    }
+    // Figures often arrive before the first spoken sentence: hold them on an
+    // empty assistant line that the answer text fills in.
+    return [...lines, { role: "assistant", text: "", turnId, images }];
+  }
 
   const role = msg.role === "assistant" ? "assistant" : "user";
   const text = String(msg.text || "").trim();
@@ -36,6 +54,9 @@ export function applyTranscriptEvent(
       next[idx] = line;
       return next;
     }
+    // Keep the user line ahead of a figures-only assistant placeholder for the same turn.
+    const holder = lines.findIndex((l) => l.role === "assistant" && l.turnId === turnId);
+    if (holder >= 0) return [...lines.slice(0, holder), line, ...lines.slice(holder)];
     return [...lines, line];
   }
 
@@ -46,36 +67,24 @@ export function applyTranscriptEvent(
   if (userIdx >= 0 && lines[userIdx].pending) {
     next = lines.slice();
     next[userIdx] = { ...lines[userIdx], pending: false };
-  } else if (userIdx < 0 && turnId > 0) {
-    // Synthetic / greet-style assistant with no user line for this turn is ok
-    // only when we already have some transcript context; still allow attach.
-    next = lines;
   }
 
   const action = typeof msg.action === "string" ? msg.action : undefined;
   const existing = next.findIndex((l) => l.role === "assistant" && l.turnId === turnId);
+  const prev = existing >= 0 ? next[existing] : undefined;
   const line: TranscriptLine = {
     role: "assistant",
     text,
     turnId,
-    ...(action
-      ? { action }
-      : existing >= 0 && next[existing].action
-        ? { action: next[existing].action }
-        : {}),
+    ...(action ? { action } : prev?.action ? { action: prev.action } : {}),
+    ...(prev?.images ? { images: prev.images } : {}),
   };
-  if (existing >= 0) {
+  if (prev) {
     // Progressive speech updates must not shrink a longer final reply.
-    if (text.length < next[existing].text.length) return next === lines ? lines : next;
+    if (text.length < prev.text.length) return next === lines ? lines : next;
     if (next === lines) next = lines.slice();
     next[existing] = line;
     return next;
-  }
-
-  // Assistant — must attach to an existing user turn unless this is a lone greet.
-  const user = next.find((l) => l.role === "user" && l.turnId === turnId);
-  if (!user && next.length > 0) {
-    // No matching user — still show text (e.g. late commit race).
   }
 
   return [...next, line];

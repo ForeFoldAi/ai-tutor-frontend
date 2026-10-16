@@ -6,7 +6,7 @@ import { cn, cleanDisplayText } from "@/lib/utils";
 // *** / ** / *word* (letter-only italic so `2*3*4` stays math). Same-length
 // open/close: `***lonely***` must not render as `*lonely*`.
 const EMPH_RE =
-  /(\*{2,3}|_{2,3})([^*_\n]+)\1|(?<![*\w])\*([A-Za-z][^*]{0,80}?)\*(?![*\w])/g;
+  /(\*{2,3}|_{2,3})([^*_\n]+)\1|(?<![*\w])\*([^\s*](?:[^*\n]{0,120}?[^\s*])?)\*(?![*\w])/g;
 const DISPLAY_MATH_RE = /\$\$([\s\S]*?)\$\$/g;
 const INLINE_MATH_RE = /(?<!\$)\$(?!\$)((?:\\.|[^$\\])+)\$(?!\$)/g;
 const LATEX_DISPLAY_RE = /\\\[([\s\S]*?)\\\]/g;
@@ -488,7 +488,7 @@ if (import.meta.env.DEV) {
   const vis = (s: string) =>
     sanitizeTutorDisplayText(s)
       .replace(/(\*{2,3}|_{2,3})([^*_\n]+)\1/g, "$2")
-      .replace(/(?<![*\w])\*([A-Za-z][^*]{0,80}?)\*(?![*\w])/g, "$1")
+      .replace(/(?<![*\w])\*([^\s*](?:[^*\n]{0,120}?[^\s*])?)\*(?![*\w])/g, "$1")
       .replace(/\*{2,}|_{2,}/g, "");
   console.assert(
     !vis("he was ***lonely*** and his **mind and body** weren't healthy.").includes("*") &&

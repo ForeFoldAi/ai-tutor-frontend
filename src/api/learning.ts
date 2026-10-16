@@ -93,6 +93,7 @@ export async function startLearningSession(body: {
   chapter_name?: string | null;
   mode?: StudyMode;
   agent_mode?: AgentMode | null;
+  topic?: string | null;
 }): Promise<{ session_id: number; started_at: string }> {
   return apiFetch("/auth/student/learning/sessions/start", {
     method: "POST",
@@ -186,6 +187,7 @@ export function tutorResumeHref(opts: {
   chapter_name?: string | null;
   agent_mode?: AgentMode | null;
   greet?: boolean;
+  topic?: string | null;
 }): string {
   const params = new URLSearchParams();
   params.set("board", opts.board);
@@ -196,6 +198,9 @@ export function tutorResumeHref(opts: {
   if (opts.chapter_name) {
     const name = cleanDisplayText(opts.chapter_name);
     if (name) params.set("chapterNames", name);
+  }
+  if (opts.topic?.trim()) {
+    params.set("topic", opts.topic.trim());
   }
   if (opts.agent_mode && opts.agent_mode !== "free") params.set("agentMode", opts.agent_mode);
   if (opts.greet) params.set("greet", "1");

@@ -168,6 +168,7 @@ interface ChapterContext {
   chapterIds: string[];
   chapterNames: string[];
   agentMode: "ask" | "practice" | "explain" | null;
+  topic?: string | null;
 }
 
 function useChapterContext(): ChapterContext | null {
@@ -182,6 +183,7 @@ function useChapterContext(): ChapterContext | null {
     const rawMode = (params.get("agentMode") || "").toLowerCase();
     const agentMode =
       rawMode === "ask" || rawMode === "practice" || rawMode === "explain" ? rawMode : null;
+    const topic = params.get("topic")?.trim() || null;
     return {
       board,
       classLevel,
@@ -190,6 +192,7 @@ function useChapterContext(): ChapterContext | null {
       chapterIds: chaptersRaw.split(",").filter(Boolean),
       chapterNames: (params.get("chapterNames") || "").split("||").filter(Boolean),
       agentMode,
+      topic,
     };
     // location changes when Resume / chapter links navigate; search must be re-read.
   }, [location]);
@@ -425,11 +428,14 @@ export default function AITutorPage() {
         thread_id: threadId ?? undefined,
         active_thread_id: opts.activeThreadId ?? threadId ?? undefined,
         new_thread: opts.newThread,
+      }).then(() => {
+        // ponytail: refresh learning overview cache so studio reflects recent chat progress
+        void queryClient.invalidateQueries({ queryKey: LEARNING_OVERVIEW_KEY });
       }).catch(() => {
         /* fail-open — progress still tracks via study sessions */
       });
     },
-    []
+    [queryClient]
   );
 
   const applyTutorChatData = useCallback(
@@ -449,6 +455,7 @@ export default function AITutorPage() {
     chapterName: chapterCtx?.chapterNames[0] ?? null,
     mode: "ai_tutor",
     agentMode: chapterCtx?.agentMode ?? "free",
+    topic: chapterCtx?.topic,
   });
 
   // Keep a snapshot for unmount flush — debounced saves are cancelled on navigate away.
@@ -602,7 +609,11 @@ export default function AITutorPage() {
       fullName: user?.fullName,
       subject: chapterCtx.subject,
       chapterNames: chapterCtx.chapterNames,
+      topic: chapterCtx.topic,
     });
+    if (chapterCtx.topic && !input) {
+      setInput(`Explain ${chapterCtx.topic} step-by-step`);
+    }
     const welcomeMsg: Message = {
       id: `welcome-msg-${Date.now()}`,
       role: "assistant",

@@ -105,7 +105,7 @@ export async function transcribeWithServer(
   },
 ): Promise<TranscribeResult> {
   const root = baseUrl.replace(/\/$/, "");
-  const endpoint = opts.token ? `${root}/auth/voice-transcribe` : `${root}/voice-transcribe`;
+  const endpoint = `${root}/auth/voice-transcribe`;
   const form = new FormData();
   form.append("audio", audio, audioFileName(audio.type));
   if (opts.subjectName) form.append("subject_name", opts.subjectName);
