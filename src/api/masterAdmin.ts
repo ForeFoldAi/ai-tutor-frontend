@@ -318,6 +318,10 @@ export async function uploadFullTextbook(params: {
   is_default?: boolean;
   /** Fill an existing publisher that has no PDF yet. */
   textbook_id?: number;
+  /** Percent (0-100) of the PDF sent to the server. */
+  onProgress?: (percent: number) => void;
+  /** Lets getStorageProgress() follow the server's S3 save. */
+  progressId?: string;
 }): Promise<TextbookSummaryApi> {
   const formData = new FormData();
   formData.append("file", params.file);
@@ -328,18 +332,28 @@ export async function uploadFullTextbook(params: {
   if (params.publisher) formData.append("publisher", params.publisher);
   if (params.is_default !== undefined) formData.append("is_default", String(params.is_default));
   if (params.textbook_id !== undefined) formData.append("textbook_id", String(params.textbook_id));
+  if (params.progressId) formData.append("progress_id", params.progressId);
 
+  // fetch() can't report upload progress; XHR can.
   const token = useAuthStore.getState().token;
-  const res = await fetch(`${API_BASE}/auth/admin/catalog/textbooks/upload`, {
-    method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: formData,
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_BASE}/auth/admin/catalog/textbooks/upload`);
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) params.onProgress?.(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve(JSON.parse(xhr.responseText));
+      else reject(new Error(xhr.responseText || `Full textbook upload failed (${xhr.status})`));
+    };
+    xhr.onerror = () => reject(new Error("Network error while uploading textbook"));
+    xhr.send(formData);
   });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || `Full textbook upload failed (${res.status})`);
-  }
-  return res.json();
+}
+
+export async function getStorageProgress(progressId: string): Promise<{ percent: number | null }> {
+  return apiFetch<{ percent: number | null }>(`/auth/admin/catalog/textbooks/upload-progress/${progressId}`);
 }
 
 export async function createPublisher(payload: {
@@ -391,6 +405,14 @@ export async function confirmTextbookStructure(textbookId: number): Promise<{ me
   return apiFetch<{ message: string }>(`/auth/admin/catalog/textbooks/${textbookId}/confirm`, {
     method: "POST",
   });
+}
+
+export async function stopTextbookProcessing(textbookId: number): Promise<{ message: string }> {
+  return apiFetch<{ message: string }>(`/auth/admin/catalog/textbooks/${textbookId}/stop`, { method: "POST" });
+}
+
+export async function reanalyzeTextbook(textbookId: number): Promise<{ message: string }> {
+  return apiFetch<{ message: string }>(`/auth/admin/catalog/textbooks/${textbookId}/reanalyze`, { method: "POST" });
 }
 
 export async function retryTextbookProcessing(textbookId: number): Promise<{ message: string }> {

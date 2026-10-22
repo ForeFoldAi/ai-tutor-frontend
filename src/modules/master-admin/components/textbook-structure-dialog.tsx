@@ -24,6 +24,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   confirmTextbookStructure,
   getTextbookStructure,
+  reanalyzeTextbook,
   updateTextbookStructure,
 } from "@/api/masterAdmin";
 import type { TextbookChapterApi, TextbookStructureApi } from "@/api/types";
@@ -44,6 +45,7 @@ import {
   Info,
   Hash,
   Compass,
+  RotateCcw,
 } from "lucide-react";
 
 interface TextbookStructureDialogProps {
@@ -68,6 +70,7 @@ export function TextbookStructureDialog({
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedChapters, setExpandedChapters] = useState<Record<string, boolean>>({});
   const [activeTab, setActiveTab] = useState<"chapters" | "excluded">("chapters");
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (!open || !textbookId) {
@@ -78,29 +81,52 @@ export function TextbookStructureDialog({
       return;
     }
     setLoading(true);
-    getTextbookStructure(textbookId)
-      .then((data) => {
-        setStructure(data);
-        const loadedChapters = data.chapters || [];
-        setChapters(loadedChapters);
-        // By default expand chapters that have sub_chapters
-        const initExpanded: Record<string, boolean> = {};
-        loadedChapters.forEach((ch, idx) => {
-          if (ch.sub_chapters && ch.sub_chapters.length > 0) {
-            initExpanded[ch.chapter_number || String(idx)] = true;
+    let cancelled = false;
+    let timer: number | undefined;
+    const load = () =>
+      getTextbookStructure(textbookId)
+        .then((data) => {
+          if (cancelled) return;
+          // Analysis runs in the background; keep the loader up until chapters exist.
+          if (data.status === "UPLOADED" || data.status === "ANALYZING") {
+            timer = window.setTimeout(load, 3000);
+            return;
           }
+          if (data.status === "FAILED" && !(data.chapters || []).length) {
+            toast({
+              title: "Chapter analysis failed",
+              description: "Use Retry on the textbook to analyze it again.",
+              variant: "destructive",
+            });
+          }
+          setLoading(false);
+          setStructure(data);
+          const loadedChapters = data.chapters || [];
+          setChapters(loadedChapters);
+          // By default expand chapters that have sub_chapters
+          const initExpanded: Record<string, boolean> = {};
+          loadedChapters.forEach((ch, idx) => {
+            if (ch.sub_chapters && ch.sub_chapters.length > 0) {
+              initExpanded[ch.chapter_number || String(idx)] = true;
+            }
+          });
+          setExpandedChapters(initExpanded);
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          setLoading(false);
+          toast({
+            title: "Failed to load chapter structure",
+            description: err.message,
+            variant: "destructive",
+          });
         });
-        setExpandedChapters(initExpanded);
-      })
-      .catch((err) => {
-        toast({
-          title: "Failed to load chapter structure",
-          description: err.message,
-          variant: "destructive",
-        });
-      })
-      .finally(() => setLoading(false));
-  }, [open, textbookId, toast]);
+    load();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [open, textbookId, toast, reloadKey]);
 
   const toggleExpand = (chapKey: string) => {
     setExpandedChapters((prev) => ({
@@ -160,6 +186,18 @@ export function TextbookStructureDialog({
         sub_chapters: [],
       },
     ]);
+  };
+
+  const handleReanalyze = async () => {
+    if (!textbookId) return;
+    if (!window.confirm("Re-analyze this textbook? Your unsaved and saved boundary edits will be replaced.")) return;
+    try {
+      const res = await reanalyzeTextbook(textbookId);
+      toast({ title: "Re-analyzing", description: res.message });
+      setReloadKey((k) => k + 1);
+    } catch (err: any) {
+      toast({ title: "Re-analyze failed", description: err.message, variant: "destructive" });
+    }
   };
 
   const handleDeleteChapter = (idx: number) => {
@@ -791,7 +829,25 @@ export function TextbookStructureDialog({
                                           {Math.round((sub.confidence_score ?? 0.9) * 100)}%
                                         </span>
                                       </TableCell>
-                                      <TableCell className="py-1" />
+                                      <TableCell className="py-1 text-right">
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                                          title="Delete sub-reading"
+                                          onClick={() =>
+                                            setChapters((prev) =>
+                                              prev.map((c) =>
+                                                c === ch
+                                                  ? { ...c, sub_chapters: (c.sub_chapters || []).filter((_, i) => i !== sIdx) }
+                                                  : c,
+                                              ),
+                                            )
+                                          }
+                                        >
+                                          <Trash2 className="h-3.5 w-3.5" />
+                                        </Button>
+                                      </TableCell>
                                     </TableRow>
                                   );
                                 })}
@@ -894,6 +950,17 @@ export function TextbookStructureDialog({
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleReanalyze}
+              disabled={loading || saving || confirming}
+              className="h-9 px-4 gap-1.5"
+              title="Discard these boundaries and detect chapters again"
+            >
+              <RotateCcw className="h-4 w-4" />
+              Re-analyze
+            </Button>
             <Button
               variant="outline"
               size="sm"

@@ -84,6 +84,7 @@ export default function MasterAdminBoardsSyllabusPage() {
   const [loading, setLoading] = useState(true);
   const [boards, setBoards] = useState<Array<{ id: string; board: BoardEnumApi; country: string }>>([]);
   const [classes, setClasses] = useState<ClassEnumApi[]>([]);
+  const [boardOptions, setBoardOptions] = useState<BoardEnumApi[]>([]);
   const [syllabus, setSyllabus] = useState<SyllabusRow[]>([]);
   const [editRow, setEditRow] = useState<SyllabusRow | null>(null);
   const [deleteRow, setDeleteRow] = useState<SyllabusRow | null>(null);
@@ -112,6 +113,7 @@ export default function MasterAdminBoardsSyllabusPage() {
       getSyllabusSubjects(),
     ]);
     setClasses(catalogEnums.classes);
+    setBoardOptions(catalogEnums.boards);
     setBoards(boardRows.map((b) => ({ id: b.id, board: b.board, country: b.country })));
     setSyllabus(
       syllabusRows.map((r) => ({
@@ -304,9 +306,20 @@ export default function MasterAdminBoardsSyllabusPage() {
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel className="text-xs">Board Code</FormLabel>
-                            <FormControl>
-                              <Input {...field} placeholder="e.g. CBSE, ICSE, STATE_BOARD" className="h-9 text-xs" />
-                            </FormControl>
+                            <Select value={field.value} onValueChange={field.onChange}>
+                              <FormControl>
+                                <SelectTrigger className="h-9 text-xs" aria-label="Board code">
+                                  <SelectValue placeholder="Select board" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {boardOptions.map((b) => (
+                                  <SelectItem key={b} value={b}>
+                                    {b}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -480,9 +493,20 @@ export default function MasterAdminBoardsSyllabusPage() {
                             render={({ field }) => (
                               <FormItem>
                                 <FormLabel className="text-xs">Board</FormLabel>
-                                <FormControl>
-                                  <Input {...field} className="h-9 text-xs" />
-                                </FormControl>
+                                <Select value={field.value} onValueChange={field.onChange}>
+                                  <FormControl>
+                                    <SelectTrigger className="h-9 text-xs" aria-label="Board">
+                                      <SelectValue placeholder="Select board" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    {boardOptions.map((b) => (
+                                      <SelectItem key={b} value={b}>
+                                        {b}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
                                 <FormMessage />
                               </FormItem>
                             )}
