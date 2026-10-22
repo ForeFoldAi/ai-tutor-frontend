@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useLocation } from "wouter";
@@ -39,6 +40,7 @@ import {
   Calendar,
   Layers,
   Image as ImageIcon,
+  StopCircle,
 } from "lucide-react";
 import { Form, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import {
@@ -53,8 +55,10 @@ import {
   getTextbookUploadFileUrl,
   getTextbookUploads,
   retryTextbookProcessing,
+  stopTextbookProcessing,
   updateTextbookUpload,
   uploadFullTextbook,
+  getStorageProgress,
   updateTextbookPublisher,
   uploadTextbookFiles,
 } from "@/api/masterAdmin";
@@ -86,6 +90,8 @@ const boardLabel = (b: string) => b.replace(/_/g, " ");
 const statusLabel = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
 const DEFAULT_PUBLISHER = "default";
 const NEW_PUBLISHER = "new";
+/** Keep in sync with MAX_TEXTBOOK_BYTES in the backend textbook_router. */
+const MAX_TEXTBOOK_MB = 500;
 const normSubject = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
 
 type PublisherOption = {
@@ -140,6 +146,9 @@ export default function MasterAdminTextbookUploadsPage() {
   const [uploads, setUploads] = useState<TextbookUploadApi[]>([]);
   const [fullTextbooks, setFullTextbooks] = useState<TextbookSummaryApi[]>([]);
   const [fullTextbookFile, setFullTextbookFile] = useState<File | null>(null);
+  const [uploadPercent, setUploadPercent] = useState(0);
+  const [storagePercent, setStoragePercent] = useState(0);
+  const storageProgressId = useRef("");
   const [fullTextbookTitle, setFullTextbookTitle] = useState("");
   const [fullTextbookPublisher, setFullTextbookPublisher] = useState("");
   const [structureDialogOpen, setStructureDialogOpen] = useState(false);
@@ -542,10 +551,28 @@ export default function MasterAdminTextbookUploadsPage() {
     return hasPendingBook || hasPendingUpload;
   }, [fullTextbooks, uploads]);
 
+  // Boards, enums and syllabus don't change while a book processes — poll only the status rows.
+  const refreshProgress = async () => {
+    const [rows, tbRows] = await Promise.all([getTextbookUploads(), getTextbooks().catch(() => [])]);
+    setUploads(rows);
+    setFullTextbooks(tbRows);
+  };
+
+  // Browser -> server is done; follow the server's push to S3 until the upload request returns.
+  useEffect(() => {
+    if (!uploading || uploadPercent < 100) return;
+    const timer = setInterval(() => {
+      getStorageProgress(storageProgressId.current)
+        .then((r) => r.percent != null && setStoragePercent(r.percent))
+        .catch(() => {});
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [uploading, uploadPercent]);
+
   useEffect(() => {
     if (!hasPendingWork) return;
     const interval = setInterval(() => {
-      refresh().catch(() => {});
+      refreshProgress().catch(() => {});
     }, 3500);
     return () => clearInterval(interval);
   }, [hasPendingWork]);
@@ -785,9 +812,14 @@ export default function MasterAdminTextbookUploadsPage() {
         return;
       }
       setUploading(true);
+      setUploadPercent(0);
+      setStoragePercent(0);
+      storageProgressId.current = crypto.randomUUID();
       try {
         const publisherBookId = await resolveUploadPublisher(values);
         const tb = await uploadFullTextbook({
+          onProgress: setUploadPercent,
+          progressId: storageProgressId.current,
           file: fullTextbookFile,
           board: values.board,
           class_name: values.class_name,
@@ -1103,6 +1135,14 @@ export default function MasterAdminTextbookUploadsPage() {
                               onChange={(e) => {
                                 if (e.target.files?.[0]) {
                                   const f = e.target.files[0];
+                                  if (f.size > MAX_TEXTBOOK_MB * 1024 * 1024) {
+                                    toast({
+                                      title: `Textbook PDF must be ${MAX_TEXTBOOK_MB} MB or smaller`,
+                                      variant: "destructive",
+                                    });
+                                    e.target.value = "";
+                                    return;
+                                  }
                                   setFullTextbookFile(f);
                                   if (!fullTextbookTitle) {
                                     setFullTextbookTitle(f.name.replace(/\.[^/.]+$/, ""));
@@ -1117,7 +1157,29 @@ export default function MasterAdminTextbookUploadsPage() {
                             Selected: {fullTextbookFile.name} ({(fullTextbookFile.size / (1024 * 1024)).toFixed(1)} MB)
                           </div>
                         ) : (
-                          <p className="text-xs text-muted-foreground">Single textbook PDF file with multiple chapters</p>
+                          <p className="text-xs text-muted-foreground">
+                            Single textbook PDF file with multiple chapters (up to {MAX_TEXTBOOK_MB} MB)
+                          </p>
+                        )}
+                        {uploading && (
+                          <div className="space-y-2 pt-2 text-left">
+                            <div className="space-y-1">
+                              <div className="flex justify-between text-xs font-medium">
+                                <span>Uploading to server</span>
+                                <span>{uploadPercent}%</span>
+                              </div>
+                              <Progress value={uploadPercent} className="h-2" />
+                            </div>
+                            {uploadPercent === 100 && (
+                              <div className="space-y-1">
+                                <div className="flex justify-between text-xs font-medium">
+                                  <span>Saving to  storage</span>
+                                  <span>{storagePercent}%</span>
+                                </div>
+                                <Progress value={storagePercent} className="h-2" />
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
                     </div>
@@ -1271,7 +1333,11 @@ export default function MasterAdminTextbookUploadsPage() {
                         {uploading ? (
                           <>
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            {uploadMode === "auto_segment" ? "Analyzing..." : "Uploading..."}
+                            {uploadMode !== "auto_segment"
+                              ? "Uploading..."
+                              : uploadPercent < 100
+                                ? `Uploading ${uploadPercent}%`
+                                : `Saving  ${storagePercent}%`}
                           </>
                         ) : (
                           <>
@@ -1820,6 +1886,27 @@ export default function MasterAdminTextbookUploadsPage() {
                       </Badge>
                     ) : (
                       <StatusPill status={statusLabel(activeFullBooks[0].status) as any} />
+                    )}
+
+                    {["PROCESSING", "CONFIRMED"].includes(activeFullBooks[0].status) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1.5 text-xs text-rose-600 border-rose-500/40 hover:bg-rose-500/10"
+                        onClick={async () => {
+                          if (!window.confirm("Stop processing? The chapter in progress finishes; the rest can be resumed with Retry.")) return;
+                          try {
+                            const res = await stopTextbookProcessing(activeFullBooks[0].id);
+                            toast({ title: "Processing stopped", description: res.message });
+                            refresh();
+                          } catch (err: any) {
+                            toast({ title: "Stop failed", description: err.message, variant: "destructive" });
+                          }
+                        }}
+                      >
+                        <StopCircle className="h-3.5 w-3.5" />
+                        Stop
+                      </Button>
                     )}
 
                     <Button
