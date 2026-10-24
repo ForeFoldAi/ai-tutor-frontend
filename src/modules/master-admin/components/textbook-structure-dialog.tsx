@@ -161,6 +161,42 @@ export function TextbookStructureDialog({
     updateChapterField(idx, field, internalValue);
   };
 
+  const setSubs = (idx: number, fn: (subs: TextbookChapterApi[]) => TextbookChapterApi[]) => {
+    setChapters((prev) =>
+      prev.map((c, i) => (i === idx ? { ...c, sub_chapters: fn(c.sub_chapters || []) } : c)),
+    );
+  };
+
+  const updateSubField = (idx: number, sIdx: number, field: keyof TextbookChapterApi, val: any) => {
+    setSubs(idx, (subs) => subs.map((s, i) => (i === sIdx ? { ...s, [field]: val } : s)));
+  };
+
+  const handleAddSub = (idx: number) => {
+    const ch = chapters[idx];
+    const subs = ch.sub_chapters || [];
+    const last = subs[subs.length - 1];
+    const start = Math.min(last ? last.end_pdf_page + 1 : ch.start_pdf_page, ch.end_pdf_page);
+    const letter = String.fromCharCode(65 + subs.length);
+    setSubs(idx, (s) => [
+      ...s,
+      {
+        chapter_number: `${ch.chapter_number}.${letter}`,
+        chapter_title: `Reading ${letter}`,
+        hierarchy_level: "reading",
+        start_pdf_page: start,
+        end_pdf_page: ch.end_pdf_page,
+        is_non_chapter_section: false,
+        section_type: "reading",
+        detection_method: "admin_manual",
+        confidence_score: 1.0,
+        confidence_flags: [],
+        status: "CONFIRMED",
+        sub_chapters: [],
+      },
+    ]);
+    setExpandedChapters((prev) => ({ ...prev, [ch.chapter_number || String(idx)]: true }));
+  };
+
   const handleAddChapter = () => {
     const last = chapters[chapters.length - 1];
     const newStart = last ? last.end_pdf_page + 1 : 0;
@@ -570,7 +606,9 @@ export function TextbookStructureDialog({
                           </TableCell>
                         </TableRow>
                       ) : (
-                        filteredChapters.map((ch, idx) => {
+                        filteredChapters.map((ch) => {
+                          // Index into the full list: handlers edit `chapters`, not the search-filtered view.
+                          const idx = chapters.indexOf(ch);
                           const chapKey = ch.chapter_number || String(idx);
                           const isExpanded = !!expandedChapters[chapKey];
                           const hasSubs = (ch.sub_chapters || []).length > 0;
@@ -742,6 +780,16 @@ export function TextbookStructureDialog({
                                       variant="ghost"
                                       size="icon"
                                       className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                      title="Add sub-reading"
+                                      aria-label="Add sub-reading"
+                                      onClick={() => handleAddSub(idx)}
+                                    >
+                                      <Plus className="h-3.5 w-3.5" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7 text-muted-foreground hover:text-foreground"
                                       title="Split chapter at midpoint"
                                       onClick={() => handleSplitChapter(idx)}
                                     >
@@ -782,8 +830,13 @@ export function TextbookStructureDialog({
                                       className="bg-muted/15 border-b hover:bg-muted/25 transition-colors"
                                     >
                                       <TableCell className="p-1" />
-                                      <TableCell className="py-1 text-center font-mono text-xs text-muted-foreground">
-                                        <span className="text-[11px]">{sub.chapter_number}</span>
+                                      <TableCell className="py-1">
+                                        <Input
+                                          aria-label="Sub-reading number"
+                                          className="h-7 w-14 text-[11px] font-mono text-center px-1 bg-background"
+                                          value={sub.chapter_number}
+                                          onChange={(e) => updateSubField(idx, sIdx, "chapter_number", e.target.value)}
+                                        />
                                       </TableCell>
                                       <TableCell className="py-1">
                                         <Badge
@@ -798,19 +851,40 @@ export function TextbookStructureDialog({
                                           <span className="text-muted-foreground font-mono text-xs select-none">
                                             └─
                                           </span>
-                                          <span className="text-xs text-foreground font-medium">
-                                            {sub.chapter_title}
-                                          </span>
+                                          <Input
+                                            aria-label="Sub-reading title"
+                                            className="h-7 text-xs font-medium bg-background"
+                                            value={sub.chapter_title}
+                                            onChange={(e) => updateSubField(idx, sIdx, "chapter_title", e.target.value)}
+                                          />
                                         </div>
                                       </TableCell>
-                                      <TableCell className="py-1 text-center font-mono text-xs text-muted-foreground">
-                                        <div className="flex items-center justify-center gap-1">
-                                          <span>
-                                            pp. {sub.start_pdf_page + 1}–{sub.end_pdf_page + 1}
-                                          </span>
-                                          <span className="text-[10px] text-muted-foreground">
-                                            ({subSpan}p)
-                                          </span>
+                                      <TableCell className="py-1">
+                                        <div className="flex items-center justify-center gap-1 text-xs">
+                                          <Input
+                                            type="number"
+                                            aria-label="Sub-reading start page"
+                                            className="h-6 w-14 text-xs font-mono text-center p-0 bg-background"
+                                            value={sub.start_pdf_page + 1}
+                                            min={ch.start_pdf_page + 1}
+                                            max={ch.end_pdf_page + 1}
+                                            onChange={(e) =>
+                                              updateSubField(idx, sIdx, "start_pdf_page", Math.max(0, (parseInt(e.target.value) || 1) - 1))
+                                            }
+                                          />
+                                          <span className="text-muted-foreground">→</span>
+                                          <Input
+                                            type="number"
+                                            aria-label="Sub-reading end page"
+                                            className="h-6 w-14 text-xs font-mono text-center p-0 bg-background"
+                                            value={sub.end_pdf_page + 1}
+                                            min={sub.start_pdf_page + 1}
+                                            max={ch.end_pdf_page + 1}
+                                            onChange={(e) =>
+                                              updateSubField(idx, sIdx, "end_pdf_page", Math.max(0, (parseInt(e.target.value) || 1) - 1))
+                                            }
+                                          />
+                                          <span className="text-[10px] text-muted-foreground">({subSpan}p)</span>
                                         </div>
                                       </TableCell>
                                       <TableCell className="py-1 text-center font-mono text-xs text-muted-foreground">
@@ -835,15 +909,7 @@ export function TextbookStructureDialog({
                                           size="icon"
                                           className="h-6 w-6 text-muted-foreground hover:text-destructive"
                                           title="Delete sub-reading"
-                                          onClick={() =>
-                                            setChapters((prev) =>
-                                              prev.map((c) =>
-                                                c === ch
-                                                  ? { ...c, sub_chapters: (c.sub_chapters || []).filter((_, i) => i !== sIdx) }
-                                                  : c,
-                                              ),
-                                            )
-                                          }
+                                          onClick={() => setSubs(idx, (subs) => subs.filter((_, i) => i !== sIdx))}
                                         >
                                           <Trash2 className="h-3.5 w-3.5" />
                                         </Button>

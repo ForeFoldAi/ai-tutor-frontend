@@ -96,12 +96,12 @@ export default function MasterAdminBoardsSyllabusPage() {
 
   const addBoardForm = useForm<AddBoardValues>({
     resolver: zodResolver(addBoardSchema),
-    defaultValues: { board: "CBSE", country: "India" },
+    defaultValues: { board: "", country: "India" },
   });
 
   const addSyllabusForm = useForm<AddSyllabusValues>({
     resolver: zodResolver(addSyllabusSchema),
-    defaultValues: { board: "CBSE", class_names: ["CLASS_8"], subject_names: ["English"] },
+    defaultValues: { board: "", class_names: [], subject_names: [""] },
   });
 
   const subjectNames = addSyllabusForm.watch("subject_names");

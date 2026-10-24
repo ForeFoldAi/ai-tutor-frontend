@@ -65,8 +65,7 @@ import {
 import type { BoardResponse, ClassEnumApi, ContentTypeApi, TextbookSummaryApi, TextbookUploadApi } from "@/api/types";
 import { TextbookStructureDialog } from "../components/textbook-structure-dialog";
 import { TextbookImagesGalleryDialog } from "../components/textbook-images-gallery-dialog";
-import { API_BASE } from "@/api/index";
-import { useAuthStore } from "@/lib/auth-store";
+import { authFetch } from "@/api/index";
 
 const CONTENT_TYPES: { value: ContentTypeApi; label: string }[] = [
   { value: "CHAPTER", label: "Chapter" },
@@ -130,8 +129,8 @@ export default function MasterAdminTextbookUploadsPage() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
-  const [currentBoard, setCurrentBoard] = useState<string>("CBSE");
-  const [currentClass, setCurrentClass] = useState<string>("CLASS_8");
+  const [currentBoard, setCurrentBoard] = useState<string>("");
+  const [currentClass, setCurrentClass] = useState<string>("");
   const [currentSubject, setCurrentSubject] = useState<string | null>(null);
   // "default" or a non-default textbook id
   const [currentPublisher, setCurrentPublisher] = useState<string | null>(null);
@@ -185,10 +184,7 @@ export default function MasterAdminTextbookUploadsPage() {
     setPreviewLoading(true);
     setPreviewError(null);
 
-    const token = useAuthStore.getState().token;
-    fetch(`${API_BASE}/auth/admin/catalog/textbook-uploads/${previewUpload.id}/file`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
+    authFetch(`/auth/admin/catalog/textbook-uploads/${previewUpload.id}/file`)
       .then(async (res) => {
         if (!res.ok) {
           const errText = await res.text().catch(() => "");
@@ -310,21 +306,16 @@ export default function MasterAdminTextbookUploadsPage() {
     return classes;
   }, [currentBoard, syllabusSubjects, uploads, fullTextbooks, classes]);
 
-  // Keep board in sync with configuredBoards
+  // Nothing is pre-selected; only clear a choice that is no longer offered (e.g. board changed).
   useEffect(() => {
-    if (configuredBoards.length > 0) {
-      if (!currentBoard || !configuredBoards.includes(currentBoard)) {
-        setCurrentBoard(configuredBoards[0]);
-      }
+    if (currentBoard && configuredBoards.length > 0 && !configuredBoards.includes(currentBoard)) {
+      setCurrentBoard("");
     }
   }, [configuredBoards, currentBoard]);
 
-  // Keep class in sync with availableClassesForBoard
   useEffect(() => {
-    if (availableClassesForBoard.length > 0) {
-      if (!currentClass || !availableClassesForBoard.includes(currentClass as ClassEnumApi)) {
-        setCurrentClass(availableClassesForBoard[0]);
-      }
+    if (currentClass && !availableClassesForBoard.includes(currentClass as ClassEnumApi)) {
+      setCurrentClass("");
     }
   }, [availableClassesForBoard, currentClass]);
 
@@ -1428,7 +1419,15 @@ export default function MasterAdminTextbookUploadsPage() {
       {/* VIEW 1: SUBJECT CARDS GRID (When no subject is currently selected) */}
       {!currentSubject && (
         <div className="space-y-4">
-          {availableSubjects.length === 0 ? (
+          {!currentBoard || !currentClass ? (
+            <Card className="border-dashed p-10 text-center flex flex-col items-center justify-center gap-3 bg-muted/15">
+              <div className="p-3 rounded-full bg-muted text-muted-foreground">
+                <BookMarked className="h-8 w-8" />
+              </div>
+              <h3 className="text-base font-bold text-foreground">Select a board and class</h3>
+              <p className="text-xs text-muted-foreground">Choose them above to see subjects and textbooks.</p>
+            </Card>
+          ) : availableSubjects.length === 0 ? (
             <Card className="border-dashed p-10 text-center flex flex-col items-center justify-center gap-3 bg-muted/15">
               <div className="p-3 rounded-full bg-muted text-muted-foreground">
                 <BookMarked className="h-8 w-8" />
