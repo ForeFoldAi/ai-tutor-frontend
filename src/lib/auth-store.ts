@@ -61,6 +61,14 @@ export const useAuthStore = create<AuthState>()(
   )
 );
 
+// Keep tabs in sync: a token refreshed (or a logout) in one tab is picked up by the others, so they
+// never present an already-rotated refresh token.
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (e) => {
+    if (e.key === "auth-storage") void useAuthStore.persist.rehydrate();
+  });
+}
+
 export const hasRole = (user: User | null, roles: UserRoleType[]): boolean => {
   if (!user) return false;
   return roles.includes(user.role as UserRoleType);

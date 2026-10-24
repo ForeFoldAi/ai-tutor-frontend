@@ -14,31 +14,44 @@ function getAuthHeader(): Record<string, string> {
 }
 
 let refreshPromise: Promise<string | null> | null = null;
+const REFRESH_RETRY_DELAYS_MS = [1_000, 3_000, 8_000];
 
+/**
+ * New access token, or null. Logs out only when the server rejects the refresh token (401/403);
+ * a restarting backend (5xx, proxy error, network failure) keeps the session and is retried.
+ */
 export async function refreshAccessToken(): Promise<string | null> {
-  const state = useAuthStore.getState();
-  const refreshToken = state.refreshToken;
-  if (!refreshToken) return null;
-
   if (!refreshPromise) {
     refreshPromise = (async () => {
-      const res = await fetch(`${API_BASE}/auth/refresh`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: refreshToken }),
-      });
-      if (!res.ok) {
-        useAuthStore.getState().logout();
-        return null;
+      for (let attempt = 0; ; attempt++) {
+        // Another tab may have rotated the refresh token already; use the latest stored one.
+        await useAuthStore.persist.rehydrate();
+        const refreshToken = useAuthStore.getState().refreshToken;
+        if (!refreshToken) return null;
+        let res: Response | null = null;
+        try {
+          res = await fetch(`${API_BASE}/auth/refresh`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ refresh_token: refreshToken }),
+          });
+        } catch {
+          res = null;
+        }
+        if (res?.ok) {
+          const payload = (await res.json()) as { access_token?: string; refresh_token?: string };
+          if (!payload.access_token || !payload.refresh_token) return null;
+          useAuthStore.getState().setToken(payload.access_token);
+          useAuthStore.getState().setRefreshToken(payload.refresh_token);
+          return payload.access_token;
+        }
+        if (res && (res.status === 401 || res.status === 403)) {
+          useAuthStore.getState().logout();
+          return null;
+        }
+        if (attempt >= REFRESH_RETRY_DELAYS_MS.length) return null;
+        await new Promise((r) => window.setTimeout(r, REFRESH_RETRY_DELAYS_MS[attempt]));
       }
-      const payload = (await res.json()) as { access_token?: string; refresh_token?: string };
-      if (!payload.access_token || !payload.refresh_token) {
-        useAuthStore.getState().logout();
-        return null;
-      }
-      useAuthStore.getState().setToken(payload.access_token);
-      useAuthStore.getState().setRefreshToken(payload.refresh_token);
-      return payload.access_token;
     })().finally(() => {
       refreshPromise = null;
     });
@@ -46,6 +59,28 @@ export async function refreshAccessToken(): Promise<string | null> {
 
   return refreshPromise;
 }
+
+function tokenExpiryMs(token: string): number | null {
+  try {
+    const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    return typeof payload.exp === "number" ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+// Refresh a minute before the access token expires so polling pages never hit a burst of 401s.
+let refreshTimer: number | undefined;
+function scheduleProactiveRefresh(token: string | null) {
+  window.clearTimeout(refreshTimer);
+  const exp = token ? tokenExpiryMs(token) : null;
+  if (!exp) return;
+  refreshTimer = window.setTimeout(() => void refreshAccessToken(), Math.max(5_000, exp - Date.now() - 60_000));
+}
+scheduleProactiveRefresh(useAuthStore.getState().token);
+useAuthStore.subscribe((s, prev) => {
+  if (s.token !== prev.token) scheduleProactiveRefresh(s.token);
+});
 
 async function doFetch(path: string, init: RequestInit = {}, tokenOverride?: string): Promise<Response> {
   const authHeader = tokenOverride ? { Authorization: `Bearer ${tokenOverride}` } : getAuthHeader();
@@ -73,10 +108,9 @@ export async function authFetch(path: string, init: RequestInit = {}): Promise<R
     const fresh = await refreshAccessToken();
     if (fresh) {
       res = await doFetch(path, init, fresh);
+      // A brand-new token still rejected means the account itself is no longer valid.
+      if (res.status === 401) useAuthStore.getState().logout();
     }
-  }
-  if (res.status === 401) {
-    useAuthStore.getState().logout();
   }
   return res;
 }
