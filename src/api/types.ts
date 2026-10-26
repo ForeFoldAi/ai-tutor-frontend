@@ -623,6 +623,8 @@ export interface TextbookUploadApi {
   ocr_status: ProcessingStatusApi;
   chunk_status: ProcessingStatusApi;
   embedding_status: ProcessingStatusApi;
+  processing_started_at?: string | null;
+  processing_finished_at?: string | null;
   /** Book this chapter was split from; null = standalone chapter (default pool). */
   textbook_id?: number | null;
 }
