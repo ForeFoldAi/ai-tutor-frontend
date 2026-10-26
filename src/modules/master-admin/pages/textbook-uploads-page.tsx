@@ -59,6 +59,7 @@ import {
   updateTextbookUpload,
   uploadFullTextbook,
   getStorageProgress,
+  processTextbookUpload,
   updateTextbookPublisher,
   uploadTextbookFiles,
 } from "@/api/masterAdmin";
@@ -66,6 +67,8 @@ import type { BoardResponse, ClassEnumApi, ContentTypeApi, TextbookSummaryApi, T
 import { TextbookStructureDialog } from "../components/textbook-structure-dialog";
 import { TextbookImagesGalleryDialog } from "../components/textbook-images-gallery-dialog";
 import { authFetch } from "@/api/index";
+import { UploadStageBadge, UploadTiming } from "../components/upload-progress";
+import { ACTIVE_STAGES, typicalDurationMs, uploadStage } from "../utils/upload-progress";
 
 const CONTENT_TYPES: { value: ContentTypeApi; label: string }[] = [
   { value: "CHAPTER", label: "Chapter" },
@@ -147,6 +150,7 @@ export default function MasterAdminTextbookUploadsPage() {
   const [fullTextbookFile, setFullTextbookFile] = useState<File | null>(null);
   const [uploadPercent, setUploadPercent] = useState(0);
   const [storagePercent, setStoragePercent] = useState(0);
+  const [savedFileCount, setSavedFileCount] = useState(0);
   const storageProgressId = useRef("");
   const [fullTextbookTitle, setFullTextbookTitle] = useState("");
   const [fullTextbookPublisher, setFullTextbookPublisher] = useState("");
@@ -464,15 +468,10 @@ export default function MasterAdminTextbookUploadsPage() {
     [activeChapters],
   );
   const pendingChaptersCount = useMemo(
-    () =>
-      activeChapters.filter(
-        (u) =>
-          ["PROCESSING", "QUEUED"].includes(u.embedding_status) ||
-          ["PROCESSING", "QUEUED"].includes(u.chunk_status) ||
-          ["PROCESSING", "QUEUED"].includes(u.ocr_status),
-      ).length,
+    () => activeChapters.filter((u) => ACTIVE_STAGES.includes(uploadStage(u))).length,
     [activeChapters],
   );
+  const typicalUploadMs = useMemo(() => typicalDurationMs(uploads), [uploads]);
   const totalChaptersCount = activeChapters.length;
   const isChaptersCompleted = totalChaptersCount > 0 && pendingChaptersCount === 0;
 
@@ -533,12 +532,7 @@ export default function MasterAdminTextbookUploadsPage() {
     const hasPendingBook = fullTextbooks.some((tb) =>
       ["ANALYZING", "CONFIRMED", "PROCESSING"].includes(tb.status),
     );
-    const hasPendingUpload = uploads.some(
-      (u) =>
-        ["PROCESSING", "QUEUED"].includes(u.embedding_status) ||
-        ["PROCESSING", "QUEUED"].includes(u.chunk_status) ||
-        ["PROCESSING", "QUEUED"].includes(u.ocr_status),
-    );
+    const hasPendingUpload = uploads.some((u) => ACTIVE_STAGES.includes(uploadStage(u)));
     return hasPendingBook || hasPendingUpload;
   }, [fullTextbooks, uploads]);
 
@@ -547,6 +541,25 @@ export default function MasterAdminTextbookUploadsPage() {
     const [rows, tbRows] = await Promise.all([getTextbookUploads(), getTextbooks().catch(() => [])]);
     setUploads(rows);
     setFullTextbooks(tbRows);
+  };
+
+  const [requeuingUploadIds, setRequeuingUploadIds] = useState<Set<string>>(new Set());
+  const handleRequeueUpload = async (u: TextbookUploadApi) => {
+    const id = String(u.id);
+    setRequeuingUploadIds((prev) => new Set(prev).add(id));
+    try {
+      await processTextbookUpload(id);
+      toast({ title: "Requeued", description: u.content_label || u.file_name });
+      await refreshProgress();
+    } catch (err: any) {
+      toast({ title: "Could not requeue", description: err.message, variant: "destructive" });
+    } finally {
+      setRequeuingUploadIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
   };
 
   // Browser -> server is done; follow the server's push to S3 until the upload request returns.
@@ -854,22 +867,25 @@ export default function MasterAdminTextbookUploadsPage() {
     }
 
     setUploading(true);
+    setSavedFileCount(0);
     let uploaded = 0;
     try {
       const publisherBookId = await resolveUploadPublisher(values);
+      // One file per request: the spinner tracks storage saves only; processing is shown in Uploaded Chapters.
       for (const entry of validEntries) {
-        await uploadTextbookFiles({
-          files: entry.files,
-          board: values.board,
-          class_name: values.class_name,
-          subject: values.subject,
-          content_type: entry.contentType as ContentTypeApi,
-          content_labels: entry.files.map(() => entry.name.trim()).join(","),
-          textbook_id: publisherBookId,
-        });
-        uploaded += entry.files.length;
+        for (const file of entry.files) {
+          await uploadTextbookFiles({
+            files: [file],
+            board: values.board,
+            class_name: values.class_name,
+            subject: values.subject,
+            content_type: entry.contentType as ContentTypeApi,
+            content_labels: entry.name.trim(),
+            textbook_id: publisherBookId,
+          });
+          setSavedFileCount(++uploaded);
+        }
       }
-      await refresh();
       setCurrentBoard(values.board);
       setCurrentClass(values.class_name);
       setCurrentSubject(values.subject);
@@ -877,13 +893,18 @@ export default function MasterAdminTextbookUploadsPage() {
       setUploadOpen(false);
       resetDialog();
       toast({
-        title: `${uploaded} file(s) uploaded`,
-        description: "Chunking & embedding started automatically.",
+        title: `${uploaded} file(s) saved`,
+        description: "Processing continues in the background — follow it in Uploaded Chapters.",
       });
     } catch (err: any) {
-      toast({ title: "Upload failed", description: err.message, variant: "destructive" });
+      toast({
+        title: "Upload failed",
+        description: uploaded ? `${uploaded} file(s) were saved and are processing. ${err.message}` : err.message,
+        variant: "destructive",
+      });
     } finally {
       setUploading(false);
+      refreshProgress().catch(() => {});
     }
   };
 
@@ -1325,7 +1346,7 @@ export default function MasterAdminTextbookUploadsPage() {
                           <>
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                             {uploadMode !== "auto_segment"
-                              ? "Uploading..."
+                              ? `Saving ${Math.min(savedFileCount + 1, totalFileCount)} of ${totalFileCount} to storage…`
                               : uploadPercent < 100
                                 ? `Uploading ${uploadPercent}%`
                                 : `Saving  ${storagePercent}%`}
@@ -2063,14 +2084,15 @@ export default function MasterAdminTextbookUploadsPage() {
                     <TableHead className="w-48">Source File</TableHead>
                     <TableHead className="w-24 text-center">Type</TableHead>
                     <TableHead className="w-44">Uploaded At</TableHead>
-                    <TableHead className="w-28 text-center">Status</TableHead>
-                    <TableHead className="w-32 text-right pr-4">Actions</TableHead>
+                    <TableHead className="w-36 text-center">Status</TableHead>
+                    <TableHead className="w-40">Expected / Finished</TableHead>
+                    <TableHead className="w-36 text-right pr-4">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredActiveChapters.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7}>
+                      <TableCell colSpan={8}>
                         <div className="py-14 text-center flex flex-col items-center justify-center gap-3">
                           <FileText className="h-8 w-8 text-muted-foreground/60" />
                           <div>
@@ -2100,12 +2122,7 @@ export default function MasterAdminTextbookUploadsPage() {
                     </TableRow>
                   ) : (
                     filteredActiveChapters.map((u, idx) => {
-                      const isFailed = [u.embedding_status, u.chunk_status, u.ocr_status].includes("FAILED");
-                      const isReady = u.embedding_status === "EMBEDDED";
-                      const isProcessing =
-                        u.embedding_status === "PROCESSING" ||
-                        u.chunk_status === "PROCESSING" ||
-                        u.ocr_status === "PROCESSING";
+                      const stage = uploadStage(u);
 
                       return (
                         <TableRow key={u.id} className="hover:bg-muted/40 transition-colors group">
@@ -2144,44 +2161,29 @@ export default function MasterAdminTextbookUploadsPage() {
                             </div>
                           </TableCell>
                           <TableCell className="text-center">
-                            {isReady && (
-                              <Badge
-                                variant="outline"
-                                className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 gap-1 text-[11px] font-semibold"
-                              >
-                                <CheckCircle2 className="h-3 w-3" />
-                                Completed
-                              </Badge>
-                            )}
-                            {isProcessing && (
-                              <Badge
-                                variant="outline"
-                                className="bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/30 gap-1 text-[11px] font-semibold"
-                              >
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                                Pending
-                              </Badge>
-                            )}
-                            {!isReady && !isProcessing && !isFailed && (
-                              <Badge
-                                variant="outline"
-                                className="bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30 gap-1 text-[11px] font-semibold"
-                              >
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                                Pending
-                              </Badge>
-                            )}
-                            {isFailed && (
-                              <Badge
-                                variant="outline"
-                                className="bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/30 gap-1 text-[11px] font-semibold"
-                              >
-                                Failed
-                              </Badge>
-                            )}
+                            <UploadStageBadge stage={stage} />
+                          </TableCell>
+                          <TableCell>
+                            <UploadTiming upload={u} stage={stage} all={uploads} typical={typicalUploadMs} />
                           </TableCell>
                           <TableCell className="text-right pr-3">
                             <div className="flex items-center justify-end gap-1">
+                              {(stage === "stuck" || stage === "failed") && (
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-amber-600 hover:text-amber-700 hover:bg-amber-500/10"
+                                  title="Requeue (re-run processing)"
+                                  disabled={requeuingUploadIds.has(String(u.id))}
+                                  onClick={() => handleRequeueUpload(u)}
+                                >
+                                  {requeuingUploadIds.has(String(u.id)) ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <RotateCcw className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              )}
                               {/* Preview Button */}
                               <Button
                                 variant="ghost"
