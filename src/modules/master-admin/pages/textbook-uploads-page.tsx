@@ -323,22 +323,17 @@ export default function MasterAdminTextbookUploadsPage() {
     }
   }, [availableClassesForBoard, currentClass]);
 
-  // Subjects strictly from syllabus and uploads for the selected board & class (NO MOCK DATA)
+  // Subjects strictly from Boards & Syllabus, same as the upload form's subject options.
   const availableSubjects = useMemo(() => {
     if (!currentBoard || !currentClass) return [];
-    const list = new Set<string>();
-    syllabusSubjects
-      .filter((s) => s.board === currentBoard && s.class_level === currentClass)
-      .forEach((s) => list.add(s.subject_name));
-    uploads
-      .filter((u) => u.board === currentBoard && u.class_level === currentClass)
-      .forEach((u) => list.add(u.subject_name));
-    fullTextbooks
-      .filter((tb) => tb.board === currentBoard && tb.class_level === currentClass)
-      .forEach((tb) => list.add(tb.subject_name));
-
-    return Array.from(list).sort();
-  }, [currentBoard, currentClass, syllabusSubjects, uploads, fullTextbooks]);
+    return Array.from(
+      new Set(
+        syllabusSubjects
+          .filter((s) => s.board === currentBoard && s.class_level === currentClass)
+          .map((s) => s.subject_name),
+      ),
+    ).sort();
+  }, [currentBoard, currentClass, syllabusSubjects]);
 
   const subjectStats = useMemo(() => {
     const map: Record<
@@ -1460,7 +1455,7 @@ export default function MasterAdminTextbookUploadsPage() {
                 <p className="text-xs text-muted-foreground mt-1">
                   There are currently no syllabus subjects configured for{" "}
                   <span className="font-semibold text-foreground">{boardLabel(currentBoard)} • {classLabel(currentClass)}</span>.
-                  Configure subjects in Boards &amp; Syllabus or upload chapters directly.
+                  Configure subjects in Boards &amp; Syllabus first.
                 </p>
               </div>
               <div className="flex items-center gap-2 mt-2">

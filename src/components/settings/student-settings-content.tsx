@@ -42,6 +42,7 @@ import { cn } from "@/lib/utils";
 import { getMyProfile, updateMyProfile } from "@/api/profile";
 import { getMySettings, updateMySettings } from "@/api/settings";
 import { getSchoolDetail, updateSchoolProfile } from "@/api/organization";
+import { API_BASE } from "@/api";
 import { fetchSignupOptions } from "@/api/signup";
 import type { SignupOptions, UserSettings } from "@/api/types";
 import { parseStudentApiError } from "@/lib/student-messages";
@@ -219,6 +220,27 @@ export function StudentSettingsContent({
   const [favoriteSubjects, setFavoriteSubjects] = useState<string[]>([]);
   const [learningGoals, setLearningGoals] = useState<string[]>([]);
   const [learningMethod, setLearningMethod] = useState("");
+  const [syllabusSubjects, setSyllabusSubjects] = useState<string[]>([]);
+
+  // Same subject list as signup: only subjects configured in Boards & Syllabus for this board + class.
+  useEffect(() => {
+    setSyllabusSubjects([]);
+    if (!isIndividual || !grade || !curricula[0]) return;
+    let cancelled = false;
+    const qs = new URLSearchParams({ curriculum: curricula[0], grade: grade.replace("Grade ", "") });
+    fetch(`${API_BASE}/auth/signup/catalog?${qs}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((rows: { subject_name: string; in_syllabus: boolean }[] | null) => {
+        if (cancelled || !rows) return;
+        const offered = rows.filter((r) => r.in_syllabus).map((r) => r.subject_name);
+        setSyllabusSubjects(offered);
+        if (offered.length) setFavoriteSubjects((prev) => prev.filter((s) => offered.includes(s)));
+      })
+      .catch(() => null);
+    return () => {
+      cancelled = true;
+    };
+  }, [isIndividual, grade, curricula]);
 
   const applySettings = (settings: UserSettings) => {
     setUsername(settings.username ?? "");
@@ -774,7 +796,7 @@ export function StudentSettingsContent({
                         <div className="space-y-2">
                           <FieldLabel htmlFor="subjects" label={STF.subjects.label} />
                           <PillSelect
-                            options={signupOptions?.student_subjects ?? []}
+                            options={syllabusSubjects.length ? syllabusSubjects : signupOptions?.student_subjects ?? []}
                             value={favoriteSubjects}
                             onChange={(v) => setFavoriteSubjects(v as string[])}
                             multiple

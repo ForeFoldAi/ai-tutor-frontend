@@ -236,7 +236,10 @@ export default function MyLearningPage() {
                             <SubjectIcon className="h-5 w-5 text-white" />
                           </div>
                         )}
-                        <p className="truncate text-sm font-semibold text-foreground">
+                        <p
+                          className="line-clamp-2 w-full break-words text-sm font-semibold text-foreground"
+                          title={subject.subject_name}
+                        >
                           {subject.subject_name}
                         </p>
                         <p className="mt-0.5 text-xs text-muted-foreground">
