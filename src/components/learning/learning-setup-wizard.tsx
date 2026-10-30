@@ -480,13 +480,13 @@ export function LearningSetupWizard({
                               >
                                 {chapter.title}
                               </p>
-                              <p className="mt-0.5 line-clamp-1 text-[10px] text-muted-foreground sm:text-xs">
+                              <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
                                 {chapter.subtitle}
                               </p>
                             </div>
                             <Badge
                               className={cn(
-                                "w-fit border-0 text-[10px] font-medium",
+                                "w-fit border-0 text-xs font-medium lg:text-[10px]",
                                 isSelected
                                   ? "bg-green-600/15 text-green-700 dark:text-green-300"
                                   : statusBadgeClass(chapter.status)
@@ -504,7 +504,7 @@ export function LearningSetupWizard({
                               />
                               <span
                                 className={cn(
-                                  "w-8 text-right text-[10px] font-medium sm:text-xs",
+                                  "w-9 text-right text-xs font-medium lg:w-8",
                                   isSelected ? "text-green-700 dark:text-green-300" : "text-muted-foreground"
                                 )}
                               >

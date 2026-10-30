@@ -546,10 +546,10 @@ export function StudentSettingsContent({
                   </Avatar>
                   <button
                     type="button"
-                    className="absolute bottom-0 right-0 flex h-6 w-6 items-center justify-center rounded-full border-2 border-background bg-primary text-primary-foreground shadow-sm"
+                    className="absolute -bottom-1 -right-1 flex h-9 w-9 items-center justify-center rounded-full border-2 border-background bg-primary text-primary-foreground shadow-sm lg:bottom-0 lg:right-0 lg:h-6 lg:w-6"
                     aria-label="Change photo"
                   >
-                    <Camera className="h-3 w-3" />
+                    <Camera className="h-4 w-4 lg:h-3 lg:w-3" />
                   </button>
                 </div>
                 <div className="min-w-0 flex-1">
@@ -809,7 +809,7 @@ export function StudentSettingsContent({
                             {(signupOptions?.learning_goals ?? []).map((g) => (
                               <label
                                 key={g}
-                                className="flex items-center gap-2.5 rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-sm"
+                                className="flex items-center gap-2.5 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5 text-sm lg:py-2"
                               >
                                 <Checkbox
                                   checked={learningGoals.includes(g)}
@@ -1272,7 +1272,7 @@ export function StudentSettingsContent({
             <nav
               className={cn(
                 "grid gap-1 lg:flex lg:flex-col",
-                navItems.length >= 5 ? "grid-cols-3 sm:grid-cols-5" : "grid-cols-2 sm:grid-cols-4",
+                navItems.length >= 5 ? "grid-cols-3 sm:grid-cols-5" : "grid-cols-4",
               )}
             >
               {navItems.map((item) => (
@@ -1289,7 +1289,7 @@ export function StudentSettingsContent({
                 >
                   <item.icon className="h-4 w-4 shrink-0" />
                   <div className="min-w-0">
-                    <p className="text-[11px] font-medium leading-tight sm:text-xs lg:text-sm">
+                    <p className="text-xs font-medium leading-tight lg:text-sm">
                       {item.label}
                     </p>
                     <p

@@ -2,7 +2,6 @@ import { Link, useLocation } from "wouter";
 import { LogOut, Moon, Settings, Sun } from "lucide-react";
 import { AuthBrandMark } from "@/components/auth/auth-brand-mark";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -31,7 +30,7 @@ const SEARCH_PLACEHOLDER: Record<string, string> = {
 };
 
 const iconBtn =
-  "relative h-9 w-9 shrink-0 rounded-full border border-border bg-background shadow-sm hover:bg-muted/50";
+  "relative h-10 w-10 shrink-0 rounded-full border border-border bg-background shadow-sm hover:bg-muted/50";
 
 export function AppMobileHeader() {
   const { user, logout } = useAuthStore();
@@ -58,8 +57,8 @@ export function AppMobileHeader() {
   };
 
   return (
-    <header className="flex shrink-0 items-center gap-2 border-b border-border bg-background px-3 py-2 sm:gap-3 sm:px-4 lg:hidden">
-      <Link href={dashboardPath} className="shrink-0">
+    <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background px-4 sm:gap-3 lg:hidden">
+      <Link href={dashboardPath} className="flex h-10 min-w-10 shrink-0 items-center">
         <AuthBrandMark variant="sidebar" size="compact" className="min-w-0" />
       </Link>
 
@@ -72,21 +71,6 @@ export function AppMobileHeader() {
       />
 
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-        <Button
-          variant="outline"
-          size="icon"
-          className={iconBtn}
-          onClick={toggleTheme}
-          aria-label="Toggle light or dark mode"
-          data-testid="app-mobile-header-theme-toggle"
-        >
-          {theme === "light" ? (
-            <Moon className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <Sun className="h-4 w-4 text-muted-foreground" />
-          )}
-        </Button>
-
         {isDashboard ? (
           <NotificationBell
             buttonClassName={iconBtn}
@@ -98,12 +82,12 @@ export function AppMobileHeader() {
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border bg-background shadow-sm transition-colors hover:bg-muted/50"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border bg-background shadow-sm transition-colors hover:bg-muted/50"
               aria-label="User menu"
               data-testid="app-mobile-header-user-menu"
             >
-              <Avatar className="h-7 w-7">
-                <AvatarFallback className="bg-gradient-brand text-[10px] font-semibold text-white">
+              <Avatar className="h-8 w-8">
+                <AvatarFallback className="bg-gradient-brand text-xs font-semibold text-white">
                   {initials}
                 </AvatarFallback>
               </Avatar>
@@ -131,6 +115,18 @@ export function AppMobileHeader() {
               >
                 <Settings className="mr-2 h-4 w-4" />
                 Settings
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onClick={toggleTheme}
+                data-testid="app-mobile-header-theme-toggle"
+              >
+                {theme === "light" ? (
+                  <Moon className="mr-2 h-4 w-4" />
+                ) : (
+                  <Sun className="mr-2 h-4 w-4" />
+                )}
+                {theme === "light" ? "Dark mode" : "Light mode"}
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="cursor-pointer text-rose-600 focus:text-rose-600"

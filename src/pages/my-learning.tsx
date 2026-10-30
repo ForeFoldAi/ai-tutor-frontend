@@ -146,10 +146,10 @@ export default function MyLearningPage() {
   return (
     <PageShell className="overflow-x-hidden" contentClassName="min-h-0 flex-1 flex flex-col">
       <div className="flex min-w-0 shrink-0 flex-col gap-2">
-        <div className="flex min-w-0 items-start justify-between gap-2 sm:gap-3 lg:items-center lg:gap-4">
+        <div className="flex min-w-0 items-center justify-between gap-2 sm:items-start sm:gap-3 lg:items-center lg:gap-4">
           <div className="min-w-0 flex-1 space-y-0.5">
             <h1 className="truncate text-xl font-bold text-foreground sm:text-2xl">My Learning</h1>
-            <p className="text-sm text-muted-foreground">
+            <p className="hidden text-sm text-muted-foreground sm:block">
               Your personalized learning path and progress
             </p>
           </div>
@@ -167,7 +167,7 @@ export default function MyLearningPage() {
             <ThemeToggle className="hidden lg:flex" />
           </div>
         </div>
-        <div className="relative min-w-0 w-full lg:hidden">
+        <div className="relative hidden min-w-0 w-full sm:block lg:hidden">
           <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search topics, lessons..."
@@ -222,10 +222,10 @@ export default function MyLearningPage() {
                           src={textbookImageSrc(subject.image_url, token)}
                           alt=""
                           loading="lazy"
-                          className="min-h-28 w-full flex-1 object-cover"
+                          className="aspect-[16/10] w-full object-cover lg:aspect-auto lg:min-h-28 lg:flex-1"
                         />
                       )}
-                      <CardContent className={cn("flex flex-col items-center p-4 text-center", subject.image_url && "pt-3")}>
+                      <CardContent className={cn("flex flex-col items-center p-3 text-center lg:p-4", subject.image_url && "lg:pt-3")}>
                         {subject.image_url ? null : (
                           <div
                             className={cn(
@@ -237,14 +237,14 @@ export default function MyLearningPage() {
                           </div>
                         )}
                         <p
-                          className="line-clamp-2 w-full break-words text-sm font-semibold text-foreground"
+                          className="w-full break-words text-[13px] font-semibold leading-snug text-foreground sm:line-clamp-2 sm:text-sm"
                           title={subject.subject_name}
                         >
                           {subject.subject_name}
                         </p>
                         <p className="mt-0.5 text-xs text-muted-foreground">
-                          {subject.progress}% covered · {subject.completed_chapters}/
-                          {subject.total_chapters} chapters
+                          <span className="hidden lg:inline">{subject.progress}% covered · </span>
+                          {subject.completed_chapters}/{subject.total_chapters} chapters
                         </p>
                         <Progress value={subject.progress} className="mt-2 h-1.5 w-full" />
                       </CardContent>
@@ -256,7 +256,7 @@ export default function MyLearningPage() {
           )}
         </div>
 
-        <Card className="order-2 flex min-w-0 flex-col shadow-card overflow-hidden lg:col-start-3 lg:col-span-1 lg:row-start-1 lg:row-span-2 lg:h-full lg:min-h-0">
+        <Card className="order-2 flex min-w-0 flex-col shadow-card overflow-hidden max-sm:hidden lg:col-start-3 lg:col-span-1 lg:row-start-1 lg:row-span-2 lg:h-full lg:min-h-0">
           <CardContent className="flex min-w-0 flex-1 flex-col p-4 sm:p-5 min-h-0 overflow-hidden">
             <div className="mb-3 flex min-w-0 shrink-0 items-center justify-between gap-2">
               <h2 className="text-base font-semibold text-foreground sm:text-lg">
@@ -324,23 +324,23 @@ export default function MyLearningPage() {
           </CardContent>
         </Card>
 
-        <Card className="order-3 min-w-0 shrink-0 self-start overflow-hidden border-0 bg-gradient-to-r from-primary/10 via-accent/10 to-brand-secondary/10 shadow-card lg:col-start-1 lg:col-span-2 lg:row-start-2">
-          <CardContent className="flex min-w-0 flex-row items-center gap-3 p-3.5 sm:p-4">
+        <Card className="order-3 min-w-0 shrink-0 self-start overflow-hidden max-sm:hidden border-0 bg-gradient-to-r from-primary/10 via-accent/10 to-brand-secondary/10 shadow-card lg:col-start-1 lg:col-span-2 lg:row-start-2">
+          <CardContent className="flex min-w-0 flex-row flex-wrap items-center gap-3 p-3.5 sm:flex-nowrap sm:p-4">
             <img
               src="/login-right.webp"
               alt=""
               aria-hidden
-              className="h-14 w-14 shrink-0 object-contain"
+              className="h-11 w-11 shrink-0 object-contain sm:h-14 sm:w-14"
             />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-foreground sm:text-base">
+            <div className="min-w-0 flex-1 space-y-0.5">
+              <p className="text-sm font-semibold leading-snug text-foreground sm:text-base">
                 Need help understanding a topic?
               </p>
-              <p className="text-xs text-muted-foreground sm:text-sm">
+              <p className="text-xs leading-snug text-muted-foreground sm:text-sm">
                 Ask Learn Mastro for step-by-step explanations.
               </p>
             </div>
-            <AskAiTutorButton className="h-8 w-auto shrink-0 px-3 text-sm sm:h-9 sm:px-4">
+            <AskAiTutorButton className="h-9 w-full shrink-0 px-3 text-sm sm:w-auto sm:px-4">
               Ask Learn Mastro
             </AskAiTutorButton>
           </CardContent>

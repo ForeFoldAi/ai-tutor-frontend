@@ -186,11 +186,11 @@ function StudioHomeView({
   }
 
   return (
-    <PageShell>
-      <div className="flex min-w-0 items-start justify-between gap-2 sm:gap-3 lg:items-center lg:gap-4">
+    <PageShell contentClassName="min-h-0 flex-1">
+      <div className="flex min-w-0 items-center sm:items-start justify-between gap-2 sm:gap-3 lg:items-center lg:gap-4">
         <div className="min-w-0 flex-1 space-y-0.5">
           <h1 className="truncate text-xl font-bold text-foreground sm:text-2xl">Hi {firstName}!</h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="hidden text-sm text-muted-foreground sm:block">
             Your personal AI learning assistant
           </p>
         </div>
@@ -203,14 +203,15 @@ function StudioHomeView({
       </div>
 
 
-      <div>
+      <div className="flex min-h-0 flex-1 flex-col sm:block sm:flex-none">
         <h2 className="text-base font-semibold text-foreground sm:text-lg">
           Quick Start with Learn Mastro
         </h2>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          Ask, practice, or get an explanation — subject is detected from your question
+        <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">
+          Ask, practice, or get an explanation
+          <span className="hidden sm:inline"> — subject is detected from your question</span>
         </p>
-        <div className="mt-3 grid grid-cols-3 gap-2 sm:gap-3">
+        <div className="mt-3 grid min-h-0 flex-1 grid-cols-1 grid-rows-3 gap-2 sm:grid-cols-3 sm:grid-rows-none sm:gap-3">
           {QUICK_START.map((item) => (
             <button
               key={item.title}
@@ -221,10 +222,16 @@ function StudioHomeView({
                 item.bg
               )}
             >
-              <img src={item.image} alt="" className="aspect-square w-full object-cover sm:aspect-video" />
-              <div className="min-w-0 flex-1 p-2 sm:p-4">
-                <p className="text-xs font-semibold leading-snug text-foreground sm:text-sm">{item.title}</p>
-                <p className="mt-1 hidden truncate text-xs leading-snug text-muted-foreground sm:block">
+              <div className="flex h-0 min-h-16 w-full flex-1 items-center justify-center px-3 pt-3 sm:contents">
+                <img
+                  src={item.image}
+                  alt=""
+                  className="aspect-video h-full max-w-full rounded-xl bg-white object-contain shadow-sm ring-1 ring-black/5 sm:h-auto sm:w-full sm:rounded-none sm:bg-transparent sm:object-cover sm:shadow-none sm:ring-0"
+                />
+              </div>
+              <div className="min-w-0 flex-none px-4 py-2.5 sm:flex-1 sm:p-4">
+                <p className="text-sm font-semibold leading-snug text-foreground">{item.title}</p>
+                <p className="mt-1 truncate text-xs leading-snug text-muted-foreground">
                   {item.description}
                 </p>
               </div>
@@ -234,7 +241,7 @@ function StudioHomeView({
       </div>
 
       {recommendedTopics.length > 0 ? (
-        <div>
+        <div className="hidden sm:block">
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-primary" />
@@ -265,7 +272,7 @@ function StudioHomeView({
                   key={`${topic.subject_id}-${topic.chapter_id}-${topic.title}`}
                   type="button"
                   onClick={() => openRecommended(topic)}
-                  className="rounded-2xl border border-border/60 bg-card p-4 text-left shadow-card transition-all hover:border-primary/30 hover:shadow-card-hover"
+                  className="min-w-0 rounded-2xl border border-border/60 bg-card p-4 text-left shadow-card transition-all hover:border-primary/30 hover:shadow-card-hover"
                 >
                   <div className="flex items-start gap-3">
                     <div

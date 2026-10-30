@@ -65,7 +65,7 @@ const MODE_META: Record<
   free: {
     title: "Ask Learn Mastro",
     subtitle: "Platform help + school questions — including outside the textbook",
-    placeholder: "Ask about school topics, homework, progress, or the platform…",
+    placeholder: "Ask about topics, homework, or progress…",
     icon: MessageCircle,
     fallbackPrompts: [],
   },
@@ -92,7 +92,7 @@ const MODE_META: Record<
   explain: {
     title: "Explain a Topic",
     subtitle: "Step-by-step textbook explanation — not a quiz",
-    placeholder: "What textbook topic should I explain step by step?",
+    placeholder: "Which topic should I explain?",
     icon: Lightbulb,
     fallbackPrompts: [
       "Explain photosynthesis step by step",
@@ -486,7 +486,7 @@ function AskAiTutorChat({
             }}
             placeholder={voiceLive ? "Type while talking, or just speak…" : meta.placeholder}
             rows={1}
-            className="min-h-[44px] max-h-32 resize-none !border-2 !border-slate-300 bg-white shadow-sm placeholder:text-slate-400 focus-visible:!border-primary dark:!border-slate-500 dark:bg-card"
+            className="min-h-11 max-h-32 resize-none py-2 leading-6 placeholder:text-xs sm:placeholder:text-sm !border-2 !border-slate-300 bg-white shadow-sm placeholder:text-slate-400 focus-visible:!border-primary dark:!border-slate-500 dark:bg-card"
             disabled={bootLoading || loading}
           />
           <Button
@@ -544,7 +544,7 @@ function AskAiTutorChat({
           </Button>
         </div>
         {mode === "free" ? (
-          <div className="mt-2 flex justify-end">
+          <div className="mt-2 hidden justify-end sm:flex">
             <Button
               type="button"
               variant="ghost"
@@ -576,7 +576,7 @@ export function AskAiTutorDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="!flex h-[80dvh] w-[80vw] max-w-[80vw] flex-col gap-0 overflow-hidden p-0 [&>button]:right-3 [&>button]:top-3">
+      <DialogContent className="!flex h-[80dvh] w-[80vw] max-w-[80vw] flex-col gap-0 overflow-hidden p-0 max-sm:h-dvh max-sm:max-h-dvh max-sm:w-screen max-sm:max-w-none max-sm:rounded-none max-sm:border-0 [&>button]:right-3 [&>button]:top-3">
         <DialogHeader className="shrink-0 space-y-0 border-b px-4 py-3 pr-12 text-left">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-brand shadow-sm">
