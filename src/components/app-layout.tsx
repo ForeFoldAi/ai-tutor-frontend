@@ -26,7 +26,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         <AppSidebar />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <AppMobileHeader />
-          <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto overflow-x-hidden bg-background pb-[calc(3.5rem+env(safe-area-inset-bottom))] lg:pb-0 [&:has(.dashboard-fit)]:overflow-x-hidden [&:has(.dashboard-fit)]:overflow-y-auto">
+          <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto overflow-x-hidden bg-background pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0 [&:has(.dashboard-fit)]:overflow-x-hidden [&:has(.dashboard-fit)]:overflow-y-auto">
             <Suspense fallback={null}>{children}</Suspense>
           </main>
           {showFloatingSettings && <FloatingSettingsButton />}

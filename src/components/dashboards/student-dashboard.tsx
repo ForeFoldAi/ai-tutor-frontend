@@ -199,10 +199,10 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
     <PageShell className="overflow-x-hidden student-dashboard">
       <div className="flex shrink-0 items-start justify-between gap-2 sm:gap-3 lg:items-center lg:gap-4">
         <div className="min-w-0 flex-1 space-y-0.5">
-          <h1 className="truncate text-xl font-bold text-foreground sm:text-2xl">
+          <h1 className="line-clamp-2 text-xl font-bold text-foreground sm:text-2xl lg:line-clamp-1">
             Welcome back, {firstName}!
           </h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="hidden text-sm text-muted-foreground sm:block">
             Keep learning and growing every day.
           </p>
         </div>
@@ -217,9 +217,9 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
+      <div className="grid auto-rows-fr grid-cols-2 gap-3 lg:auto-rows-auto xl:grid-cols-4">
         <StatCard>
-          <p className="text-sm font-medium text-muted-foreground">Overall Progress</p>
+          <p className="text-xs font-medium leading-snug text-muted-foreground lg:text-sm">Overall Progress</p>
           <div className="mt-1.5 flex flex-wrap items-end gap-3">
             <ProgressGauge value={overallProgress} />
             <p className="mb-1 flex items-center gap-1 text-xs font-medium text-muted-foreground sm:text-sm">
@@ -235,15 +235,15 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
         <StatCard>
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <p className="text-sm font-medium text-muted-foreground">Lessons Completed</p>
-              <p className="mt-1 text-xl font-bold text-foreground">
+              <p className="text-xs font-medium leading-snug text-muted-foreground lg:text-sm">Lessons Completed</p>
+              <p className="mt-1 text-2xl font-bold text-foreground lg:text-xl">
                 {stats?.lessons_completed ?? 0}
               </p>
               <p className="text-xs text-muted-foreground">
                 of {totalChapters} chapters
               </p>
             </div>
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg lg:h-9 lg:w-9 bg-primary/10">
               <BookOpen className="h-4 w-4 text-primary" />
             </div>
           </div>
@@ -256,13 +256,13 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
         <StatCard>
           <div className="flex items-start justify-between gap-2">
             <div>
-              <p className="text-sm font-medium text-muted-foreground">Total Study Time</p>
-              <p className="mt-1 text-xl font-bold text-foreground">
+              <p className="text-xs font-medium leading-snug text-muted-foreground lg:text-sm">Total Study Time</p>
+              <p className="mt-1 text-2xl font-bold text-foreground lg:text-xl">
                 {formatStudyTime(stats?.total_study_seconds ?? 0)}
               </p>
               <p className="text-xs text-muted-foreground">Learn Mastro + Voice</p>
             </div>
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 dark:bg-amber-950/40">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg lg:h-9 lg:w-9 bg-amber-100 dark:bg-amber-950/40">
               <Clock className="h-4 w-4 text-amber-600" />
             </div>
           </div>
@@ -271,15 +271,15 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
         <StatCard>
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <p className="text-sm font-medium text-muted-foreground">Current Streak</p>
-              <p className="mt-1 text-xl font-bold text-foreground">
+              <p className="text-xs font-medium leading-snug text-muted-foreground lg:text-sm">Current Streak</p>
+              <p className="mt-1 text-2xl font-bold text-foreground lg:text-xl">
                 {stats?.current_streak ?? 0} day{(stats?.current_streak ?? 0) === 1 ? "" : "s"}
               </p>
               <Link href="/my-learning" className="mt-1 inline-flex text-xs font-medium text-primary hover:underline">
                 View My Learning
               </Link>
             </div>
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-100 dark:bg-blue-950/40">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg lg:h-9 lg:w-9 bg-blue-100 dark:bg-blue-950/40">
               <Trophy className="h-4 w-4 text-blue-600" />
             </div>
           </div>
@@ -293,8 +293,9 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
         )}
       >
         <div className={cn("order-1", individual ? "lg:col-span-5" : "lg:col-span-3")}>
-          <Card className="hover:translate-y-0 hover:shadow-card shadow-card">
-            <CardContent className="p-4 lg:p-4">
+          <Card className="hover:translate-y-0 hover:shadow-card shadow-card max-sm:border-0 max-sm:bg-transparent max-sm:shadow-none max-sm:hover:shadow-none">
+            <CardContent className="p-4 lg:p-4 max-sm:p-0">
+              <div className="hidden sm:block">
               <h2 className="mb-3 text-sm font-semibold text-foreground sm:text-base">
                 Learning Progress
               </h2>
@@ -327,7 +328,7 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
                         >
                           <Icon className="h-4 w-4 text-white" />
                         </div>
-                        <p className="w-full truncate text-[11px] font-medium text-foreground sm:text-xs">
+                        <p className="w-full truncate text-xs font-medium text-foreground">
                           {subject.subject_name}
                         </p>
                         <p className={cn("mt-0.5 text-sm font-bold", style.text)}>
@@ -337,7 +338,7 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
                           value={subject.progress}
                           className="mt-2 h-1.5 w-full"
                         />
-                        <p className="mt-1 text-[10px] text-muted-foreground">
+                        <p className="mt-1 text-xs text-muted-foreground lg:text-[10px]">
                           {subject.completed_chapters}/{subject.total_chapters}
                         </p>
                       </div>
@@ -345,8 +346,9 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
                   })}
                 </div>
               )}
+              </div>
 
-              <div className="mt-5 border-t border-border/60 pt-4 lg:mt-4 lg:pt-4">
+              <div className="border-border/60 sm:mt-5 sm:border-t sm:pt-4 lg:mt-4 lg:pt-4">
                 <div className="mb-4 flex items-center justify-between gap-2 lg:mb-3">
                   <h2 className="text-sm font-semibold text-foreground sm:text-base">My Latest Learning</h2>
                   <Link
@@ -358,7 +360,7 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
                 </div>
                 <div className={cn("grid gap-3", upNext.length > 0 && "lg:grid-cols-2")}>
                   <div className="flex items-center gap-3 rounded-2xl border border-border/60 bg-card p-3 shadow-card sm:gap-4 sm:p-4">
-                    <div className="flex aspect-square w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#EEF2FF] dark:bg-primary/10 sm:w-36">
+                    <div className="flex aspect-square w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#EEF2FF] dark:bg-primary/10 sm:w-36">
                       <img src={brandImages.book} alt="" className="h-[88%] w-[88%] object-contain" />
                     </div>
                     <div className="min-w-0 flex-1">
@@ -366,11 +368,11 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
                         <>
                           <div className="flex flex-wrap items-center gap-1.5">
                             {continueTitle.unit ? (
-                              <span className="rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                              <span className="rounded-md bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary lg:text-[11px]">
                                 {continueTitle.unit}
                               </span>
                             ) : null}
-                            <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground/80">
+                            <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-foreground/80 lg:text-[11px]">
                               {continueLearning.subject_name}
                             </span>
                           </div>
@@ -386,25 +388,25 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
                               className="h-1.5 flex-1 [&>div]:bg-gradient-brand"
                             />
                           </div>
-                          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                          <div className="mt-3 flex items-center gap-2 sm:flex-wrap sm:justify-between">
                             <Button
                               asChild
-                              className="h-8 rounded-full bg-gradient-brand px-3 text-xs sm:h-9 sm:px-4 sm:text-sm"
+                              className="h-8 min-w-0 flex-1 rounded-full bg-gradient-brand px-2 text-xs sm:h-9 sm:flex-none sm:px-4 sm:text-sm"
                             >
                               <Link href={continueHref} className="inline-flex items-center gap-1.5 sm:gap-2">
-                                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-white/25">
+                                <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/25">
                                   <Play className="h-2.5 w-2.5 fill-white text-white" />
                                 </span>
-                                Continue Learning
+                                Continue<span className="hidden sm:inline"> Learning</span>
                               </Link>
                             </Button>
                             <Button
                               asChild
                               variant="secondary"
-                              className="h-8 rounded-full px-3 text-xs sm:h-9 sm:px-4 sm:text-sm"
+                              className="h-8 min-w-0 flex-1 rounded-full px-2 text-xs sm:h-9 sm:flex-none sm:px-4 sm:text-sm"
                             >
                               <Link href={chapterSelectionPath(String(continueLearning.subject_id))}>
-                                View Details
+                                <span className="hidden sm:inline">View </span>Details
                                 <ChevronRight className="ml-1 h-3.5 w-3.5" />
                               </Link>
                             </Button>
@@ -456,7 +458,7 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
                                 </p>
                                 <div className="mt-1 flex items-center gap-2">
                                   <Progress value={lesson.progress} className="h-1.5 flex-1 [&>div]:bg-gradient-brand" />
-                                  <span className="w-8 shrink-0 text-right text-[11px] tabular-nums text-muted-foreground">
+                                  <span className="w-8 shrink-0 text-right text-xs tabular-nums text-muted-foreground lg:text-[11px]">
                                     {lesson.progress}%
                                   </span>
                                 </div>
@@ -512,7 +514,7 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
                             </p>
                           </div>
                           {session.status === "live" ? (
-                            <Badge className="shrink-0 bg-red-500 text-[10px] hover:bg-red-500">
+                            <Badge className="shrink-0 bg-red-500 text-xs hover:bg-red-500 lg:text-[10px]">
                               LIVE
                             </Badge>
                           ) : null}
@@ -575,7 +577,7 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
           individual ? "lg:col-span-5" : "lg:col-span-3",
         )}>
           <CardContent className="flex flex-row items-center gap-3 p-3 sm:gap-4 sm:p-4 lg:gap-3 lg:p-3">
-            <div className="relative h-12 w-20 shrink-0 overflow-hidden rounded-lg sm:h-16 sm:w-28 lg:h-14 lg:w-24">
+            <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg sm:h-16 sm:w-28 lg:h-14 lg:w-24">
               <img
                 src={brandImages.chatbot}
                 alt=""
@@ -584,7 +586,7 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
               />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+              <p className="flex items-center gap-1.5 whitespace-nowrap text-sm font-semibold text-foreground">
                 <Sparkles className="h-3.5 w-3.5 shrink-0 text-primary" />
                 Today&apos;s Learning Tip
               </p>
@@ -592,7 +594,7 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
                 {getTodaysLearningTip()}
               </p>
             </div>
-            <Button asChild variant="outline" className="h-9 w-auto shrink-0 bg-card/80 px-3">
+            <Button asChild variant="ghost" className="h-9 w-auto shrink-0 px-2 text-primary hover:bg-transparent hover:underline">
               <Link href="/ai-learning-studio">
                 Start Now
                 <ChevronRight className="ml-1 h-3.5 w-3.5" />

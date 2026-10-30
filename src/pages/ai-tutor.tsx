@@ -272,6 +272,7 @@ async function streamChapterChatMessage(
     onCleanAnswer?: (content: string) => void;
     onMathLesson?: (lesson: MathLesson, cleanAnswer: string) => void;
     onScienceExperiment?: (experiment: ScienceExperiment, cleanAnswer: string) => void;
+    onStatus?: (stage: string) => void;
   },
   conversationHistory?: Array<{ role: string; content: string }>,
   imageIds?: string[],
@@ -317,6 +318,7 @@ async function streamChapterChatMessage(
       lesson?: MathLesson;
       experiment?: ScienceExperiment;
       clean_answer?: string;
+      stage?: string;
     };
     try {
       evt = JSON.parse(trimmed);
@@ -339,6 +341,8 @@ async function streamChapterChatMessage(
       const clean = (evt.clean_answer ?? "").trim();
       if (clean) full = clean;
       handlers.onScienceExperiment?.(evt.experiment, clean || full);
+    } else if (evt.type === "status" && evt.stage) {
+      handlers.onStatus?.(evt.stage);
     }
   };
 
@@ -359,6 +363,12 @@ async function streamChapterChatMessage(
   return full;
 }
 
+const STREAM_STATUS_TEXT: Record<string, string> = {
+  searching: "Looking in your chapter…",
+  thinking: "Writing your answer…",
+  waiting: "Lots of students are asking right now — you're next…",
+};
+
 export default function AITutorPage() {
   const { user, token } = useAuthStore();
   const [, setLocation] = useLocation();
@@ -370,6 +380,7 @@ export default function AITutorPage() {
   const [isLoading, setIsLoading] = useState(false);
   const tutorImage = useTutorImageAttach();
   const [isStreaming, setIsStreaming] = useState(false);
+  const [streamStatus, setStreamStatus] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -755,6 +766,7 @@ export default function AITutorPage() {
     }
     setIsLoading(true);
     setIsStreaming(true);
+    setStreamStatus(null);
     requestAnimationFrame(() => scrollToBottom("smooth"));
 
     const assistantMessage: Message = {
@@ -833,6 +845,7 @@ export default function AITutorPage() {
               }
               patchAssistant(fullContent, relatedImages, mathLesson, experiment);
             },
+            onStatus: (stage) => setStreamStatus(STREAM_STATUS_TEXT[stage] ?? null),
           },
           history,
           imageIds,
@@ -1326,7 +1339,7 @@ export default function AITutorPage() {
                     className={cn(
                       "rounded-2xl px-3.5 py-2.5 sm:px-4 sm:py-3.5 min-w-0",
                       message.role === "user"
-                        ? "max-w-[min(92%,36rem)] bg-primary text-primary-foreground"
+                        ? "max-w-[85%] bg-primary text-primary-foreground lg:max-w-[min(92%,36rem)]"
                         : cn(
                             "border border-primary/25 bg-[hsl(var(--ai-purple-light))] text-foreground shadow-sm w-full max-w-[min(96%,42rem)] min-w-0 overflow-hidden",
                             (message.relatedImages?.length ?? 0) > 0 || message.mathLesson
@@ -1336,6 +1349,16 @@ export default function AITutorPage() {
                     )}
                     data-testid={`message-${message.id}`}
                   >
+                    {message.role === "assistant" &&
+                    isStreaming &&
+                    streamStatus &&
+                    !message.content &&
+                    message.id ===
+                      activeConversation.messages[activeConversation.messages.length - 1].id ? (
+                      <p className="text-sm text-muted-foreground mb-1" role="status">
+                        {streamStatus}
+                      </p>
+                    ) : null}
                     {message.role === "assistant" ? (
                       <AssistantMessageContent
                         content={message.content}

@@ -240,6 +240,28 @@
     font-size: clamp(10px, min(2.03vh, 1.11vw), 16px);
   }
 
+  /* ponytail: px breakpoint matches Tailwind lg; rem would shrink with the fluid root */
+  @media (max-width: 1023px) {
+    html {
+      font-size: 16px;
+    }
+
+    body {
+      -webkit-tap-highlight-color: transparent;
+      overscroll-behavior-y: none;
+    }
+
+    main,
+    .page-shell {
+      scrollbar-width: none;
+    }
+
+    main::-webkit-scrollbar,
+    .page-shell::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
   * {
     @apply border-border;
   }
@@ -458,4 +480,14 @@
 
 .animate-pulse-glow {
   animation: progressPulseGlow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Unlayered and last so it overrides the fluid tokens in :root above. */
+@media (max-width: 1023px) {
+  :root {
+    --page-padding-x: 1rem;
+    --page-padding-y: 1rem;
+    --page-section-gap: 1rem;
+    --card-padding: 1rem;
+  }
 }

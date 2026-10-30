@@ -10,13 +10,13 @@ function NavIcon({ item }: { item: AppNavItem }) {
         src={item.imageIcon}
         alt=""
         aria-hidden
-        className="h-5 w-5 object-contain"
+        className="h-6 w-6 object-contain"
       />
     );
   }
   if (item.icon) {
     const Icon = item.icon;
-    return <Icon className="h-5 w-5 shrink-0" aria-hidden />;
+    return <Icon className="h-6 w-6 shrink-0" aria-hidden />;
   }
   return null;
 }
@@ -29,10 +29,10 @@ export function AppNavBar() {
 
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm lg:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 select-none border-t border-border bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm lg:hidden"
       aria-label="Primary"
     >
-      <ul className="flex h-14 w-full items-stretch">
+      <ul className="flex h-16 w-full items-stretch">
         {items.map((item) => {
           const active = isAppNavActive(location, item.url);
           return (
@@ -40,7 +40,7 @@ export function AppNavBar() {
               <Link
                 href={item.url}
                 className={cn(
-                  "flex h-full w-full flex-col items-center justify-center gap-0.5 px-0.5 text-[10px] font-medium leading-tight transition-colors",
+                  "flex h-full w-full flex-col items-center justify-center gap-0.5 px-0.5 text-xs font-medium leading-tight transition-colors",
                   active
                     ? "text-primary"
                     : "text-muted-foreground hover:text-foreground"
@@ -49,7 +49,7 @@ export function AppNavBar() {
               >
                 <span
                   className={cn(
-                    "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
+                    "flex h-8 w-14 shrink-0 items-center justify-center rounded-full transition-colors",
                     active && "bg-primary/10"
                   )}
                 >
