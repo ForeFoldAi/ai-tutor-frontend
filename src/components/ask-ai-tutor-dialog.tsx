@@ -101,10 +101,6 @@ const MODE_META: Record<
   },
 };
 
-function sanitizeAssistantText(s: string) {
-  return s.replace(/\*/g, "");
-}
-
 function voiceStatusLabel(state: VoiceState): string {
   switch (state) {
     case "CONNECTING":
@@ -191,7 +187,7 @@ function AskAiTutorChat({
       } catch (e) {
         if (!cancelled) {
           setSuggestedPrompts(MODE_META[mode].fallbackPrompts);
-          setError(sanitizeAssistantText(studentFriendlyError(e, "Could not load assistant.")));
+          setError(studentFriendlyError(e, "Could not load assistant."));
         }
       } finally {
         if (!cancelled) setBootLoading(false);
@@ -219,8 +215,7 @@ function AskAiTutorChat({
         voiceMsgs.push({
           id: `v-${line.role === "user" ? "u" : "a"}-${line.turnId}`,
           role: line.role,
-          content:
-            line.role === "assistant" ? sanitizeAssistantText(line.text) : line.text,
+          content: line.text,
         });
       }
       return [...kept, ...voiceMsgs];
@@ -228,7 +223,7 @@ function AskAiTutorChat({
   }, [voice.transcript]);
 
   useEffect(() => {
-    if (voice.error) setError(sanitizeAssistantText(voice.error));
+    if (voice.error) setError(voice.error);
   }, [voice.error]);
 
   useEffect(() => {
@@ -256,7 +251,7 @@ function AskAiTutorChat({
     try {
       imageIds = await ensureUploadedImageIds(tutorImage.attached, tutorImage.setUploading);
     } catch (e) {
-      setError(sanitizeAssistantText(studentFriendlyError(e, "Could not upload the image.")));
+      setError(studentFriendlyError(e, "Could not upload the image."));
       return;
     }
 
@@ -287,10 +282,9 @@ function AskAiTutorChat({
         query || "Please help me with this image.",
         {
           onToken: (chunk) => {
-            const safeChunk = sanitizeAssistantText(chunk);
             setMessages((prev) =>
               prev.map((m) =>
-                m.id === assistantId ? { ...m, content: m.content + safeChunk } : m
+                m.id === assistantId ? { ...m, content: m.content + chunk } : m
               )
             );
           },
@@ -300,7 +294,7 @@ function AskAiTutorChat({
         imageIds.length ? imageIds : undefined,
       );
     } catch (e) {
-      setError(sanitizeAssistantText(studentFriendlyError(e, "Something went wrong. Please try again.")));
+      setError(studentFriendlyError(e, "Something went wrong. Please try again."));
       setMessages((prev) => prev.filter((m) => m.id !== assistantId));
     } finally {
       setLoading(false);
@@ -403,7 +397,7 @@ function AskAiTutorChat({
                         onClick={() => void sendMessage(prompt)}
                         className="rounded-full border border-border/70 bg-background px-3 py-1.5 text-left text-xs text-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 sm:text-sm"
                       >
-                        {sanitizeAssistantText(prompt)}
+                        {prompt}
                       </button>
                     ))}
                   </div>
