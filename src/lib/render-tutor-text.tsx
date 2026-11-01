@@ -234,6 +234,8 @@ const CLOSED_FENCE_RE = /```[\s\S]*?```/g;
 const UNCLOSED_FENCE_RE = /```[\s\S]*$/;
 /** Drop emoji / pictographs from tutor prose before paint. */
 const EMOJI_RE = /\p{Extended_Pictographic}|[\uFE0F\u200D]/gu;
+/** `*` between maths terms is multiplication, not markdown: `2*3*4` must not paint as "234". */
+const MATH_STAR_RE = /(\d|[)²³]|\b[a-zA-Z]\b)[ \t]*\*(?!\*)[ \t]*(?=\d|\(|\b[a-zA-Z]\b)/g;
 
 /** Drop empty bullets, HR lines, and ```math-lesson JSON so study notes render cleanly. */
 export function sanitizeTutorDisplayText(text: string): string {
@@ -244,6 +246,7 @@ export function sanitizeTutorDisplayText(text: string): string {
   let normalized = cleanDisplayText(text)
     .replace(DISPLAY_BOX_ARTIFACT_RE, "")
     .replace(EMOJI_RE, "")
+    .replace(MATH_STAR_RE, "$1 × ")
     .replace(/[ \t]{2,}/g, " ");
   normalized = normalized.replace(MARKDOWN_UNWRAP_RE, "$1");
   normalized = normalized.replace(CLOSED_FENCE_RE, "");
@@ -522,5 +525,11 @@ if (import.meta.env.DEV) {
       noEmoji.includes("Hello") &&
       noEmoji.includes("world"),
     "sanitizeTutorDisplayText: strip emojis",
+  );
+  console.assert(
+    sanitizeTutorDisplayText("(3 + 4)² = 3² + 2*3*4 + 4²") === "(3 + 4)² = 3² + 2 × 3 × 4 + 4²" &&
+      sanitizeTutorDisplayText("2ab = 2 * a * b") === "2ab = 2 × a × b" &&
+      sanitizeTutorDisplayText("he was *lonely* and **calm**") === "he was *lonely* and **calm**",
+    "sanitizeTutorDisplayText: `*` between maths terms becomes ×, emphasis untouched",
   );
 }
