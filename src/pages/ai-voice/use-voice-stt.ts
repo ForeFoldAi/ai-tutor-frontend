@@ -687,8 +687,11 @@ export function useVoiceStt(deps: SttDeps) {
         pendingInterim = "";
         if (!candidate || finalAccumulator.trim()) return;
         if (s.phaseRef.current !== "listening") return;
+        // Interim browser text is often a partial / misheard phrase (e.g. "tricky" for the
+        // dog "Tricki"). Never commit it: wait for the final browser result (onresult/onend)
+        // or the server Whisper transcript, which is chapter-biased.
         if (!canAcceptSttNowRef.current()) return;
-        submitListeningTranscript(candidate, "browser-interim");
+        console.debug("[STT] interim_not_submitted", { len: candidate.length });
       }, STT_INTERIM_COMPLETE_MS);
     };
 
