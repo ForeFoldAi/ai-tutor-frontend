@@ -115,6 +115,14 @@ export function useVoiceTutor(opts: {
     return fresh;
   }, []);
 
+  // The app refreshes the access token shortly before it expires; hand each new one to
+  // the live session so Nest's RAG calls never go out with the stale bearer (401 mid-call).
+  useEffect(() => {
+    const sid = sessionIdRef.current;
+    if (!opts.token || !sid || !sockRef.current) return;
+    sockRef.current.send({ type: "token_update", sessionId: sid, token: opts.token });
+  }, [opts.token]);
+
   const clearTimers = useCallback(() => {
     if (connectTimerRef.current) window.clearTimeout(connectTimerRef.current);
     if (reconnectTimerRef.current) window.clearTimeout(reconnectTimerRef.current);

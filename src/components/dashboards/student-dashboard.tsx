@@ -10,6 +10,7 @@ import {
   Calculator,
   ChevronRight,
   Clock,
+  Flame,
   FlaskConical,
   Globe,
   Monitor,
@@ -114,6 +115,104 @@ function ProgressGauge({ value, size = 72 }: { value: number; size?: number }) {
   );
 }
 
+function timeOfDayGreeting(now = new Date()) {
+  const h = now.getHours();
+  if (h < 12) return "Good morning";
+  if (h < 17) return "Good afternoon";
+  return "Good evening";
+}
+
+function ProgressRing({ value, size = 76 }: { value: number; size?: number }) {
+  const stroke = 7;
+  const clamped = Math.min(100, Math.max(0, value));
+  const r = (size - stroke) / 2;
+  const circ = 2 * Math.PI * r;
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90" aria-hidden>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.22)" strokeWidth={stroke} />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          stroke="white"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={circ}
+          strokeDashoffset={circ - (clamped / 100) * circ}
+          className="transition-[stroke-dashoffset] duration-500"
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-lg font-bold leading-none tabular-nums">{clamped}%</span>
+        <span className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-white/75">Overall</span>
+      </div>
+    </div>
+  );
+}
+
+/** Phone-only summary: replaces the four stat cards with one compact hero. */
+function MobileOverview({
+  overallProgress,
+  enrolledSubjects,
+  lessonsCompleted,
+  totalChapters,
+  studySeconds,
+  streak,
+}: {
+  overallProgress: number;
+  enrolledSubjects: number;
+  lessonsCompleted: number;
+  totalChapters: number;
+  studySeconds: number;
+  streak: number;
+}) {
+  const stats = [
+    { icon: BookOpen, label: "Lessons", value: String(lessonsCompleted), sub: `of ${totalChapters} chapters` },
+    { icon: Clock, label: "Study", value: formatStudyTime(studySeconds), sub: "total time" },
+    { icon: Flame, label: "Streak", value: String(streak), sub: streak === 1 ? "day" : "days" },
+  ];
+  return (
+    <section className="relative overflow-hidden rounded-3xl bg-gradient-brand p-4 text-white shadow-[0_10px_30px_-12px_rgba(79,110,247,0.65)] sm:hidden">
+      <div className="pointer-events-none absolute -right-10 -top-12 h-40 w-40 rounded-full bg-white/10" aria-hidden />
+      <div className="pointer-events-none absolute -bottom-16 -left-8 h-36 w-36 rounded-full bg-white/5" aria-hidden />
+      <div className="relative flex items-center gap-4">
+        <ProgressRing value={overallProgress} />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-medium text-white/75">Your progress</p>
+          <p className="mt-0.5 text-base font-semibold leading-snug">
+            {overallProgress >= 100
+              ? "All chapters complete!"
+              : overallProgress > 0
+                ? "You're making great progress"
+                : "Let's get started today"}
+          </p>
+          <Link
+            href="/my-learning"
+            className="mt-1.5 inline-flex items-center text-xs font-medium text-white/90"
+          >
+            {enrolledSubjects} subject{enrolledSubjects === 1 ? "" : "s"} · View my learning
+            <ChevronRight className="ml-0.5 h-3.5 w-3.5" />
+          </Link>
+        </div>
+      </div>
+      <div className="relative mt-4 grid grid-cols-3 gap-2">
+        {stats.map(({ icon: Icon, label, value, sub }) => (
+          <div key={label} className="rounded-2xl bg-white/15 px-2.5 py-2 backdrop-blur-sm">
+            <p className="flex items-center gap-1 text-[11px] font-medium text-white/80">
+              <Icon className="h-3 w-3 shrink-0" />
+              <span className="truncate">{label}</span>
+            </p>
+            <p className="mt-0.5 truncate text-base font-bold leading-tight tabular-nums">{value}</p>
+            <p className="truncate text-[11px] font-medium text-white/75">{sub}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function StatCard({ className, children }: { className?: string; children: React.ReactNode }) {
   return (
     <Card className={cn("hover:translate-y-0 hover:shadow-card shadow-card", className)}>
@@ -197,10 +296,15 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
 
   return (
     <PageShell className="overflow-x-hidden student-dashboard">
-      <div className="flex shrink-0 items-start justify-between gap-2 sm:gap-3 lg:items-center lg:gap-4">
+      <div className="flex shrink-0 items-start justify-between gap-2 max-sm:items-center sm:gap-3 lg:items-center lg:gap-4">
         <div className="min-w-0 flex-1 space-y-0.5">
-          <h1 className="line-clamp-2 text-xl font-bold text-foreground sm:text-2xl lg:line-clamp-1">
-            Welcome back, {firstName}!
+          <p className="text-xs font-medium text-muted-foreground sm:hidden">
+            {timeOfDayGreeting()} ·{" "}
+            {new Date().toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })}
+          </p>
+          <h1 className="line-clamp-2 text-xl font-bold text-foreground max-sm:truncate max-sm:text-2xl max-sm:tracking-tight sm:text-2xl lg:line-clamp-1">
+            <span className="sm:hidden">Hi, {firstName}</span>
+            <span className="max-sm:hidden">Welcome back, {firstName}!</span>
           </h1>
           <p className="hidden text-sm text-muted-foreground sm:block">
             Keep learning and growing every day.
@@ -217,7 +321,15 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
         </div>
       </div>
 
-      <div className="grid auto-rows-fr grid-cols-2 gap-3 lg:auto-rows-auto xl:grid-cols-4">
+      <MobileOverview
+        overallProgress={overallProgress}
+        enrolledSubjects={stats?.enrolled_subjects ?? 0}
+        lessonsCompleted={stats?.lessons_completed ?? 0}
+        totalChapters={totalChapters}
+        studySeconds={stats?.total_study_seconds ?? 0}
+        streak={stats?.current_streak ?? 0}
+      />
+      <div className="grid auto-rows-fr grid-cols-2 gap-3 max-sm:hidden lg:auto-rows-auto xl:grid-cols-4">
         <StatCard>
           <p className="text-xs font-medium leading-snug text-muted-foreground lg:text-sm">Overall Progress</p>
           <div className="mt-1.5 flex flex-wrap items-end gap-3">
@@ -288,7 +400,7 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
 
       <div
         className={cn(
-          "grid gap-3 lg:grid-cols-5 lg:gap-3",
+          "grid gap-3 max-sm:grid-cols-1 lg:grid-cols-5 lg:gap-3",
           individual ? "lg:items-stretch" : "items-start",
         )}
       >
@@ -350,7 +462,7 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
 
               <div className="border-border/60 sm:mt-5 sm:border-t sm:pt-4 lg:mt-4 lg:pt-4">
                 <div className="mb-4 flex items-center justify-between gap-2 lg:mb-3">
-                  <h2 className="text-sm font-semibold text-foreground sm:text-base">My Latest Learning</h2>
+                  <h2 className="text-base font-semibold text-foreground">My Latest Learning</h2>
                   <Link
                     href="/my-learning"
                     className="shrink-0 text-xs font-medium text-primary hover:underline sm:text-sm"
@@ -358,9 +470,9 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
                     View All
                   </Link>
                 </div>
-                <div className={cn("grid gap-3", upNext.length > 0 && "lg:grid-cols-2")}>
-                  <div className="flex items-center gap-3 rounded-2xl border border-border/60 bg-card p-3 shadow-card sm:gap-4 sm:p-4">
-                    <div className="flex aspect-square w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#EEF2FF] dark:bg-primary/10 sm:w-36">
+                <div className={cn("grid gap-3 max-sm:grid-cols-1", upNext.length > 0 && "lg:grid-cols-2")}>
+                  <div className="flex items-center gap-3 rounded-2xl border border-border/60 bg-card p-3 shadow-card max-sm:items-start max-sm:rounded-3xl max-sm:p-4 max-sm:shadow-sm sm:gap-4 sm:p-4">
+                    <div className="flex aspect-square w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#EEF2FF] dark:bg-primary/10 max-sm:w-14 max-sm:rounded-2xl sm:w-36">
                       <img src={brandImages.book} alt="" className="h-[88%] w-[88%] object-contain" />
                     </div>
                     <div className="min-w-0 flex-1">
@@ -388,10 +500,10 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
                               className="h-1.5 flex-1 [&>div]:bg-gradient-brand"
                             />
                           </div>
-                          <div className="mt-3 flex items-center gap-2 sm:flex-wrap sm:justify-between">
+                          <div className="mt-3 flex items-center gap-2 max-sm:-ml-[4.25rem] max-sm:mt-4 sm:flex-wrap sm:justify-between">
                             <Button
                               asChild
-                              className="h-8 min-w-0 flex-1 rounded-full bg-gradient-brand px-2 text-xs sm:h-9 sm:flex-none sm:px-4 sm:text-sm"
+                              className="h-10 min-w-0 flex-1 rounded-full bg-gradient-brand px-2 text-sm sm:h-9 sm:flex-none sm:px-4"
                             >
                               <Link href={continueHref} className="inline-flex items-center gap-1.5 sm:gap-2">
                                 <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/25">
@@ -403,7 +515,7 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
                             <Button
                               asChild
                               variant="secondary"
-                              className="h-8 min-w-0 flex-1 rounded-full px-2 text-xs sm:h-9 sm:flex-none sm:px-4 sm:text-sm"
+                              className="h-10 min-w-0 flex-1 rounded-full px-2 text-sm sm:h-9 sm:flex-none sm:px-4"
                             >
                               <Link href={chapterSelectionPath(String(continueLearning.subject_id))}>
                                 <span className="hidden sm:inline">View </span>Details
@@ -444,7 +556,7 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
                                 chapter_id: lesson.chapter_id,
                                 chapter_name: lesson.chapter_name,
                               })}
-                              className="flex h-full items-center gap-3 rounded-2xl border border-border/60 bg-card px-3 py-2.5 shadow-card transition-shadow hover:shadow-card-hover"
+                              className="flex h-full items-center gap-3 rounded-2xl border border-border/60 bg-card px-3 py-2.5 shadow-card transition-shadow hover:shadow-card-hover max-sm:py-3 max-sm:shadow-sm"
                             >
                               <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-full", style.color)}>
                                 <Icon className="h-4 w-4 text-white" />
@@ -481,10 +593,10 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
         {!individual ? (
           <div className="order-2 grid gap-3 lg:col-span-2 lg:row-span-2">
             {sessionsToday.length > 0 ? (
-            <Card className="hover:translate-y-0 hover:shadow-card shadow-card">
-              <CardContent className="p-4 lg:p-3">
+            <Card className="hover:translate-y-0 hover:shadow-card shadow-card max-sm:border-0 max-sm:bg-transparent max-sm:shadow-none">
+              <CardContent className="p-4 max-sm:p-0 lg:p-3">
                 <div className="mb-3 flex items-center justify-between gap-2 lg:mb-2">
-                  <h2 className="text-sm font-semibold text-foreground sm:text-base">
+                  <h2 className="text-base font-semibold text-foreground">
                     Today&apos;s Session
                   </h2>
                   <Link
@@ -498,8 +610,10 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
                   {sessionsToday.map((session) => (
                     <li key={session.id}>
                       <Link href="/live-classes">
-                        <div className="flex items-center gap-2.5 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5 transition-colors hover:border-primary/30">
-                          <Video className="h-4 w-4 shrink-0 text-primary" />
+                        <div className="flex items-center gap-2.5 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5 transition-colors hover:border-primary/30 max-sm:gap-3 max-sm:rounded-2xl max-sm:bg-card max-sm:py-3 max-sm:shadow-sm">
+                          <span className="contents max-sm:flex max-sm:h-10 max-sm:w-10 max-sm:shrink-0 max-sm:items-center max-sm:justify-center max-sm:rounded-xl max-sm:bg-primary/10">
+                            <Video className="h-4 w-4 shrink-0 text-primary" />
+                          </span>
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-sm font-medium text-foreground">
                               {sessionLabel(session)}
@@ -527,10 +641,10 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
             </Card>
           ) : null}
 
-          <Card className="hover:translate-y-0 hover:shadow-card shadow-card">
-              <CardContent className="p-4 lg:p-3">
+          <Card className="hover:translate-y-0 hover:shadow-card shadow-card max-sm:border-0 max-sm:bg-transparent max-sm:shadow-none">
+              <CardContent className="p-4 max-sm:p-0 lg:p-3">
                 <div className="mb-3 flex items-center justify-between gap-2 lg:mb-2">
-                  <h2 className="text-sm font-semibold text-foreground sm:text-base">
+                  <h2 className="text-base font-semibold text-foreground">
                     Upcoming Session
                   </h2>
                   <Link
@@ -547,8 +661,10 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
                     upcomingSessions.map((session) => (
                       <li key={session.id}>
                         <Link href="/live-classes">
-                          <div className="flex items-center gap-2.5 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5 transition-colors hover:border-primary/30">
-                            <Video className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          <div className="flex items-center gap-2.5 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5 transition-colors hover:border-primary/30 max-sm:gap-3 max-sm:rounded-2xl max-sm:bg-card max-sm:py-3 max-sm:shadow-sm">
+                            <span className="contents max-sm:flex max-sm:h-10 max-sm:w-10 max-sm:shrink-0 max-sm:items-center max-sm:justify-center max-sm:rounded-xl max-sm:bg-muted">
+                              <Video className="h-4 w-4 shrink-0 text-muted-foreground" />
+                            </span>
                             <div className="min-w-0 flex-1">
                               <p className="truncate text-sm font-medium text-foreground">
                                 {sessionLabel(session)}
@@ -573,7 +689,7 @@ export default function StudentDashboard({ user }: StudentDashboardProps) {
           </div>
         ) : null}
         <Card className={cn(
-          "order-3 overflow-hidden border-0 bg-gradient-to-r from-primary/10 via-accent/10 to-brand-secondary/10 hover:translate-y-0 hover:shadow-card shadow-card",
+          "order-3 overflow-hidden border-0 bg-gradient-to-r from-primary/10 via-accent/10 to-brand-secondary/10 hover:translate-y-0 hover:shadow-card shadow-card max-sm:mb-16 max-sm:rounded-3xl max-sm:shadow-none",
           individual ? "lg:col-span-5" : "lg:col-span-3",
         )}>
           <CardContent className="flex flex-row items-center gap-3 p-3 sm:gap-4 sm:p-4 lg:gap-3 lg:p-3">
