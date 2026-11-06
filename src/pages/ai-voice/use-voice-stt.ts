@@ -490,7 +490,7 @@ export function useVoiceStt(deps: SttDeps) {
     const ratio = floor > 0.015 ? level / floor : 0;
     const userLikely = degraded
       ? level > 0.07 && (spike > 0.05 || ratio > 1.35)
-      : level > 0.045 && (spike > 0.028 || ratio > 1.14);
+      : level > 0.035 && (spike > 0.02 || ratio > 1.12);
 
     if (!userLikely) { s.bargeInHoldSinceRef.current = null; return; }
 
