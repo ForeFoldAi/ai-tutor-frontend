@@ -5,8 +5,12 @@
 const PRE_ROLL_MS_DEFAULT = 2800;
 /** Barge gate clip — no tutor pre-roll (mic was playing TTS) */
 export const BARGE_GATE_PRE_ROLL_MS = 0;
-/** Post-interrupt question — short tail only */
-export const POST_INTERRUPT_PRE_ROLL_MS = 800;
+/**
+ * Post-interrupt question. The gate clip is consumed by the barge check, so
+ * the first words (hold + network round-trip, often 0.5–1s) live only in this
+ * pre-roll. Too short and the question starts mid-sentence.
+ */
+export const POST_INTERRUPT_PRE_ROLL_MS = 1800;
 
 export function shouldUseServerStt(_subjectName: string): boolean {
   const flag = import.meta.env.VITE_VOICE_SERVER_STT;
