@@ -766,7 +766,7 @@ export default function AITutorPage() {
     }
     setIsLoading(true);
     setIsStreaming(true);
-    setStreamStatus(null);
+    setStreamStatus(chapterCtx ? STREAM_STATUS_TEXT.searching : null);
     requestAnimationFrame(() => scrollToBottom("smooth"));
 
     const assistantMessage: Message = {

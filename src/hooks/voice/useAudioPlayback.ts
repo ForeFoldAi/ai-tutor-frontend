@@ -19,13 +19,21 @@ export function useAudioPlayback() {
     return ctxRef.current;
   }, []);
 
+  /**
+   * Scheduled tutor audio still to come out of the speaker. The server's end
+   * marker and ai_stopped_speaking arrive when the last chunk is *sent*, which
+   * with streaming TTS is seconds before it finishes *playing*.
+   */
+  const remainingMs = useCallback((): number => {
+    const ac = ctxRef.current;
+    if (!ac || !liveRef.current.length) return 0;
+    return Math.max(0, (nextRef.current - ac.currentTime) * 1000);
+  }, []);
+
   const play = useCallback(
     async (buf: ArrayBuffer) => {
       const { samples, sampleRate, end } = unpackPcm(buf);
-      if (end) {
-        playingRef.current = false;
-        return;
-      }
+      if (end) return;
       if (!samples.length) return;
       const ac = await ensureCtx();
       const gain = gainRef.current!;
@@ -42,6 +50,7 @@ export function useAudioPlayback() {
       liveRef.current.push(src);
       src.onended = () => {
         liveRef.current = liveRef.current.filter((s) => s !== src);
+        if (!liveRef.current.length) playingRef.current = false;
       };
     },
     [ensureCtx],
@@ -63,5 +72,5 @@ export function useAudioPlayback() {
     liveRef.current = [];
   }, []);
 
-  return { play, stop, unlock: ensureCtx, playingRef };
+  return { play, stop, unlock: ensureCtx, playingRef, remainingMs };
 };
