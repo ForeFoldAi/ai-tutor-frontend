@@ -48,5 +48,7 @@ export function useVoiceActivity(onLevel?: (rms: number) => void) {
     vadRef.current?.reset();
   }, []);
 
-  return { push, reset, warm };
+  const voicedMs = useCallback(() => vadRef.current?.voicedMs ?? 0, []);
+
+  return { push, reset, warm, voicedMs };
 }

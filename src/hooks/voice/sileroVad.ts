@@ -43,9 +43,15 @@ export class SileroVad {
   private state = new Float32Array(STATE_LEN);
   private speaking = false;
   private lastVoiceAt = 0;
+  private voicedFrames = 0;
   private infer: Infer | null = null;
 
   constructor(private readonly hangMs = 280) {}
+
+  /** Frames above the start threshold in the current segment — hang frames don't count. */
+  get voicedMs(): number {
+    return this.speaking ? (this.voicedFrames * WINDOW * 1000) / SR : 0;
+  }
 
   async ready(): Promise<void> {
     this.infer = await loadSilero();
@@ -78,11 +84,13 @@ export class SileroVad {
     this.state = new Float32Array(STATE_LEN);
     this.speaking = false;
     this.lastVoiceAt = 0;
+    this.voicedFrames = 0;
   }
 
   private step(p: number, now: number): VadEvent {
     if (p >= START_P) {
       const started = !this.speaking;
+      this.voicedFrames = started ? 1 : this.voicedFrames + 1;
       this.speaking = true;
       this.lastVoiceAt = now;
       return started ? "start" : "speech";
