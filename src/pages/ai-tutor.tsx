@@ -263,6 +263,13 @@ function buildConversationHistory(
     .map((m) => ({ role: m.role, content: m.content }));
 }
 
+/** Tutor state the backend hands back in "done" and expects on the next turn of the same chat. */
+type TutorTurnState = {
+  quiz_state?: Record<string, unknown> | null;
+  prefers_short?: boolean;
+  explained_points?: string[];
+};
+
 async function streamChapterChatMessage(
   query: string,
   ctx: ChapterContext,
@@ -273,9 +280,11 @@ async function streamChapterChatMessage(
     onMathLesson?: (lesson: MathLesson, cleanAnswer: string) => void;
     onScienceExperiment?: (experiment: ScienceExperiment, cleanAnswer: string) => void;
     onStatus?: (stage: string) => void;
+    onDone?: (state: TutorTurnState) => void;
   },
   conversationHistory?: Array<{ role: string; content: string }>,
   imageIds?: string[],
+  turnState?: TutorTurnState,
 ): Promise<string> {
   const res = await authFetch("/auth/chat/stream", {
     method: "POST",
@@ -293,6 +302,9 @@ async function streamChapterChatMessage(
       conversation_history: conversationHistory ?? [],
       agent_mode: ctx.agentMode ?? undefined,
       image_ids: imageIds?.length ? imageIds : undefined,
+      quiz_state: turnState?.quiz_state ?? undefined,
+      prefers_short: turnState?.prefers_short ?? false,
+      explained_points: turnState?.explained_points ?? undefined,
     }),
   });
 
@@ -319,7 +331,7 @@ async function streamChapterChatMessage(
       experiment?: ScienceExperiment;
       clean_answer?: string;
       stage?: string;
-    };
+    } & TutorTurnState;
     try {
       evt = JSON.parse(trimmed);
     } catch {
@@ -343,6 +355,12 @@ async function streamChapterChatMessage(
       handlers.onScienceExperiment?.(evt.experiment, clean || full);
     } else if (evt.type === "status" && evt.stage) {
       handlers.onStatus?.(evt.stage);
+    } else if (evt.type === "done") {
+      handlers.onDone?.({
+        quiz_state: evt.quiz_state ?? null,
+        prefers_short: evt.prefers_short,
+        explained_points: evt.explained_points,
+      });
     }
   };
 
@@ -397,6 +415,7 @@ export default function AITutorPage() {
   const chatVoiceAbortRef = useRef<AbortController | null>(null);
   const lastVoicedMessageId = useRef<string | null>(null);
   const lastVoiceUrl = useRef<string | null>(null);
+  const tutorTurnStateRef = useRef<Record<string, TutorTurnState>>({});
   const startGreetingHandledRef = useRef(false);
   const chatHydratedRef = useRef(false);
   const chatHydratingRef = useRef(false);
@@ -846,9 +865,18 @@ export default function AITutorPage() {
               patchAssistant(fullContent, relatedImages, mathLesson, experiment);
             },
             onStatus: (stage) => setStreamStatus(STREAM_STATUS_TEXT[stage] ?? null),
+            onDone: (state) => {
+              const prev = tutorTurnStateRef.current[conversation!.id] ?? {};
+              tutorTurnStateRef.current[conversation!.id] = {
+                quiz_state: state.quiz_state ?? null,
+                prefers_short: state.prefers_short ?? prev.prefers_short,
+                explained_points: state.explained_points ?? prev.explained_points,
+              };
+            },
           },
           history,
           imageIds,
+          tutorTurnStateRef.current[conversation!.id],
         );
         if (streamed.trim()) {
           fullContent = streamed;
