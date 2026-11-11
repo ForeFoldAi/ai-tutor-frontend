@@ -200,10 +200,29 @@ export function VoiceTutor({
     }
   };
 
-  const entriesWithTime = useMemo(
-    () => transcript.map((line, i) => ({ line, timeSec: Math.max(0, callSeconds - (transcript.length - i) * 3) })),
-    [callSeconds, transcript],
-  );
+  // Each line keeps the call time it first appeared at; the parent's callSeconds drops to 0 when
+  // the call ends, so it can't be used to time lines after the fact.
+  const callStartRef = useRef<number | null>(null);
+  const wasLiveRef = useRef(false);
+  const lineTimesRef = useRef<Map<string, number>>(new Map());
+  if (live && !wasLiveRef.current) {
+    callStartRef.current = Date.now() - callSeconds * 1000;
+  }
+  wasLiveRef.current = live;
+  if (!live && transcript.length === 0) lineTimesRef.current.clear();
+  const entriesWithTime = useMemo(() => {
+    const times = lineTimesRef.current;
+    const start = callStartRef.current;
+    return transcript.map((line) => {
+      const key = `${line.role}:${line.turnId}`;
+      let timeSec = times.get(key);
+      if (timeSec == null) {
+        timeSec = start == null ? 0 : Math.max(0, Math.floor((Date.now() - start) / 1000));
+        times.set(key, timeSec);
+      }
+      return { line, timeSec };
+    });
+  }, [transcript]);
 
   useEffect(() => {
     const el = scrollRef.current;
