@@ -6,7 +6,6 @@ import { cn } from "@/lib/utils";
 interface AskAiTutorButtonProps {
   className?: string;
   labelClassName?: string;
-  shortLabel?: string;
   children?: React.ReactNode;
 }
 
@@ -14,7 +13,6 @@ interface AskAiTutorButtonProps {
 export function AskAiTutorButton({
   className,
   labelClassName,
-  shortLabel = "Learn Mastro",
   children,
 }: AskAiTutorButtonProps) {
   const openAskAiTutor = useAskAiTutorStore((s) => s.openAskAiTutor);
@@ -26,12 +24,7 @@ export function AskAiTutorButton({
       onClick={() => openAskAiTutor()}
     >
       <AiTutorButtonIcon />
-      {children ?? (
-        <>
-          <span className={cn("hidden sm:inline", labelClassName)}>Ask Learn Mastro</span>
-          <span className="sm:hidden">{shortLabel}</span>
-        </>
-      )}
+      {children ?? <span className={cn("whitespace-nowrap", labelClassName)}>Ask Learn Mastro</span>}
     </Button>
   );
 }

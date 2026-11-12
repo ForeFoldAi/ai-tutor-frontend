@@ -38,13 +38,24 @@ export function evaluateFormula(
   }
 }
 
+export function formatUnit(unit: string): string {
+  return unit
+    .trim()
+    .replace(/\^2\b/g, "²")
+    .replace(/\^3\b/g, "³")
+    .replace(/\bsq\.?\s*units\b/gi, "square units")
+    .replace(/\bcu\.?\s*units\b/gi, "cubic units");
+}
+
 export function formatCalcValue(value: number | null, unit = ""): string {
   if (value === null) return "—";
   const rounded =
     Math.abs(value) >= 1000
       ? value.toLocaleString(undefined, { maximumFractionDigits: 2 })
       : Math.round(value * 100) / 100;
-  return unit ? `${rounded} ${unit}` : String(rounded);
+  const u = formatUnit(unit);
+  if (!u) return String(rounded);
+  return u === "₹" ? `₹${rounded}` : `${rounded} ${u}`;
 }
 
 export function defaultSliderValues(sliders: { id: string; default?: number; min?: number }[]): Record<string, number> {

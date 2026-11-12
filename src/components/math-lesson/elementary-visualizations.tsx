@@ -4,11 +4,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { SliderPanel, CalcGrid, type TopicVizProps } from "./topic-viz-shared";
+import { SliderPanel, type TopicVizProps } from "./topic-viz-shared";
+import { buildVariableMap, evaluateFormula, formatCalcValue } from "./formula-utils";
 import type { VisualizationSpec } from "@/types/math-lesson";
 import { buildLcmLadder, missingForPerfectPower } from "./factor-ladder";
 import { SIGNATURE, resolvePalette } from "./design-tokens";
-import { ControlPoint } from "./control-point";
 import { VizStage } from "./viz-stage";
 
 function EmojiRow({ count, emoji = "🍎" }: { count: number; emoji?: string }) {
@@ -60,70 +60,188 @@ export function CountingViz({ spec, values, onChange, onReset }: TopicVizProps) 
   );
 }
 
-export function NumberLineViz({ spec, values, onChange, palette, classLevel }: TopicVizProps) {
-  const start = values.start ?? 0;
-  const jump = values.jump ?? 0;
-  const result = start + jump;
-  const W = 280;
-  const toX = (n: number) => 20 + ((n + 5) / 25) * (W - 40);
-  const p = palette ?? resolvePalette({ paletteId: spec.paletteId, classLevel, colors: spec.colors });
+function signed(n: number): string {
+  return n < 0 ? `− ${Math.abs(n)}` : `+ ${n}`;
+}
+
+function JumpNumberLine({
+  start,
+  jump,
+  palette: p,
+  lo,
+  hi,
+  onDragStart,
+}: {
+  start: number;
+  jump: number;
+  palette: ReturnType<typeof resolvePalette>;
+  lo: number;
+  hi: number;
+  onDragStart?: (n: number) => void;
+}) {
+  const end = start + jump;
+  const W = 320;
+  const pad = 18;
+  const span = Math.max(1, hi - lo);
+  const toX = (n: number) => pad + ((n - lo) / span) * (W - pad * 2);
+  const labelEvery = span <= 20 ? 1 : span <= 40 ? 2 : 5;
+  const midX = (toX(start) + toX(end)) / 2;
+  const arrowDir = jump >= 0 ? 1 : -1;
 
   return (
-    <div className="space-y-4">
-      <VizStage
-        palette={p}
-        viewBox={`0 0 ${W} 80`}
-        heightClass="h-24"
-        hint="Drag the blue point · jump via slider"
-      >
-        <line x1={10} y1={40} x2={W - 10} y2={40} stroke={p.axisLine} strokeWidth={2} />
-        {Array.from({ length: 11 }).map((_, i) => {
-          const v = i * 2;
-          const x = toX(v);
-          return (
-            <g key={i}>
-              <line x1={x} y1={35} x2={x} y2={45} stroke={p.gridLine} />
-              <text x={x} y={58} textAnchor="middle" fill={p.muted} fontSize={8}>
+    <g>
+      <defs>
+        <marker id="jl-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill={SIGNATURE.orange} />
+        </marker>
+      </defs>
+      <line x1={6} y1={60} x2={W - 6} y2={60} stroke={p.text} strokeWidth={1.5} markerEnd="url(#jl-arrow)" markerStart="url(#jl-arrow)" />
+      {Array.from({ length: span + 1 }).map((_, i) => {
+        const v = lo + i;
+        const x = toX(v);
+        const showLabel = v % labelEvery === 0 || v === start || v === end;
+        return (
+          <g key={v}>
+            <line x1={x} y1={v === 0 ? 52 : 55} x2={x} y2={v === 0 ? 68 : 65} stroke={v === 0 ? p.text : p.axisLine} strokeWidth={v === 0 ? 2 : 1} />
+            {showLabel ? (
+              <text
+                x={x}
+                y={80}
+                textAnchor="middle"
+                fontSize={9}
+                fontWeight={v === start || v === end || v === 0 ? 700 : 400}
+                fill={v === start ? SIGNATURE.blue : v === end ? SIGNATURE.green : v < 0 ? SIGNATURE.red : p.muted}
+              >
                 {v}
               </text>
-            </g>
-          );
-        })}
-        <circle cx={toX(result)} cy={40} r={6} fill={SIGNATURE.green} className="transition-all duration-500" />
-        {jump !== 0 ? (
+            ) : null}
+          </g>
+        );
+      })}
+      {lo < 0 ? (
+        <text x={toX(lo) + 2} y={94} fontSize={8} fill={SIGNATURE.red}>
+          ← negative
+        </text>
+      ) : null}
+      {hi > 0 ? (
+        <text x={toX(hi) - 2} y={94} fontSize={8} textAnchor="end" fill={p.muted}>
+          positive →
+        </text>
+      ) : null}
+      {jump !== 0 ? (
+        <>
           <path
-            d={`M ${toX(start)} 28 Q ${(toX(start) + toX(result)) / 2} 15 ${toX(result)} 28`}
+            d={`M ${toX(start)} 52 Q ${midX} ${18} ${toX(end) - arrowDir * 2} 52`}
             fill="none"
             stroke={SIGNATURE.orange}
             strokeWidth={2}
+            markerEnd="url(#jl-arrow)"
           />
-        ) : null}
-        <ControlPoint
-          cx={toX(start)}
-          cy={40}
-          onPointerDown={(e) => {
-            e.stopPropagation();
-            const svg = (e.target as Element).closest("svg")!;
-            const move = (ev: PointerEvent) => {
-              const r = svg.getBoundingClientRect();
-              const x = ((ev.clientX - r.left) / r.width) * W;
-              const n = Math.round(((x - 20) / (W - 40)) * 25 - 5);
-              onChange("start", Math.max(-5, Math.min(20, n)));
-            };
-            const up = () => {
-              window.removeEventListener("pointermove", move);
-              window.removeEventListener("pointerup", up);
-            };
-            window.addEventListener("pointermove", move);
-            window.addEventListener("pointerup", up);
-          }}
+          <text x={midX} y={26} textAnchor="middle" fontSize={11} fontWeight={700} fill={SIGNATURE.orange}>
+            {jump > 0 ? `+${jump}` : `−${Math.abs(jump)}`}
+          </text>
+        </>
+      ) : null}
+      <circle cx={toX(end)} cy={60} r={6} fill={SIGNATURE.green} stroke="#fff" strokeWidth={2} />
+      <circle
+        cx={toX(start)}
+        cy={60}
+        r={onDragStart ? 14 : 6}
+        fill="transparent"
+        style={onDragStart ? { cursor: "grab" } : undefined}
+        onPointerDown={
+          onDragStart
+            ? (e) => {
+                const svg = (e.target as Element).closest("svg")!;
+                const move = (ev: PointerEvent) => {
+                  const r = svg.getBoundingClientRect();
+                  const x = ((ev.clientX - r.left) / r.width) * W;
+                  onDragStart(Math.round(lo + ((x - pad) / (W - pad * 2)) * span));
+                };
+                const up = () => {
+                  window.removeEventListener("pointermove", move);
+                  window.removeEventListener("pointerup", up);
+                };
+                window.addEventListener("pointermove", move);
+                window.addEventListener("pointerup", up);
+              }
+            : undefined
+        }
+      />
+      <circle cx={toX(start)} cy={60} r={6} fill={SIGNATURE.blue} stroke="#fff" strokeWidth={2} pointerEvents="none" />
+    </g>
+  );
+}
+
+function JumpLegend({ start, jump, palette: p }: { start: number; jump: number; palette: ReturnType<typeof resolvePalette> }) {
+  const end = start + jump;
+  return (
+    <div className="space-y-1 text-center">
+      <p className="text-base font-semibold tabular-nums" style={{ color: p.text }}>
+        <span style={{ color: SIGNATURE.blue }}>{start}</span> {signed(jump)} ={" "}
+        <span style={{ color: SIGNATURE.green }}>{end}</span>
+      </p>
+      <p className="text-xs" style={{ color: p.muted }}>
+        Start at the <span style={{ color: SIGNATURE.blue, fontWeight: 600 }}>blue</span> dot,{" "}
+        {jump === 0
+          ? "don't move"
+          : `move ${Math.abs(jump)} step${Math.abs(jump) === 1 ? "" : "s"} ${jump > 0 ? "right (adding)" : "left (subtracting)"}`}
+        , land on the <span style={{ color: SIGNATURE.green, fontWeight: 600 }}>green</span> dot.
+      </p>
+    </div>
+  );
+}
+
+function lineRange(...ns: number[]): [number, number] {
+  const lo = Math.min(0, ...ns);
+  const hi = Math.max(10, ...ns);
+  return [Math.floor(lo), Math.ceil(hi)];
+}
+
+export function NumberLineViz({ spec, values, onChange, palette, classLevel }: TopicVizProps) {
+  const sliders = spec.sliders ?? [];
+  const startSlider = sliders.find((s) => s.id === "start");
+  const start = values.start ?? 0;
+  const jump = values.jump ?? 0;
+  const p = palette ?? resolvePalette({ paletteId: spec.paletteId, classLevel, colors: spec.colors });
+  const [lo, hi] = lineRange(start, start + jump, startSlider?.min ?? 0);
+
+  return (
+    <div className="space-y-4">
+      <VizStage palette={p} viewBox="0 0 320 96" heightClass="h-auto" hint="Drag the blue dot or use the sliders">
+        <JumpNumberLine
+          start={start}
+          jump={jump}
+          palette={p}
+          lo={lo}
+          hi={hi}
+          onDragStart={(n) =>
+            onChange("start", Math.max(startSlider?.min ?? lo, Math.min(startSlider?.max ?? hi, n)))
+          }
         />
       </VizStage>
-      <p className="text-xs text-center tabular-nums" style={{ color: p.text }}>
-        {start} {jump >= 0 ? "+" : ""}
-        {jump} = <strong>{result}</strong>
-      </p>
+      <JumpLegend start={start} jump={jump} palette={p} />
       <SliderPanel spec={spec} values={values} onChange={onChange} palette={p} />
+    </div>
+  );
+}
+
+function HundredFlat() {
+  return (
+    <div className="grid grid-cols-10 gap-px w-14 h-14 p-px bg-blue-700 rounded-sm" title="100">
+      {Array.from({ length: 100 }).map((_, i) => (
+        <div key={i} className="bg-blue-400" />
+      ))}
+    </div>
+  );
+}
+
+function TenRod() {
+  return (
+    <div className="flex flex-col gap-px w-1.5 h-14 p-px bg-emerald-700 rounded-sm" title="10">
+      {Array.from({ length: 10 }).map((_, i) => (
+        <div key={i} className="flex-1 bg-emerald-400" />
+      ))}
     </div>
   );
 }
@@ -133,22 +251,42 @@ export function PlaceValueViz({ spec, values, onChange }: TopicVizProps) {
   const h = Math.floor(n / 100);
   const t = Math.floor((n % 100) / 10);
   const o = n % 10;
+  const columns = [
+    { name: "Hundreds", digit: h, worth: 100, color: "text-blue-700", bg: "bg-blue-50 border-blue-200", block: <HundredFlat /> },
+    { name: "Tens", digit: t, worth: 10, color: "text-emerald-700", bg: "bg-emerald-50 border-emerald-200", block: <TenRod /> },
+    {
+      name: "Ones",
+      digit: o,
+      worth: 1,
+      color: "text-amber-700",
+      bg: "bg-amber-50 border-amber-200",
+      block: <div className="w-3 h-3 bg-amber-400 border border-amber-700 rounded-sm" title="1" />,
+    },
+  ];
   return (
     <div className="space-y-4">
-      <div className="flex gap-3 justify-center flex-wrap">
-        {Array.from({ length: h }).map((_, i) => (
-          <div key={`h${i}`} className="w-8 h-8 bg-blue-500/80 rounded-sm border border-blue-600" title="100" />
-        ))}
-        {Array.from({ length: t }).map((_, i) => (
-          <div key={`t${i}`} className="w-6 h-8 bg-emerald-500/80 rounded-sm border border-emerald-600" title="10" />
-        ))}
-        {Array.from({ length: o }).map((_, i) => (
-          <div key={`o${i}`} className="w-3 h-3 bg-amber-500 rounded-full border border-amber-600" title="1" />
+      <div className="grid grid-cols-3 gap-2">
+        {columns.map((c) => (
+          <div key={c.name} className={cn("rounded-lg border p-2 flex flex-col items-center gap-2", c.bg)}>
+            <p className={cn("text-xs font-semibold", c.color)}>
+              {c.name} <span className="font-normal text-muted-foreground">(each = {c.worth})</span>
+            </p>
+            <p className={cn("text-3xl font-bold tabular-nums", c.color)}>{c.digit}</p>
+            <div className="flex flex-wrap gap-1 justify-center min-h-[3.5rem] items-end">
+              {Array.from({ length: c.digit }).map((_, i) => (
+                <span key={i}>{c.block}</span>
+              ))}
+            </div>
+            <p className="text-[11px] tabular-nums text-muted-foreground">
+              {c.digit} × {c.worth} = {c.digit * c.worth}
+            </p>
+          </div>
         ))}
       </div>
-      <p className="text-center font-mono text-lg">{n} = {h} hundreds + {t} tens + {o} ones</p>
+      <p className="text-center font-semibold tabular-nums">
+        {h * 100} + {t * 10} + {o} = {n}
+      </p>
       <SliderPanel spec={spec} values={values} onChange={onChange} />
-      <CalcGrid spec={spec} values={values} />
     </div>
   );
 }
@@ -184,113 +322,177 @@ export function MultiplicationGridViz({ spec, values, onChange }: TopicVizProps)
   );
 }
 
+const GROUP_COLORS = ["#3B82F6", "#10B981", "#F59E0B", "#8B5CF6", "#EC4899", "#14B8A6"];
+
 export function BarModelViz({ spec, values, onChange }: TopicVizProps) {
   const total = Math.round(values.total ?? 12);
   const groups = Math.max(1, Math.round(values.groups ?? 3));
-  const each = total / groups;
-  const W = 260;
-  const barW = W - 40;
+  const each = Math.floor(total / groups);
+  const left = total - each * groups;
   return (
     <div className="space-y-4">
-      <svg viewBox={`0 0 ${W} 80`} className="w-full h-20">
-        <rect x={20} y={20} width={barW} height={24} fill="#E2E8F0" stroke="#64748B" rx={4} />
-        {Array.from({ length: groups }).map((_, i) => (
-          <rect
-            key={i}
-            x={20 + (i * barW) / groups}
-            y={20}
-            width={barW / groups - 2}
-            height={24}
-            fill={["#3B82F6", "#10B981", "#F59E0B", "#8B5CF6", "#EC4899"][i % 5]}
-            opacity={0.85}
-            rx={2}
-          />
+      <div className="space-y-2">
+        {Array.from({ length: groups }).map((_, g) => (
+          <div key={g} className="flex items-center gap-2">
+            <span className="w-16 shrink-0 text-xs font-semibold" style={{ color: GROUP_COLORS[g % GROUP_COLORS.length] }}>
+              Group {g + 1}
+            </span>
+            <div className="flex flex-wrap gap-1">
+              {Array.from({ length: each }).map((__, i) => (
+                <span
+                  key={i}
+                  className="w-4 h-4 rounded-full"
+                  style={{ background: GROUP_COLORS[g % GROUP_COLORS.length] }}
+                />
+              ))}
+            </div>
+            <span className="ml-auto text-xs tabular-nums text-muted-foreground">{each}</span>
+          </div>
         ))}
-      </svg>
-      <p className="text-xs text-center">{total} shared in {groups} groups ≈ {each.toFixed(1)} each</p>
+        {left > 0 ? (
+          <div className="flex items-center gap-2">
+            <span className="w-16 shrink-0 text-xs font-semibold text-red-600">Left over</span>
+            <div className="flex gap-1">
+              {Array.from({ length: left }).map((_, i) => (
+                <span key={i} className="w-4 h-4 rounded-full border-2 border-dashed border-red-500" />
+              ))}
+            </div>
+            <span className="ml-auto text-xs tabular-nums text-red-600">{left}</span>
+          </div>
+        ) : null}
+      </div>
+      <p className="text-center text-sm font-semibold tabular-nums">
+        {total} ÷ {groups} = {each}
+        {left > 0 ? ` remainder ${left}` : ""}
+      </p>
+      <p className="text-center text-xs text-muted-foreground">
+        {total} things shared equally into {groups} groups gives {each} in each group
+        {left > 0 ? `, with ${left} left over that can't be shared equally.` : "."}
+      </p>
       <SliderPanel spec={spec} values={values} onChange={onChange} />
     </div>
   );
 }
 
 export function DecimalBlocksViz({ spec, values, onChange }: TopicVizProps) {
-  const d = (values.d ?? 35) / 10;
+  const tenthsTotal = Math.round(values.d ?? 35);
+  const ones = Math.floor(tenthsTotal / 10);
+  const tenths = tenthsTotal % 10;
+  const value = tenthsTotal / 10;
   return (
     <div className="space-y-4 text-center">
-      <p className="text-3xl font-bold text-primary">{d.toFixed(1)}</p>
-      <div className="flex justify-center gap-1">
-        {Array.from({ length: Math.floor(d) }).map((_, i) => (
-          <div key={i} className="w-10 h-10 border-2 border-primary bg-primary/20 rounded" />
+      <p className="text-3xl font-bold text-primary tabular-nums">
+        <span className="text-blue-700">{ones}</span>.<span className="text-amber-600">{tenths}</span>
+      </p>
+      <div className="flex justify-center items-end gap-2 flex-wrap">
+        {Array.from({ length: ones }).map((_, i) => (
+          <div key={i} className="grid grid-cols-10 w-12 h-12 border-2 border-blue-700 bg-blue-400 gap-px" title="1 whole">
+            {Array.from({ length: 10 }).map((__, j) => (
+              <div key={j} className="bg-blue-400 border-r border-blue-700/40 last:border-r-0" />
+            ))}
+          </div>
         ))}
-        <div className="w-10 h-10 border-2 border-dashed border-amber-500 bg-amber-500/20 rounded" />
+        <div className="grid grid-cols-10 w-12 h-12 border-2 border-amber-600" title="tenths of the next whole">
+          {Array.from({ length: 10 }).map((_, j) => (
+            <div key={j} className={cn("border-r border-amber-600/40 last:border-r-0", j < tenths ? "bg-amber-400" : "bg-white")} />
+          ))}
+        </div>
       </div>
-      <SliderPanel spec={spec} values={values} onChange={onChange} />
+      <p className="text-xs text-muted-foreground">
+        Each square is 1 whole cut into 10 strips. Each strip is <b>0.1</b> (one tenth).
+      </p>
+      <p className="text-sm font-semibold tabular-nums">
+        <span className="text-blue-700">{ones} whole{ones === 1 ? "" : "s"}</span> +{" "}
+        <span className="text-amber-600">
+          {tenths} tenth{tenths === 1 ? "" : "s"}
+        </span>{" "}
+        = {value.toFixed(1)}
+      </p>
+      <SliderPanel
+        spec={{
+          ...spec,
+          sliders: (spec.sliders ?? []).map((s) => (s.id === "d" ? { ...s, label: "Number of tenths (0.1 strips)" } : s)),
+        }}
+        values={values}
+        onChange={onChange}
+      />
     </div>
   );
 }
 
 export function PercentCircleViz({ spec, values, onChange }: TopicVizProps) {
-  const pct = values.pct ?? 25;
-  const cx = 60;
-  const cy = 60;
-  const r = 50;
-  const endAngle = (pct / 100) * 360;
-  const rad = (a: number) => ((a - 90) * Math.PI) / 180;
-  const x = cx + r * Math.cos(rad(endAngle));
-  const y = cy + r * Math.sin(rad(endAngle));
-  const large = endAngle > 180 ? 1 : 0;
-
+  const pct = Math.round(values.pct ?? 25);
   return (
     <div className="space-y-4">
-      <svg viewBox="0 0 120 120" className="w-32 h-32 mx-auto">
-        <circle cx={cx} cy={cy} r={r} fill="#E2E8F0" />
-        {pct > 0 ? (
-          <path d={`M ${cx} ${cy} L ${cx} ${cy - r} A ${r} ${r} 0 ${large} 1 ${x} ${y} Z`} fill="#3B82F6" className="transition-all duration-300" />
-        ) : null}
-        <text x={cx} y={cy + 5} textAnchor="middle" className="fill-foreground text-sm font-bold">{pct}%</text>
-      </svg>
+      <div className="grid grid-cols-10 gap-0.5 w-48 h-48 mx-auto p-1 rounded-lg border bg-white">
+        {Array.from({ length: 100 }).map((_, i) => (
+          <div key={i} className={cn("rounded-[2px] transition-colors", i < pct ? "bg-blue-500" : "bg-slate-200")} />
+        ))}
+      </div>
+      <p className="text-center text-sm font-semibold tabular-nums">
+        {pct} of 100 squares shaded = <span className="text-blue-600">{pct}%</span> = {pct}/100
+      </p>
+      <p className="text-center text-xs text-muted-foreground">Per cent means “out of 100”. The grid has exactly 100 squares.</p>
       <SliderPanel spec={spec} values={values} onChange={onChange} />
     </div>
   );
 }
 
 export function RatioBarViz({ spec, values, onChange }: TopicVizProps) {
-  const a = Math.max(1, values.a ?? 2);
-  const b = Math.max(1, values.b ?? 3);
+  const a = Math.max(1, Math.round(values.a ?? 2));
+  const b = Math.max(1, Math.round(values.b ?? 3));
   const total = a + b;
-  const W = 240;
+  const row = (count: number, color: string, label: string) => (
+    <div className="flex items-center gap-2">
+      <span className="w-12 shrink-0 text-xs font-semibold" style={{ color }}>
+        {label}
+      </span>
+      <div className="flex gap-1">
+        {Array.from({ length: count }).map((_, i) => (
+          <span key={i} className="w-6 h-6 rounded border-2" style={{ background: `${color}55`, borderColor: color }} />
+        ))}
+      </div>
+      <span className="text-xs tabular-nums" style={{ color }}>
+        {count} part{count === 1 ? "" : "s"}
+      </span>
+    </div>
+  );
   return (
     <div className="space-y-4">
-      <svg viewBox={`0 0 ${W} 40`} className="w-full h-10">
-        <rect x={10} y={10} width={((W - 20) * a) / total} height={20} fill="#3B82F6" rx={3} />
-        <rect x={10 + ((W - 20) * a) / total} y={10} width={((W - 20) * b) / total} height={20} fill="#10B981" rx={3} />
-      </svg>
-      <p className="text-center text-sm font-medium">Ratio {a}:{b}</p>
+      <div className="space-y-2 w-fit mx-auto">
+        {row(a, "#3B82F6", "A")}
+        {row(b, "#10B981", "B")}
+      </div>
+      <p className="text-center text-sm font-semibold">
+        A : B = {a} : {b}
+      </p>
+      <p className="text-center text-xs text-muted-foreground">
+        Every box is the same size. For every {a} box{a === 1 ? "" : "es"} of A there {b === 1 ? "is" : "are"} {b} of B — {total} parts in all, so A is {a}/{total} of the total.
+      </p>
       <SliderPanel spec={spec} values={values} onChange={onChange} />
     </div>
   );
 }
 
-export function IntegerLineViz({ spec, values, onChange }: TopicVizProps) {
+export function IntegerLineViz({ spec, values, onChange, palette, classLevel }: TopicVizProps) {
   const pos = values.pos ?? -2;
   const move = values.move ?? 5;
-  const end = pos + move;
-  const W = 280;
-  const toX = (n: number) => W / 2 + n * 12;
-
+  const p = palette ?? resolvePalette({ paletteId: spec.paletteId, classLevel, colors: spec.colors });
+  const reach = Math.max(10, Math.abs(pos), Math.abs(pos + move));
   return (
     <div className="space-y-4">
-      <svg viewBox={`0 0 ${W} 60`} className="w-full h-14">
-        <line x1={10} y1={30} x2={W - 10} y2={30} stroke="#64748B" strokeWidth={2} />
-        <line x1={W / 2} y1={22} x2={W / 2} y2={38} stroke="#EF4444" strokeWidth={2} />
-        {[-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5].map((v) => (
-          <text key={v} x={toX(v)} y={50} textAnchor="middle" className="fill-muted-foreground text-[8px]">{v}</text>
-        ))}
-        <circle cx={toX(pos)} cy={30} r={5} fill="#3B82F6" />
-        <circle cx={toX(end)} cy={30} r={5} fill="#10B981" />
-      </svg>
-      <p className="text-xs text-center">{pos} + ({move}) = {end}</p>
-      <SliderPanel spec={spec} values={values} onChange={onChange} />
+      <VizStage palette={p} viewBox="0 0 320 96" heightClass="h-auto" hint="Drag the blue dot or use the sliders">
+        <JumpNumberLine
+          start={pos}
+          jump={move}
+          palette={p}
+          lo={-reach}
+          hi={reach}
+          onDragStart={(n) => onChange("pos", Math.max(-10, Math.min(10, n)))}
+        />
+      </VizStage>
+      <JumpLegend start={pos} jump={move} palette={p} />
+      <SliderPanel spec={spec} values={values} onChange={onChange} palette={p} />
     </div>
   );
 }
@@ -307,13 +509,50 @@ export function ClockTimeViz({ spec, values, onChange }: TopicVizProps) {
 
   return (
     <div className="space-y-4">
-      <svg viewBox="0 0 120 120" className="w-36 h-36 mx-auto">
-        <circle cx={cx} cy={cy} r={52} fill="#F8FAFC" stroke="#3B82F6" strokeWidth={2} />
-        <line x1={cx} y1={cy} x2={cx + 28 * Math.cos(hRad)} y2={cy + 28 * Math.sin(hRad)} stroke="#1E293B" strokeWidth={3} strokeLinecap="round" />
-        <line x1={cx} y1={cy} x2={cx + 38 * Math.cos(mRad)} y2={cy + 38 * Math.sin(mRad)} stroke="#F59E0B" strokeWidth={2} strokeLinecap="round" />
+      <svg viewBox="0 0 120 120" className="w-44 h-44 mx-auto">
+        <circle cx={cx} cy={cy} r={54} fill="#F8FAFC" stroke="#3B82F6" strokeWidth={2} />
+        {Array.from({ length: 60 }).map((_, i) => {
+          const a = ((i * 6 - 90) * Math.PI) / 180;
+          const major = i % 5 === 0;
+          const r1 = major ? 46 : 49;
+          return (
+            <line
+              key={i}
+              x1={cx + r1 * Math.cos(a)}
+              y1={cy + r1 * Math.sin(a)}
+              x2={cx + 52 * Math.cos(a)}
+              y2={cy + 52 * Math.sin(a)}
+              stroke={major ? "#1E293B" : "#94A3B8"}
+              strokeWidth={major ? 1.4 : 0.6}
+            />
+          );
+        })}
+        {Array.from({ length: 12 }).map((_, i) => {
+          const num = i + 1;
+          const a = ((num * 30 - 90) * Math.PI) / 180;
+          return (
+            <text key={num} x={cx + 38 * Math.cos(a)} y={cy + 38 * Math.sin(a) + 3} textAnchor="middle" fontSize={9} fontWeight={600} fill="#1E293B">
+              {num}
+            </text>
+          );
+        })}
+        <line x1={cx} y1={cy} x2={cx + 26 * Math.cos(hRad)} y2={cy + 26 * Math.sin(hRad)} stroke="#1E293B" strokeWidth={3.5} strokeLinecap="round" />
+        <line x1={cx} y1={cy} x2={cx + 44 * Math.cos(mRad)} y2={cy + 44 * Math.sin(mRad)} stroke="#F59E0B" strokeWidth={2} strokeLinecap="round" />
         <circle cx={cx} cy={cy} r={3} fill="#1E293B" />
       </svg>
-      <p className="text-center font-semibold">{hour}:{minute.toString().padStart(2, "0")}</p>
+      <p className="text-center text-2xl font-bold tabular-nums">
+        {hour}:{minute.toString().padStart(2, "0")}
+      </p>
+      <p className="text-center text-xs text-muted-foreground">
+        <span className="font-semibold text-slate-800">Short black hand</span> = hour (
+        {minute === 0 ? `on ${hour % 12 || 12}` : `just past ${hour % 12 || 12}`}) ·{" "}
+        <span className="font-semibold text-amber-600">Long orange hand</span> ={" "}
+        {minute === 0
+          ? "on 12, so it is exactly o'clock"
+          : minute % 5 === 0
+            ? `on ${minute / 5}, and ${minute / 5} × 5 = ${minute} minutes`
+            : `${minute} minutes`}
+      </p>
       <SliderPanel spec={spec} values={values} onChange={onChange} />
     </div>
   );
@@ -340,20 +579,74 @@ export function MoneyViz({ spec, values, onChange }: TopicVizProps) {
 }
 
 export function PatternViz({ spec, values, onChange }: TopicVizProps) {
-  const step = Math.round(values.step ?? 4);
+  const step = Math.max(1, Math.round(values.step ?? 4));
   const matchsticks = 2 * step + 1;
+  const S = 32;
+  const H = 28;
+  const pts = Array.from({ length: step + 2 }).map((_, k) => ({
+    x: 12 + (k * S) / 2,
+    y: k % 2 === 0 ? 12 + H : 12,
+  }));
+  const edges: { a: number; b: number }[] = [];
+  for (let k = 0; k <= step; k++) edges.push({ a: k, b: k + 1 });
+  for (let k = 0; k < step; k++) edges.push({ a: k, b: k + 2 });
+  const isNew = (e: { a: number; b: number }) =>
+    step > 1 && ((e.a === step && e.b === step + 1) || (e.a === step - 1 && e.b === step + 1));
+  const W = 24 + ((step + 1) * S) / 2;
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-center gap-1">
-        {Array.from({ length: step }).map((_, i) => (
-          <div key={i} className="flex flex-col items-center gap-0.5">
-            {Array.from({ length: 3 }).map((__, j) => (
-              <div key={j} className="w-1 h-4 bg-amber-600 rounded" />
-            ))}
-          </div>
+      <svg viewBox={`0 0 ${W} ${H + 24}`} className="w-full max-w-md mx-auto h-auto max-h-28">
+        {edges.map((e, i) => (
+          <line
+            key={i}
+            x1={pts[e.a].x}
+            y1={pts[e.a].y}
+            x2={pts[e.b].x}
+            y2={pts[e.b].y}
+            stroke={isNew(e) ? "#2563EB" : "#D97706"}
+            strokeWidth={3}
+            strokeLinecap="round"
+          />
         ))}
+      </svg>
+      <p className="text-center text-sm font-semibold">
+        Step {step}: {step} triangle{step === 1 ? "" : "s"} need {matchsticks} matchsticks
+      </p>
+      <p className="text-center text-xs text-muted-foreground">
+        {step > 1 ? (
+          <>
+            Each new triangle shares one side, so it only adds <span className="font-semibold text-blue-600">2 blue sticks</span>.
+          </>
+        ) : (
+          "The first triangle needs 3 sticks. Each new one shares a side and adds 2 more."
+        )}
+      </p>
+      <div className="mx-auto w-fit overflow-x-auto">
+        <table className="text-xs tabular-nums border-collapse">
+          <tbody>
+            <tr>
+              <th className="pr-2 text-left font-medium text-muted-foreground">Step (n)</th>
+              {Array.from({ length: Math.max(step, 5) }).map((_, i) => (
+                <td key={i} className={cn("px-2 border text-center", i + 1 === step && "bg-amber-100 font-bold")}>
+                  {i + 1}
+                </td>
+              ))}
+            </tr>
+            <tr>
+              <th className="pr-2 text-left font-medium text-muted-foreground">Sticks</th>
+              {Array.from({ length: Math.max(step, 5) }).map((_, i) => (
+                <td key={i} className={cn("px-2 border text-center", i + 1 === step && "bg-amber-100 font-bold")}>
+                  {2 * (i + 1) + 1}
+                </td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
       </div>
-      <p className="text-center text-sm">Step {step}: {matchsticks} matchsticks (rule: 2n + 1)</p>
+      <p className="text-center text-xs">
+        Rule: sticks = 2 × n + 1 → 2 × {step} + 1 = <b>{matchsticks}</b>
+      </p>
       <SliderPanel spec={spec} values={values} onChange={onChange} />
     </div>
   );
@@ -656,7 +949,7 @@ export function ShapeLabViz({ spec, values, onChange, onReset }: TopicVizProps) 
     ? "Length = width — this rectangle is a square."
     : shape === "square"
       ? "All 4 sides equal · all 4 angles 90°"
-      : shape === "rectangle"
+      : isRect
         ? "Opposite sides equal · all 4 angles 90°"
         : `${nSides} equal sides · ${nSides} corners`;
 
@@ -820,14 +1113,44 @@ export function ShapesBasicViz(props: TopicVizProps) {
   return <ShapeLabViz {...props} />;
 }
 
+const SYMMETRY_SHAPE = [
+  { x: 60, y: 14 },
+  { x: 92, y: 40 },
+  { x: 80, y: 84 },
+  { x: 40, y: 84 },
+  { x: 28, y: 40 },
+];
+
 export function SymmetryViz({ spec, values, onChange }: TopicVizProps) {
   const fold = values.fold ?? 50;
+  const L = 30 + fold * 0.6;
+  const onAxis = Math.abs(L - 60) < 1.5;
+  const reflected = SYMMETRY_SHAPE.map((pt) => ({ x: 2 * L - pt.x, y: pt.y }));
+  const toPts = (arr: { x: number; y: number }[]) => arr.map((pt) => `${pt.x},${pt.y}`).join(" ");
   return (
     <div className="space-y-4">
-      <svg viewBox="0 0 160 100" className="w-full max-w-xs mx-auto h-24">
-        <polygon points="20,80 60,20 100,80" fill="#3B82F644" stroke="#3B82F6" />
-        <line x1={20 + (fold / 100) * 120} y1={10} x2={20 + (fold / 100) * 120} y2={90} stroke="#F59E0B" strokeWidth={2} strokeDasharray="4 3" />
+      <svg viewBox="-40 0 200 100" className="w-full max-w-sm mx-auto h-40">
+        <polygon points={toPts(SYMMETRY_SHAPE)} fill="#3B82F633" stroke="#3B82F6" strokeWidth={2} />
+        <polygon
+          points={toPts(reflected)}
+          fill={onAxis ? "#10B98133" : "#F59E0B22"}
+          stroke={onAxis ? "#10B981" : "#F59E0B"}
+          strokeWidth={2}
+          strokeDasharray="5 3"
+        />
+        <line x1={L} y1={4} x2={L} y2={96} stroke={onAxis ? "#10B981" : "#F59E0B"} strokeWidth={2} strokeDasharray="4 3" />
+        <text x={L + 3} y={10} fontSize={7} fill={onAxis ? "#10B981" : "#B45309"}>
+          mirror
+        </text>
       </svg>
+      <p className={cn("text-center text-sm font-semibold", onAxis ? "text-emerald-600" : "text-amber-700")}>
+        {onAxis
+          ? "The mirror image lands exactly on the shape — this is a line of symmetry!"
+          : "The dashed mirror image does not match the shape — not a line of symmetry."}
+      </p>
+      <p className="text-center text-xs text-muted-foreground">
+        Blue = the shape · dashed = its reflection in the mirror line. Move the mirror until both match.
+      </p>
       <SliderPanel spec={spec} values={values} onChange={onChange} />
     </div>
   );
@@ -836,9 +1159,10 @@ export function SymmetryViz({ spec, values, onChange }: TopicVizProps) {
 export function FactorTreeViz({ spec, values, onChange, palette, classLevel }: TopicVizProps) {
   const x = Math.max(2, Math.round(values.x ?? 12));
   const y = Math.max(2, Math.round(values.y ?? 18));
-  const title = `${spec.title ?? ""} ${spec.description ?? ""}`;
-  const cubeMode = /perfect\s*cube/i.test(title);
-  const squareMode = /perfect\s*square/i.test(title);
+  // Generic descriptions mention both "cube / square"; only the title names the lesson's goal.
+  const heading = spec.title ?? "";
+  const cubeMode = /perfect\s*cube|cube\s*root/i.test(heading);
+  const squareMode = !cubeMode && /perfect\s*square|square\s*root/i.test(heading);
   const powerMode = cubeMode ? 3 : squareMode ? 2 : 0;
   const nums = powerMode || x === y ? [x] : [x, y];
   const { rows, remainder, lcm, hcf } = useMemo(() => buildLcmLadder(nums), [x, y, powerMode]);
@@ -907,22 +1231,32 @@ export function FactorTreeViz({ spec, values, onChange, palette, classLevel }: T
           <p className="text-sm">
             {x} ={" "}
             {Object.entries(missing.exponents)
-              .map(([p, e]) => (e === 1 ? p : `${p}${e === 2 ? "²" : e === 3 ? "³" : `^${e}`}`))
+              .map(([p, e]) => (e === 1 ? p : `${p}${superscript(e)}`))
               .join(" × ")}
           </p>
-          <p className="text-sm font-semibold">
-            Multiply by{" "}
-            <span className="tabular-nums" style={{ color: SIGNATURE.blue }}>
-              {missing.multiplier}
-            </span>
-            {missing.parts.length > 0 ? (
-              <span className="font-normal text-muted-foreground">
-                {" "}
-                (= {missing.parts.join(" × ")})
+          {missing.multiplier === 1 ? (
+            <p className="text-sm font-semibold">
+              Every power is a multiple of {powerMode}, so {x} is already a perfect {cubeMode ? "cube" : "square"}:{" "}
+              <span style={{ color: SIGNATURE.blue }}>
+                {x} = {Math.round(Math.pow(x, 1 / powerMode))}
+                {cubeMode ? "³" : "²"}
               </span>
-            ) : null}{" "}
-            to get a perfect {cubeMode ? "cube" : "square"}
-          </p>
+            </p>
+          ) : (
+            <p className="text-sm font-semibold">
+              Multiply by{" "}
+              <span className="tabular-nums" style={{ color: SIGNATURE.blue }}>
+                {missing.multiplier}
+              </span>
+              {missing.parts.length > 0 ? (
+                <span className="font-normal text-muted-foreground">
+                  {" "}
+                  (= {missing.parts.map((part) => part.replace(/\^(\d+)/g, (_, e) => superscript(Number(e)))).join(" × ")})
+                </span>
+              ) : null}{" "}
+              to get a perfect {cubeMode ? "cube" : "square"}
+            </p>
+          )}
         </div>
       ) : single ? (
         <p className="text-sm text-center">
@@ -956,52 +1290,197 @@ export function FactorTreeViz({ spec, values, onChange, palette, classLevel }: T
         </>
       )}
 
-      {!large ? <SliderPanel spec={spec} values={values} onChange={onChange} palette={p} /> : null}
+      {!large ? (
+        <SliderPanel
+          spec={
+            powerMode
+              ? {
+                  ...spec,
+                  sliders: (spec.sliders ?? [])
+                    .filter((s) => s.id !== "y")
+                    .map((s) => (s.id === "x" ? { ...s, label: "Number", max: Math.min(s.max ?? 1000, 1000) } : s)),
+                }
+              : spec
+          }
+          values={values}
+          onChange={onChange}
+          palette={p}
+        />
+      ) : null}
     </div>
   );
+}
+
+const SUPERSCRIPT_DIGITS = "⁰¹²³⁴⁵⁶⁷⁸⁹";
+function superscript(n: number): string {
+  return String(n)
+    .split("")
+    .map((d) => SUPERSCRIPT_DIGITS[Number(d)] ?? d)
+    .join("");
+}
+
+function fmtNum(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 export function PythagorasViz({ spec, values, onChange }: TopicVizProps) {
   const a = values.a ?? 3;
   const b = values.b ?? 4;
-  const c = Math.sqrt(a * a + b * b);
-  const scale = 12;
+  const c2 = a * a + b * b;
+  const c = Math.sqrt(c2);
+  const exact = Number.isInteger(c);
+  // Right angle at R=(0,0); leg a along +x, leg b along +y (math coords).
+  const R = { x: 0, y: 0 };
+  const P = { x: a, y: 0 };
+  const Q = { x: 0, y: b };
+  const sqA = [R, P, { x: a, y: -a }, { x: 0, y: -a }];
+  const sqB = [R, Q, { x: -b, y: b }, { x: -b, y: 0 }];
+  const sqC = [P, Q, { x: b, y: b + a }, { x: a + b, y: a }];
+  const minX = -b;
+  const maxX = a + b;
+  const minY = -a;
+  const maxY = a + b;
+  const pad = 1.2;
+  const unit = 200 / Math.max(maxX - minX + pad * 2, maxY - minY + pad * 2);
+  const W = (maxX - minX + pad * 2) * unit;
+  const H = (maxY - minY + pad * 2) * unit;
+  const sx = (x: number) => (x - minX + pad) * unit;
+  const sy = (y: number) => (maxY + pad - y) * unit;
+  const poly = (arr: { x: number; y: number }[]) => arr.map((pt) => `${sx(pt.x)},${sy(pt.y)}`).join(" ");
+  const center = (arr: { x: number; y: number }[]) => ({
+    x: sx(arr.reduce((s, pt) => s + pt.x, 0) / arr.length),
+    y: sy(arr.reduce((s, pt) => s + pt.y, 0) / arr.length),
+  });
+  const fs = Math.max(8, Math.min(13, unit * 0.9));
+  const cA = center(sqA);
+  const cB = center(sqB);
+  const cC = center(sqC);
+  const m = Math.min(a, b) * 0.18 * unit;
+
   return (
     <div className="space-y-4">
-      <svg viewBox="0 0 180 120" className="w-full max-w-xs mx-auto h-28">
-        <polygon points={`20,100 ${20 + a * scale},100 20,${100 - b * scale}`} fill="#3B82F622" stroke="#3B82F6" strokeWidth={2} />
-        <text x={20 + (a * scale) / 2} y={115} textAnchor="middle" className="fill-foreground text-[10px]">a={a}</text>
-        <text x={8} y={100 - (b * scale) / 2} className="fill-foreground text-[10px]">b={b}</text>
-        <text x={35} y={85} className="fill-emerald-600 text-[10px] font-bold">c={c.toFixed(1)}</text>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-xs mx-auto h-auto">
+        <polygon points={poly(sqA)} fill="#3B82F633" stroke="#3B82F6" strokeWidth={1.5} />
+        <polygon points={poly(sqB)} fill="#10B98133" stroke="#10B981" strokeWidth={1.5} />
+        <polygon points={poly(sqC)} fill="#F59E0B33" stroke="#F59E0B" strokeWidth={1.5} />
+        <polygon points={poly([R, P, Q])} fill="#ffffff" stroke="#1E293B" strokeWidth={2} />
+        <path
+          d={`M ${sx(0) + m} ${sy(0)} L ${sx(0) + m} ${sy(0) - m} L ${sx(0)} ${sy(0) - m}`}
+          fill="none"
+          stroke="#1E293B"
+          strokeWidth={1.2}
+        />
+        {[
+          { c: cA, area: `a² = ${a * a}`, side: `side a = ${a}`, color: "#1D4ED8" },
+          { c: cB, area: `b² = ${b * b}`, side: `side b = ${b}`, color: "#047857" },
+          { c: cC, area: `c² = ${c2}`, side: `side c = ${exact ? c : c.toFixed(1)}`, color: "#B45309" },
+        ].map((sq) => (
+          <g key={sq.area}>
+            <text x={sq.c.x} y={sq.c.y} textAnchor="middle" fontSize={fs} fontWeight={700} fill={sq.color}>
+              {sq.area}
+            </text>
+            <text x={sq.c.x} y={sq.c.y + fs * 0.95} textAnchor="middle" fontSize={fs * 0.7} fill={sq.color}>
+              {sq.side}
+            </text>
+          </g>
+        ))}
       </svg>
-      <p className="text-xs text-center">{a}² + {b}² = {a * a + b * b} = c²</p>
+      <p className="text-center text-sm font-semibold tabular-nums">
+        <span className="text-blue-700">{a * a}</span> + <span className="text-emerald-700">{b * b}</span> ={" "}
+        <span className="text-amber-700">{c2}</span>, so c = √{c2} = {exact ? c : `${c.toFixed(2)} (approx.)`}
+      </p>
+      <p className="text-center text-xs text-muted-foreground">
+        The two smaller squares (on the legs a and b) together have exactly the same area as the big square on the
+        longest side c.
+      </p>
       <SliderPanel spec={spec} values={values} onChange={onChange} />
     </div>
   );
 }
 
 export function TrigBasicViz({ spec, values, onChange }: TopicVizProps) {
-  const deg = values.angle ?? 30;
+  const deg = Math.max(0, Math.min(90, values.angle ?? 30));
   const rad = (deg * Math.PI) / 180;
-  const sin = Math.sin(rad);
-  const cos = Math.cos(rad);
-  const tan = Math.tan(rad);
+  const hyp = 10;
+  const opp = hyp * Math.sin(rad);
+  const adj = hyp * Math.cos(rad);
+  const k = 12;
+  const Ax = 80;
+  const Ay = 150;
+  const Bx = Ax + adj * k;
+  const Cy = Ay - opp * k;
+  const tanText = deg >= 90 ? "undefined (adjacent = 0)" : (opp / adj).toFixed(2);
+  const arcR = 22;
+  const card = (name: string, ratio: string, color: string, num: string, den: string, val: string) => (
+    <div className="rounded-lg border p-2 text-center">
+      <p className="text-xs font-semibold" style={{ color }}>
+        {name} {deg}°
+      </p>
+      <p className="text-[11px] text-muted-foreground">{ratio}</p>
+      <p className="text-xs tabular-nums">
+        {num} ÷ {den}
+      </p>
+      <p className="text-sm font-bold tabular-nums">{val}</p>
+    </div>
+  );
   return (
     <div className="space-y-4">
-      <svg viewBox="0 0 160 100" className="w-full max-w-xs h-24">
-        <line x1={20} y1={80} x2={140} y2={80} stroke="#64748B" />
-        <line x1={20} y1={80} x2={120} y2={30} stroke="#3B82F6" strokeWidth={2} />
-        <path d="M 40 80 A 25 25 0 0 0 55 62" fill="none" stroke="#F59E0B" />
-        <text x={45} y={72} className="fill-foreground text-[9px]">{deg}°</text>
+      <svg viewBox={`0 ${Math.min(Cy, Ay - 40) - 14} 280 ${Ay + 20 - (Math.min(Cy, Ay - 40) - 14)}`} className="w-full max-w-sm mx-auto h-auto">
+        <polygon points={`${Ax},${Ay} ${Bx},${Ay} ${Bx},${Cy}`} fill="#3B82F611" stroke="none" />
+        <line x1={Ax} y1={Ay} x2={Bx} y2={Ay} stroke="#10B981" strokeWidth={3} />
+        <line x1={Bx} y1={Ay} x2={Bx} y2={Cy} stroke="#EF4444" strokeWidth={3} />
+        <line x1={Ax} y1={Ay} x2={Bx} y2={Cy} stroke="#3B82F6" strokeWidth={3} />
+        {deg > 0 && deg < 90 ? (
+          <path d={`M ${Bx - 8} ${Ay} L ${Bx - 8} ${Ay - 8} L ${Bx} ${Ay - 8}`} fill="none" stroke="#1E293B" strokeWidth={1} />
+        ) : null}
+        <path
+          d={`M ${Ax + arcR} ${Ay} A ${arcR} ${arcR} 0 0 0 ${Ax + arcR * Math.cos(rad)} ${Ay - arcR * Math.sin(rad)}`}
+          fill="none"
+          stroke="#F59E0B"
+          strokeWidth={2}
+        />
+        <text x={Ax + arcR + 4} y={Ay - 5} fontSize={9} fontWeight={700} fill="#B45309">
+          θ = {deg}°
+        </text>
+        <text x={(Ax + Bx) / 2} y={Ay + 13} textAnchor="middle" fontSize={9} fill="#047857" fontWeight={600}>
+          Adjacent = {adj.toFixed(1)}
+        </text>
+        {opp > 1 ? (
+          <text x={Bx + 4} y={(Ay + Cy) / 2} fontSize={9} fill="#B91C1C" fontWeight={600}>
+            Opposite = {opp.toFixed(1)}
+          </text>
+        ) : null}
+        <text
+          x={Math.max(78, (Ax + Bx) / 2 - 6)}
+          y={(Ay + Cy) / 2 - 6}
+          textAnchor="end"
+          fontSize={9}
+          fill="#1D4ED8"
+          fontWeight={600}
+        >
+          Hypotenuse = {hyp}
+        </text>
       </svg>
-      <div className="grid grid-cols-3 gap-2 text-center text-xs">
-        <div className="rounded border p-1.5"><span className="text-muted-foreground">sin</span><br /><strong>{sin.toFixed(2)}</strong></div>
-        <div className="rounded border p-1.5"><span className="text-muted-foreground">cos</span><br /><strong>{cos.toFixed(2)}</strong></div>
-        <div className="rounded border p-1.5"><span className="text-muted-foreground">tan</span><br /><strong>{tan.toFixed(2)}</strong></div>
+      <p className="text-center text-xs text-muted-foreground">
+        Sides are named from the angle θ: <span className="text-red-600 font-semibold">opposite</span> faces it,{" "}
+        <span className="text-emerald-600 font-semibold">adjacent</span> touches it,{" "}
+        <span className="text-blue-600 font-semibold">hypotenuse</span> is the longest side.
+      </p>
+      <div className="grid grid-cols-3 gap-2">
+        {card("sin", "opposite ÷ hypotenuse", "#B91C1C", opp.toFixed(1), String(hyp), (opp / hyp).toFixed(2))}
+        {card("cos", "adjacent ÷ hypotenuse", "#047857", adj.toFixed(1), String(hyp), (adj / hyp).toFixed(2))}
+        {card("tan", "opposite ÷ adjacent", "#1D4ED8", opp.toFixed(1), adj.toFixed(1), tanText)}
       </div>
       <SliderPanel spec={spec} values={values} onChange={onChange} />
     </div>
   );
+}
+
+function substituteFormula(formula: string, labels: Record<string, string>, vals: Record<string, number>): string {
+  return formula
+    .replace(/[A-Za-z_]\w*/g, (id) => (id in vals ? fmtNum(vals[id]) : labels[id] ?? id))
+    .replace(/\*/g, "×")
+    .replace(/\//g, "÷");
 }
 
 export function ConceptExplorerViz({ spec, values, onChange, onReset }: TopicVizProps) {
@@ -1010,11 +1489,39 @@ export function ConceptExplorerViz({ spec, values, onChange, onReset }: TopicViz
     setPulse(true);
     window.setTimeout(() => setPulse(false), 600);
   }, []);
+  const sliders = spec.sliders ?? [];
+  const labels = Object.fromEntries(sliders.map((s) => [s.id, s.label]));
+  const vals = Object.fromEntries(sliders.map((s) => [s.id, values[s.id] ?? s.default ?? 0]));
 
   return (
     <div className={cn("space-y-4 transition-transform", pulse && "scale-[1.02]")}>
+      {sliders.length > 0 ? (
+        <div className="space-y-2 rounded-xl border p-3 bg-white">
+          {sliders.map((s, i) => {
+            const v = vals[s.id];
+            const pct = Math.max(2, Math.min(100, ((v - (s.min ?? 0)) / Math.max(1, (s.max ?? 100) - (s.min ?? 0))) * 100));
+            return (
+              <div key={s.id} className="flex items-center gap-2">
+                <span className="w-28 shrink-0 text-xs font-medium truncate">{s.label}</span>
+                <div className="flex-1 h-5 rounded bg-slate-100 overflow-hidden">
+                  <div
+                    className="h-full rounded transition-all duration-300"
+                    style={{ width: `${pct}%`, background: GROUP_COLORS[i % GROUP_COLORS.length] }}
+                  />
+                </div>
+                <span className="w-16 text-right text-xs font-semibold tabular-nums">{fmtNum(v)}</span>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+      {(spec.liveCalculations ?? []).map((c) => (
+        <p key={c.id} className="text-center text-sm tabular-nums">
+          {c.label} = {substituteFormula(c.formula, labels, vals)} ={" "}
+          <b>{formatCalcValue(evaluateFormula(c.formula, buildVariableMap(values, {})), c.unit)}</b>
+        </p>
+      ))}
       <SliderPanel spec={spec} values={values} onChange={onChange} />
-      <CalcGrid spec={spec} values={values} />
       <div className="flex gap-2">
         {(spec.buttons ?? []).length > 0 ? (
           (spec.buttons ?? []).map((b) => (

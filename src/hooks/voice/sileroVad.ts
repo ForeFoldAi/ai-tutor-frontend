@@ -8,13 +8,27 @@ const MODEL_ID = "onnx-community/silero-vad";
 export type VadEvent = "start" | "stop" | "speech" | "silence";
 type Infer = (frame: Float32Array, state: Float32Array) => Promise<{ p: number; state: Float32Array }>;
 
+/** A failed load is retried, but not on every 256 ms mic frame. */
+const RETRY_AFTER_MS = 15_000;
+
 let loaded: Promise<Infer> | null = null;
+let failedAt = 0;
 
 async function loadSilero(): Promise<Infer> {
   if (!loaded) {
+    if (Date.now() - failedAt < RETRY_AFTER_MS) throw new Error("silero-vad unavailable");
     loaded = (async () => {
       const { AutoModel, Tensor, env } = await import("@huggingface/transformers");
-      env.allowLocalModels = false;
+      // Served by the app (public/vad): huggingface.co and cdn.jsdelivr.net are often
+      // blocked on school/office desktops. The hub stays as a fallback for the model.
+      const base = import.meta.env.BASE_URL || "/";
+      env.allowLocalModels = true;
+      env.allowRemoteModels = true;
+      env.localModelPath = `${base}vad/models/`;
+      // Production only: the Vite dev server refuses dynamic imports of public/ files.
+      if (!import.meta.env.DEV && env.backends.onnx.wasm) {
+        env.backends.onnx.wasm.wasmPaths = `${base}vad/ort/`;
+      }
       const model = await AutoModel.from_pretrained(MODEL_ID, {
         config: { model_type: "custom" } as never,
         dtype: "fp32",
@@ -34,6 +48,11 @@ async function loadSilero(): Promise<Infer> {
         return { p, state: next };
       };
     })();
+    loaded.catch((err) => {
+      console.warn("[VAD] silero load failed — barge-in falls back to loudness", err);
+      loaded = null;
+      failedAt = Date.now();
+    });
   }
   return loaded;
 }
@@ -51,6 +70,11 @@ export class SileroVad {
   /** Frames above the start threshold in the current segment — hang frames don't count. */
   get voicedMs(): number {
     return this.speaking ? (this.voicedFrames * WINDOW * 1000) / SR : 0;
+  }
+
+  /** False until the model has loaded — voicedMs is meaningless before then. */
+  get available(): boolean {
+    return this.infer !== null;
   }
 
   async ready(): Promise<void> {

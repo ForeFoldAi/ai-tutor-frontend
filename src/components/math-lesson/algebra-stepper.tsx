@@ -1,10 +1,9 @@
 import { useCallback, useMemo, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { renderTutorText } from "@/lib/render-tutor-text";
 import type { AlgebraStep, VisualizationSpec } from "@/types/math-lesson";
 import { MOTION, resolvePalette } from "./design-tokens";
-import { StepScrubber } from "./viz-stage";
 import type { TopicVizProps } from "./topic-viz-shared";
 
 const DEFAULT_STEPS: AlgebraStep[] = [
@@ -51,76 +50,111 @@ function latexWrap(expr: string): string {
   return `$${t}$`;
 }
 
+/** "Subtract 5 from both sides" on "2x + 5 = 15" → "2x + 5 - 5 = 15 - 5". */
+function bothSides(before: string, operation: string): string | null {
+  const parts = before.split("=");
+  if (parts.length !== 2) return null;
+  const [l, r] = parts.map((s) => s.trim());
+  const op = operation.toLowerCase();
+  const num = /(-?\d+(?:\.\d+)?|[a-z])\b/;
+  let m: RegExpMatchArray | null;
+  if ((m = op.match(/subtract\s+(\S+)/)) || (m = op.match(/take away\s+(\S+)/))) {
+    const k = m[1].match(num)?.[1];
+    return k ? `${l} - ${k} = ${r} - ${k}` : null;
+  }
+  if ((m = op.match(/add\s+(\S+)/))) {
+    const k = m[1].match(num)?.[1];
+    return k ? `${l} + ${k} = ${r} + ${k}` : null;
+  }
+  if ((m = op.match(/divide.*?by\s+(\S+)/))) {
+    const k = m[1].match(num)?.[1];
+    return k ? `\\frac{${l}}{${k}} = \\frac{${r}}{${k}}` : null;
+  }
+  if ((m = op.match(/multiply.*?by\s+(\S+)/))) {
+    const k = m[1].match(num)?.[1];
+    return k ? `${k}(${l}) = ${k}(${r})` : null;
+  }
+  return null;
+}
+
 export function AlgebraStepperViz({ spec, onReset, classLevel, palette }: TopicVizProps) {
   const steps = useMemo(() => normalizeSteps(spec), [spec]);
   const [idx, setIdx] = useState(0);
   const p = palette ?? resolvePalette({ paletteId: spec.paletteId, classLevel, colors: spec.colors });
-  const step = steps[Math.min(idx, steps.length - 1)];
-  const labels = steps.map((s, i) => s.operation || `Step ${i + 1}`);
+  const last = steps.length - 1;
+  const cur = Math.min(idx, last);
 
   const reset = useCallback(() => {
     setIdx(0);
     onReset();
   }, [onReset]);
 
+  const shown = steps.slice(0, cur + 1);
+  const first = shown[0];
+
   return (
     <div className="space-y-3">
-      <StepScrubber
-        step={idx}
-        total={steps.length}
-        labels={labels}
-        onChange={setIdx}
-        palette={p}
-      />
       <div
-        className="rounded-xl border px-4 py-5 text-center overflow-hidden"
-        style={{
-          borderColor: p.gridLine,
-          background: p.surface,
-          boxShadow: "0 1px 2px rgba(26,26,31,0.06)",
-        }}
+        className="rounded-xl border px-4 py-4 text-center space-y-2"
+        style={{ borderColor: p.gridLine, background: p.surface, boxShadow: "0 1px 2px rgba(26,26,31,0.06)" }}
       >
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={step.id + idx}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={MOTION.dragSettle}
-            className="space-y-3"
-          >
-            <div className="text-lg font-semibold katex-display" style={{ color: p.text }}>
-              {renderTutorText(latexWrap(step.expressionBefore))}
-            </div>
-            {step.expressionAfter && step.expressionAfter !== step.expressionBefore ? (
-              <motion.div layout className="text-xl font-bold" style={{ color: p.primary }}>
-                {renderTutorText(latexWrap(step.expressionAfter))}
-              </motion.div>
-            ) : null}
-            {step.operation ? (
-              <p className="text-xs leading-relaxed" style={{ color: p.muted }}>
-                {step.operation}
-              </p>
-            ) : null}
-            {(step.highlightTerms ?? []).length > 0 ? (
-              <div className="flex flex-wrap gap-1.5 justify-center">
-                {step.highlightTerms!.map((t) => (
-                  <motion.span
-                    key={t}
-                    layoutId={`term-${t}`}
-                    className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                    style={{ background: `${p.accent}22`, color: p.accent }}
-                  >
-                    {t}
-                  </motion.span>
-                ))}
+        <div className="text-lg font-semibold" style={{ color: cur === 0 ? p.primary : p.text }}>
+          {renderTutorText(latexWrap(first.expressionBefore))}
+        </div>
+        {shown.map((s, i) => {
+          if (s.expressionAfter === s.expressionBefore && i === 0) return null;
+          const changes = s.expressionAfter !== s.expressionBefore;
+          const working = changes ? bothSides(s.expressionBefore, s.operation ?? "") : null;
+          const isCurrent = i === cur;
+          return (
+            <motion.div
+              key={s.id + i}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={MOTION.dragSettle}
+              className="space-y-1.5"
+            >
+              <div className="flex items-center justify-center gap-2 text-xs">
+                <span style={{ color: p.muted }}>↓</span>
+                <span
+                  className="rounded-full px-2.5 py-0.5 font-semibold"
+                  style={{ background: `${p.accent}1F`, color: p.accent }}
+                >
+                  {s.operation || `Step ${i}`}
+                </span>
               </div>
-            ) : null}
-          </motion.div>
-        </AnimatePresence>
+              {working ? (
+                <div className="text-sm" style={{ color: p.muted }}>
+                  {renderTutorText(latexWrap(working))}
+                </div>
+              ) : null}
+              {s.expressionAfter && (changes || i > 0) ? (
+                <div className="text-lg font-bold" style={{ color: isCurrent ? p.primary : p.text }}>
+                  {renderTutorText(latexWrap(s.expressionAfter))}
+                </div>
+              ) : null}
+            </motion.div>
+          );
+        })}
+        <p className="text-[11px] pt-1" style={{ color: p.muted }}>
+          {cur === 0
+            ? "Goal: get x on its own. Whatever we do to one side, we must do to the other side too, so the equation stays balanced."
+            : cur === last
+              ? "Done: x is on its own. Put the answer back into the first equation to check it."
+              : "Same operation on both sides keeps the two sides equal."}
+        </p>
       </div>
-      <div className="flex flex-wrap gap-2 justify-center">
-        <Button type="button" size="sm" variant="outline" onClick={reset}>
+      <div className="flex flex-wrap items-center gap-2 justify-center">
+        <Button type="button" size="sm" variant="outline" disabled={cur === 0} onClick={() => setIdx((v) => Math.max(0, v - 1))}>
+          ◀ Back
+        </Button>
+        <span className="text-xs tabular-nums" style={{ color: p.muted }}>
+          Step {cur + 1} of {steps.length}
+        </span>
+        <Button type="button" size="sm" disabled={cur === last} onClick={() => setIdx((v) => Math.min(last, v + 1))}>
+          Next step ▶
+        </Button>
+        <Button type="button" size="sm" variant="ghost" onClick={reset}>
           Reset
         </Button>
       </div>
