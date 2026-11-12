@@ -242,5 +242,6 @@ export function SceneRenderer({
 
 export function sceneFromSpec(spec: VisualizationSpec): SceneSpec | null {
   if (spec.renderMode !== "3d" || !spec.scene?.objects?.length) return null;
+  if (spec.visualizationType === "heights-distances-scene") return null;
   return spec.scene;
 }

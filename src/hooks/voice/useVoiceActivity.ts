@@ -24,7 +24,7 @@ export function useVoiceActivity(onLevel?: (rms: number) => void) {
 
   const session = () => (vadRef.current ??= new SileroVad(280));
 
-  const warm = useCallback(() => session().ready(), []);
+  const warm = useCallback(() => session().ready().catch(() => undefined), []);
 
   const push = useCallback(
     (samples: Int16Array, now = Date.now()): Promise<VadEvent[]> => {
@@ -49,6 +49,7 @@ export function useVoiceActivity(onLevel?: (rms: number) => void) {
   }, []);
 
   const voicedMs = useCallback(() => vadRef.current?.voicedMs ?? 0, []);
+  const available = useCallback(() => vadRef.current?.available ?? false, []);
 
-  return { push, reset, warm, voicedMs };
+  return { push, reset, warm, voicedMs, available };
 }

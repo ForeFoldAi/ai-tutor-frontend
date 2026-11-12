@@ -27,6 +27,9 @@ dist-ssr
 *.sw?
 .vercel
 
+# Copied from node_modules by scripts/copy-vad-assets.mjs
+public/vad/ort/
+
 # Playwright
 test-results
 playwright-report

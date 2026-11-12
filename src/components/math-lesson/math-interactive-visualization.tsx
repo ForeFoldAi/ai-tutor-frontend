@@ -129,10 +129,10 @@ function FractionsViz({
   onChange: (id: string, v: number) => void;
   onReset: () => void;
 }) {
-  const num = values.numerator ?? values.num ?? 1;
-  const den = Math.max(1, values.denominator ?? values.den ?? 4);
-  const slices = Math.min(den, 12);
-  const filled = Math.round((num / den) * slices);
+  const den = Math.max(1, Math.min(12, values.denominator ?? values.den ?? 4));
+  const num = Math.max(0, Math.min(den, values.numerator ?? values.num ?? 1));
+  const slices = den;
+  const filled = num;
   const colors = resolvePalette({ paletteId: spec.paletteId, colors: spec.colors });
 
   return (
@@ -164,10 +164,15 @@ function FractionsViz({
         })}
         <circle cx="100" cy="100" r="80" fill="none" stroke={colors.muted} strokeWidth={2} />
       </svg>
-      <p className="text-sm font-medium text-foreground">
-        {num}/{den} = {Math.round((num / den) * 100)}%
+      <p className="text-sm font-medium text-foreground text-center">
+        {num} of {den} equal slices shaded = <b>{num}/{den}</b>
+        <span className="block text-xs font-normal" style={{ color: colors.muted }}>
+          {num === den ? "All slices shaded = 1 whole" : num === 0 ? "No slices shaded = 0" : `${num}/${den} of the whole pizza`}
+        </span>
       </p>
-      <VizControls spec={spec} values={values} onChange={onChange} onReset={onReset} />
+      <div className="w-full">
+        <VizControls spec={spec} values={values} onChange={onChange} onReset={onReset} />
+      </div>
     </div>
   );
 }

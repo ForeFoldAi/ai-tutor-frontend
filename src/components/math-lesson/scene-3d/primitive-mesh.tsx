@@ -61,7 +61,25 @@ export function PrimitiveMesh({
   // Matte teaching-tool look (not glossy CAD)
   const roughness = obj.roughness ?? 0.42;
   const metalness = obj.metalness ?? 0.08;
-  const wire = wireframeActive && obj.wireframeAccent !== false;
+  const wire = obj.wireframeAccent !== false;
+  const dims = useMemo(() => {
+    if (driven == null || !Number.isFinite(driven)) return null;
+    if (obj.type === "cylinder") {
+      const hv = sliderValues.h;
+      return [
+        { text: `r = ${driven}`, pos: [0.28, 0.575, 0] as [number, number, number], color: "#c74440" },
+        ...(hv != null ? [{ text: `h = ${hv}`, pos: [0.72, 0, 0] as [number, number, number], color: "#388c46" }] : []),
+      ];
+    }
+    if (obj.type === "box" && Math.abs(scale[0] - scale[1]) < 0.01 && Math.abs(scale[1] - scale[2]) < 0.01) {
+      return [{ text: `side s = ${driven}`, pos: [0, -0.5, 0.6] as [number, number, number], color: "#c74440" }];
+    }
+    return null;
+  }, [driven, obj.type, scale, sliderValues.h]);
+  const radiusGeo = useMemo(
+    () => new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0.578, 0), new THREE.Vector3(0.55, 0.578, 0)]),
+    [],
+  );
 
   let geometry: JSX.Element;
   switch (obj.type) {
@@ -101,9 +119,29 @@ export function PrimitiveMesh({
       {wire ? (
         <lineSegments>
           <edgesGeometry args={[edgeGeo]} />
-          <lineBasicMaterial color={palette.accent} linewidth={2} transparent opacity={0.95} />
+          <lineBasicMaterial
+            color={wireframeActive ? palette.accent : "#0F172A"}
+            linewidth={2}
+            transparent
+            opacity={wireframeActive ? 0.95 : 0.35}
+          />
         </lineSegments>
       ) : null}
+      {dims && obj.type === "cylinder" ? (
+        <lineSegments geometry={radiusGeo}>
+          <lineBasicMaterial color="#c74440" />
+        </lineSegments>
+      ) : null}
+      {dims?.map((d, i) => (
+        <Html key={i} position={d.pos} center style={{ pointerEvents: "none" }}>
+          <div
+            className="rounded px-1.5 py-0.5 text-[11px] font-bold whitespace-nowrap shadow-sm"
+            style={{ background: "rgba(255,255,255,0.92)", color: d.color, border: `1px solid ${d.color}55` }}
+          >
+            {d.text}
+          </div>
+        </Html>
+      ))}
     </group>
   );
 }
