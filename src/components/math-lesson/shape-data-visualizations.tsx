@@ -281,8 +281,8 @@ export function TriangleExplorerViz(_props: TopicVizProps) {
             </span>
           </div>
           <p className="text-sm font-semibold tabular-nums">
-            <span style={{ color: ANGLE_COLORS.A }}>∠A</span> + <span style={{ color: ANGLE_COLORS.B }}>∠B</span> +{" "}
-            <span style={{ color: ANGLE_COLORS.C }}>∠C</span> = {rA}° + {rB}° + {rC}° = 180°
+            Angles <span style={{ color: ANGLE_COLORS.A }}>A</span> + <span style={{ color: ANGLE_COLORS.B }}>B</span> +{" "}
+            <span style={{ color: ANGLE_COLORS.C }}>C</span> = {rA}° + {rB}° + {rC}° = 180°
           </p>
           <p className="text-xs text-muted-foreground">
             However you drag the corners, the three angles always add up to 180°. The longest side is always opposite the
@@ -521,14 +521,14 @@ export function QuadrilateralMorphViz(_props: TopicVizProps) {
             This is a {title}
           </p>
           <p className="text-xs">{QUAD_WHY[name]}</p>
-          <div className="flex flex-wrap justify-center gap-1.5 text-[11px]">
-            {check(abDc, "AB ∥ DC")}
-            {check(adBc, "AD ∥ BC")}
+          <div className="flex flex-wrap justify-center gap-1.5 text-xs">
+            {check(abDc, "AB parallel to DC")}
+            {check(adBc, "AD parallel to BC")}
             {check(allEqual, "all sides equal")}
             {check(allRight, "all angles 90°")}
           </div>
           <p className="text-xs tabular-nums text-muted-foreground">
-            ∠A + ∠B + ∠C + ∠D = {roundedAngles.map((a) => `${a}°`).join(" + ")} = 360°. Matching arrows mark parallel sides.
+            Angles A + B + C + D = {roundedAngles.map((a) => `${a}°`).join(" + ")} = 360°. Matching arrows mark parallel sides.
           </p>
         </div>
       )}
