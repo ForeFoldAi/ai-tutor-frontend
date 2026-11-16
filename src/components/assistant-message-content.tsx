@@ -26,6 +26,8 @@ export interface RelatedTextbookImage {
   subtopic?: string | null;
   title?: string | null;
   figure_number?: string | null;
+  /** Textbook Activity N when the tutor cites an activity diagram */
+  activity_number?: string | null;
   /** LaTeX or markdown for formula/table assets from the ML pipeline */
   structured_content?: string | null;
   content_kind?: string | null;
@@ -33,6 +35,7 @@ export interface RelatedTextbookImage {
 }
 
 const FIG_NUMBER_PREFIX_RE = /^\s*Fig\.?\s*(\d+(?:\.\d+)*)\s*[.:]?\s*/i;
+const ACTIVITY_NUMBER_PREFIX_RE = /^\s*Activity\s*[\.\s:#-]*\s*(\d+(?:\.\d+)*)\s*[.:]?\s*/i;
 
 /** Wrap plain formula text for KaTeX when needed. */
 function formatStructuredMath(text: string): string {
@@ -61,13 +64,21 @@ function isFormulaAsset(img: RelatedTextbookImage): boolean {
   return Boolean(img.file_name?.includes("formulas/"));
 }
 
-/** e.g. "Fig. 1.21" — from figure_number or parsed from caption. */
+/** e.g. "Activity 9.10" or "Fig. 1.21" — from number fields or parsed from caption. */
 export function figureNumberLabel(img: RelatedTextbookImage): string | null {
+  const act = img.activity_number?.trim();
+  if (act) {
+    return `Activity ${act}`;
+  }
   const fig = img.figure_number?.trim();
   if (fig) {
     return `Fig. ${fig}`;
   }
   const cap = img.caption?.trim() || "";
+  const actMatch = cap.match(/^\s*Activity\s*[\.\s:#-]*\s*(\d+(?:\.\d+)*)/i);
+  if (actMatch) {
+    return `Activity ${actMatch[1]}`;
+  }
   const match = cap.match(/^\s*Fig\.?\s*(\d+(?:\.\d+)*)/i);
   if (match) {
     return `Fig. ${match[1]}`;
@@ -78,11 +89,11 @@ export function figureNumberLabel(img: RelatedTextbookImage): string | null {
 const PROSE_CAPTION_RE =
   /\b(you wake up|what is|chapter \d|grade \d|exploring society|india and beyond|keep you cool|keep yourself warm)\b|^in th[e]?\s+[a-z]/i;
 
-/** One short caption line (no figure prefix, no long prose). */
+/** One short caption line (no figure/activity prefix, no long prose). */
 export function figureCaptionText(img: RelatedTextbookImage, idx = 0): string {
   let cap = img.caption?.trim() || "";
   if (cap) {
-    cap = cap.replace(FIG_NUMBER_PREFIX_RE, "").trim();
+    cap = cap.replace(ACTIVITY_NUMBER_PREFIX_RE, "").replace(FIG_NUMBER_PREFIX_RE, "").trim();
     const sentence = cap.split(/(?<=[.!?])\s+/)[0]?.trim() || cap;
     if (
       sentence.length >= 3 &&

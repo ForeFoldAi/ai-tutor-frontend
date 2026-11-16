@@ -729,42 +729,57 @@ function IsometricBox({
   angle: number;
   label?: string;
 }) {
-  const scaleX = Math.min(70, Math.max(22, 12 + sx * 8));
-  const scaleZ = Math.min(70, Math.max(22, 12 + sz * 8));
-  const scaleY = Math.min(70, Math.max(22, 12 + sy * 8));
+  // Largest edge grows with the slider so resizing stays visible, but always fits the frame.
+  const big = Math.max(sx, sy, sz, 1);
+  const k = Math.min(100, Math.max(44, 30 + big * 7)) / big;
+  const X = (sx * k) / 2;
+  const Y = (sy * k) / 2;
+  const Z = (sz * k) / 2;
+  const t = (angle * Math.PI) / 180;
+  const cos = Math.cos(t);
+  const sin = Math.sin(t);
+  const TILT = Math.PI / 6;
   const cx = 110;
-  const cy = 118;
-  const w = scaleX * 0.86;
-  const d = scaleZ * 0.5;
-  const h = scaleY;
-  const y0 = cy - h * 0.12;
-  const rad = (angle * Math.PI) / 180;
-  const leftOp = 0.55 + 0.25 * Math.max(0, Math.cos(rad));
-  const rightOp = 0.55 + 0.25 * Math.max(0, Math.sin(rad));
-  const top = `${cx},${y0 - h} ${cx + w},${y0 - h + d} ${cx},${y0} ${cx - w},${y0 - h + d}`;
-  const left = `${cx - w},${y0 - h + d} ${cx - w},${y0 + d} ${cx},${y0 + h * 0.55} ${cx},${y0}`;
-  const right = `${cx},${y0} ${cx + w},${y0 - h + d} ${cx + w},${y0 + d} ${cx},${y0 + h * 0.55}`;
+  const cy = 108;
+  const pt = (x: number, y: number, z: number) => {
+    const rx = x * cos - z * sin;
+    const rz = x * sin + z * cos;
+    return { x: cx + rx, y: cy - y * Math.cos(TILT) + rz * Math.sin(TILT) };
+  };
+  const V = [
+    pt(-X, -Y, -Z), pt(X, -Y, -Z), pt(X, -Y, Z), pt(-X, -Y, Z),
+    pt(-X, Y, -Z), pt(X, Y, -Z), pt(X, Y, Z), pt(-X, Y, Z),
+  ];
+  // Each side face with how much it faces the viewer (rotated normal's z).
+  const sides = [
+    { idx: [1, 2, 6, 5], facing: sin },
+    { idx: [3, 0, 4, 7], facing: -sin },
+    { idx: [2, 3, 7, 6], facing: cos },
+    { idx: [0, 1, 5, 4], facing: -cos },
+  ].filter((f) => f.facing > 0.001);
+  const pts = (idx: number[]) => idx.map((i) => `${V[i].x},${V[i].y}`).join(" ");
+  const front = sides.reduce((a, b) => (b.facing > a.facing ? b : a), sides[0]);
+  const centre = (idx: number[]) => ({
+    x: idx.reduce((s, i) => s + V[i].x, 0) / 4,
+    y: idx.reduce((s, i) => s + V[i].y, 0) / 4,
+  });
+  const lc = front ? centre(front.idx) : { x: cx, y: cy };
   return (
     <svg viewBox="0 0 220 210" className="w-52 h-52 mx-auto">
-      <defs>
-        <linearGradient id="lab-left" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#4338ca" stopOpacity={leftOp} />
-          <stop offset="100%" stopColor="#312e81" stopOpacity={leftOp + 0.1} />
-        </linearGradient>
-        <linearGradient id="lab-right" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#6366f1" stopOpacity={rightOp} />
-          <stop offset="100%" stopColor="#4f46e5" stopOpacity={rightOp + 0.1} />
-        </linearGradient>
-        <linearGradient id="lab-top" x1="0%" y1="100%" x2="0%" y2="0%">
-          <stop offset="0%" stopColor="#818cf8" stopOpacity={0.85} />
-          <stop offset="100%" stopColor="#a5b4fc" stopOpacity={0.95} />
-        </linearGradient>
-      </defs>
-      <polygon points={left} fill="url(#lab-left)" stroke="#312e81" strokeWidth={1.5} strokeLinejoin="round" />
-      <polygon points={right} fill="url(#lab-right)" stroke="#312e81" strokeWidth={1.5} strokeLinejoin="round" />
-      <polygon points={top} fill="url(#lab-top)" stroke="#4338ca" strokeWidth={1.5} strokeLinejoin="round" />
+      {sides.map((f) => (
+        <polygon
+          key={f.idx.join("")}
+          points={pts(f.idx)}
+          fill="#4f46e5"
+          fillOpacity={0.45 + 0.4 * f.facing}
+          stroke="#312e81"
+          strokeWidth={1.5}
+          strokeLinejoin="round"
+        />
+      ))}
+      <polygon points={pts([4, 5, 6, 7])} fill="#a5b4fc" stroke="#312e81" strokeWidth={1.5} strokeLinejoin="round" />
       {label ? (
-        <text x={cx} y={y0 + h * 0.28} textAnchor="middle" className="fill-white text-[11px] font-bold">
+        <text x={lc.x} y={lc.y + 4} textAnchor="middle" className="fill-white text-[11px] font-bold">
           {label}
         </text>
       ) : null}
