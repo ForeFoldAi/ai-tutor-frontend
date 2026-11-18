@@ -26,6 +26,23 @@ describe("applyTranscriptEvent", () => {
     assert.equal(lines[1].turnId, 1);
   });
 
+  it("keeps a student upload preview on the user line across pending→commit", () => {
+    let lines = applyTranscriptEvent([], {
+      role: "user",
+      text: "Please help me with this image.",
+      turnId: 5,
+      pending: true,
+      userImageUrl: "blob:preview-1",
+    });
+    lines = applyTranscriptEvent(lines, {
+      role: "user",
+      text: "Please help me with this image.",
+      turnId: 5,
+      pending: false,
+    });
+    assert.equal(lines[0]?.userImageUrl, "blob:preview-1");
+  });
+
   it("does not attach assistant to a different turn", () => {
     let lines = applyTranscriptEvent([], {
       role: "user",
