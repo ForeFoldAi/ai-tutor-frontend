@@ -147,6 +147,10 @@ function AskAiTutorChat({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const voiceEndRef = useRef<() => void>(() => undefined);
+  /** Object URL waiting to attach to the next voice user transcript line. */
+  const pendingVoiceImageRef = useRef<string | undefined>(undefined);
+  /** turnId → local preview URL so voice merges keep the student upload visible. */
+  const voiceImageByTurnRef = useRef<Map<number, string>>(new Map());
 
   const conversationHistory = useMemo(
     (): ConversationTurn[] =>
@@ -211,16 +215,45 @@ function AskAiTutorChat({
       const kept = prev.filter((m) => !m.id.startsWith("v-"));
       const voiceMsgs: Message[] = [];
       for (const line of voice.transcript) {
-        if (!line.text) continue;
+        if (!line.text && !(line.role === "user" && (line.userImageUrl || voiceImageByTurnRef.current.has(line.turnId)))) {
+          continue;
+        }
+        let imagePreviewUrl: string | undefined;
+        if (line.role === "user") {
+          if (line.userImageUrl) {
+            voiceImageByTurnRef.current.set(line.turnId, line.userImageUrl);
+          } else if (
+            pendingVoiceImageRef.current &&
+            !voiceImageByTurnRef.current.has(line.turnId)
+          ) {
+            voiceImageByTurnRef.current.set(line.turnId, pendingVoiceImageRef.current);
+            pendingVoiceImageRef.current = undefined;
+          }
+          imagePreviewUrl = voiceImageByTurnRef.current.get(line.turnId);
+        }
         voiceMsgs.push({
           id: `v-${line.role === "user" ? "u" : "a"}-${line.turnId}`,
           role: line.role,
           content: line.text,
+          imagePreviewUrl,
         });
       }
       return [...kept, ...voiceMsgs];
     });
   }, [voice.transcript]);
+
+  useEffect(() => {
+    return () => {
+      for (const url of voiceImageByTurnRef.current.values()) {
+        URL.revokeObjectURL(url);
+      }
+      voiceImageByTurnRef.current.clear();
+      if (pendingVoiceImageRef.current) {
+        URL.revokeObjectURL(pendingVoiceImageRef.current);
+        pendingVoiceImageRef.current = undefined;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (voice.error) setError(voice.error);
@@ -258,13 +291,24 @@ function AskAiTutorChat({
     const preview = tutorImage.attached?.file
       ? URL.createObjectURL(tutorImage.attached.file)
       : undefined;
-    tutorImage.clear();
 
     if (voiceLive && voice.sessionId) {
-      if (preview) URL.revokeObjectURL(preview);
-      voice.sendText(query || "Please help me with this image.", imageIds.length ? imageIds : undefined);
+      const sent = voice.sendText(
+        query || "Please help me with this image.",
+        imageIds.length ? imageIds : undefined,
+      );
+      if (!sent) {
+        if (preview) URL.revokeObjectURL(preview);
+        setError("Could not send — reconnecting. Try again in a moment.");
+        return;
+      }
+      // Keep the upload in chat; only clear the composer after a successful send.
+      if (preview) pendingVoiceImageRef.current = preview;
+      tutorImage.clear();
       return;
     }
+
+    tutorImage.clear();
 
     const userMsg: Message = {
       id: `u-${Date.now()}`,
@@ -437,7 +481,9 @@ function AskAiTutorChat({
             <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
               {voice.hint || status || "Voice on"}
             </span>
-            {voice.state === "SPEAKING" ? (
+            {voice.state === "SPEAKING" ||
+            voice.state === "THINKING" ||
+            voice.state === "PROCESSING" ? (
               <Button
                 type="button"
                 variant="ghost"

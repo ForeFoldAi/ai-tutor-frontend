@@ -204,7 +204,9 @@ export function useVoiceWebSocket({ s, normalizedVoiceUrl, session, audio }: WSD
           session.syncAssistantText(String(msg.text ?? ""));
           s.setVoiceRelatedImages([]);
           s.setStreamingMathLesson(null);
+          s.setStreamingScienceExperiment(null);
           s.voiceMathLessonRef.current = null;
+          s.voiceScienceExperimentRef.current = null;
           audio.resetMp3Player();
           break;
 
@@ -219,7 +221,9 @@ export function useVoiceWebSocket({ s, normalizedVoiceUrl, session, audio }: WSD
           session.syncAssistantText("");
           s.setVoiceRelatedImages([]);
           s.setStreamingMathLesson(null);
+          s.setStreamingScienceExperiment(null);
           s.voiceMathLessonRef.current = null;
+          s.voiceScienceExperimentRef.current = null;
           audio.resetMp3Player();
           break;
 

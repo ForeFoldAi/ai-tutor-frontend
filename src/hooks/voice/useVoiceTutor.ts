@@ -12,6 +12,7 @@ import type {
 } from "@/types/voice";
 import { requestMicrophone, stopStream } from "./useMicrophone";
 import { useAudioPlayback } from "./useAudioPlayback";
+import { canAutoBargeIn } from "@/lib/voice-barge-eligibility";
 import { packPcm, useVoiceActivity } from "./useVoiceActivity";
 
 function floatToInt16(input: Float32Array): Int16Array {
@@ -238,29 +239,48 @@ export function useVoiceTutor(opts: {
           heldPcmRef.current.push(pkt);
           if (heldPcmRef.current.length > HELD_FRAMES) heldPcmRef.current.shift();
         }
+        // Allow barge-in for the whole SPEAKING turn, including inter-chunk TTS
+        // silence when the playback queue is briefly empty. Keep uplink muted
+        // (blockUplink) so tutor audio never becomes a student turn.
+        const canBarge = canAutoBargeIn({
+          bargeInEnabled,
+          state: stateRef.current,
+          remainingMs: playback.remainingMs(),
+        });
+        const tutorPlaying = playback.isPlaying();
         const vadReady = vad.available();
-        if (!vadReady && bargeInEnabled && tutorAudible && playback.isPlaying()) {
+        if (!vadReady && canBarge) {
           const floor = echoFloorRef.current;
-          const loud = floor > 0 && rms > Math.max(FALLBACK_MIN_RMS, floor * FALLBACK_ECHO_RATIO);
+          const loud = tutorPlaying
+            ? floor > 0 && rms > Math.max(FALLBACK_MIN_RMS, floor * FALLBACK_ECHO_RATIO)
+            : rms > FALLBACK_MIN_RMS;
           if (!loud) {
             loudFramesRef.current = 0;
-            echoFloorRef.current = floor ? floor * 0.8 + rms * 0.2 : rms;
+            if (tutorPlaying) {
+              echoFloorRef.current = floor ? floor * 0.8 + rms * 0.2 : rms;
+            }
           } else if (++loudFramesRef.current >= FALLBACK_LOUD_FRAMES) {
             bargeIn();
           }
         }
         void vad.push(i16).then(() => {
-          if (!vadReady || !bargeInEnabled || !tutorAudible || !playback.isPlaying()) return;
+          if (!vadReady || !canBarge) return;
           const voiced = vad.voicedMs();
           if (!voiced) {
             // Tutor leak level with nobody talking — the bar a real barge-in has to clear.
-            echoFloorRef.current = echoFloorRef.current
-              ? echoFloorRef.current * 0.8 + rms * 0.2
-              : rms;
+            if (tutorPlaying) {
+              echoFloorRef.current = echoFloorRef.current
+                ? echoFloorRef.current * 0.8 + rms * 0.2
+                : rms;
+            }
             return;
           }
           if (voiced < BARGE_MIN_VOICED_MS) return;
-          if (echoFloorRef.current && rms < echoFloorRef.current * BARGE_ECHO_RATIO) return;
+          // Echo floor only applies while the tutor is audible; in a TTS gap
+          // there is no speaker leak to subtract.
+          if (tutorPlaying && echoFloorRef.current && rms < echoFloorRef.current * BARGE_ECHO_RATIO) {
+            return;
+          }
           bargeIn();
         });
       };
@@ -641,10 +661,18 @@ export function useVoiceTutor(opts: {
     setHint("");
   }, [sessionId, teardown]);
 
-  const sendText = useCallback((text: string, imageIds?: string[]) => {
+  const sendText = useCallback((text: string, imageIds?: string[]): boolean => {
     const trimmed = text.trim();
     const ids = (imageIds || []).filter(Boolean);
-    if ((!trimmed && !ids.length) || !sessionIdRef.current || endedRef.current) return;
+    if ((!trimmed && !ids.length) || !sessionIdRef.current || endedRef.current) return false;
+    // Replace an in-flight answer instead of queuing behind it.
+    const st = stateRef.current;
+    if (st === "THINKING" || st === "SPEAKING" || st === "PROCESSING") {
+      clearDrain();
+      void playback.stop();
+      listenMuteUntilRef.current = 0;
+      sockRef.current?.send({ type: "interrupt", sessionId: sessionIdRef.current });
+    }
     const payload: Record<string, unknown> = {
       type: "text",
       sessionId: sessionIdRef.current,
@@ -653,8 +681,10 @@ export function useVoiceTutor(opts: {
     if (ids.length) payload.image_ids = ids;
     if (!sockRef.current?.send(payload)) {
       setHint("Reconnecting — send that again in a moment.");
+      return false;
     }
-  }, []);
+    return true;
+  }, [clearDrain, playback]);
 
   useEffect(() => {
     if (state !== "LISTENING" && state !== "INTERRUPTED") return;

@@ -8,6 +8,7 @@ export type TranscriptWsMessage = {
   pending?: boolean;
   action?: string;
   images?: TranscriptLine["images"];
+  userImageUrl?: string;
 };
 
 /** Apply a voice WS transcript / turn_cancelled / related_images event to transcript state. */
@@ -48,7 +49,18 @@ export function applyTranscriptEvent(
   if (role === "user") {
     const pending = Boolean(msg.pending);
     const idx = lines.findIndex((l) => l.role === "user" && l.turnId === turnId);
-    const line: TranscriptLine = { role: "user", text, turnId, pending };
+    const prevUser = idx >= 0 ? lines[idx] : undefined;
+    const userImageUrl =
+      typeof msg.userImageUrl === "string" && msg.userImageUrl
+        ? msg.userImageUrl
+        : prevUser?.userImageUrl;
+    const line: TranscriptLine = {
+      role: "user",
+      text,
+      turnId,
+      pending,
+      ...(userImageUrl ? { userImageUrl } : {}),
+    };
     if (idx >= 0) {
       const next = lines.slice();
       next[idx] = line;

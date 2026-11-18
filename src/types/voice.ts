@@ -39,6 +39,8 @@ export type TranscriptLine = {
   pending?: boolean;
   /** Textbook figures for this assistant answer — kept with the line, never cleared by later turns. */
   images?: RelatedTextbookImage[];
+  /** Local object URL for a student upload shown in the chat bubble (Ask Learn Mastro voice). */
+  userImageUrl?: string;
 };
 
 export type VoiceScope = {
