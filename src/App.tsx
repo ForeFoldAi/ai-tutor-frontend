@@ -42,6 +42,22 @@ const ManageTutorsPage = lazy(() => import("@/modules/master-admin/pages/manage-
 const ManageStudentsPage = lazy(() => import("@/modules/master-admin/pages/manage-students-page"));
 const MasterAdminReportsPage = lazy(() => import("@/modules/master-admin/pages/reports-page"));
 const MasterAdminSettingsPage = lazy(() => import("@/modules/master-admin/pages/settings-page"));
+const MonitorLayout = lazy(() =>
+  import("@/modules/monitoring/monitor-layout").then((m) => ({ default: m.MonitorLayout })),
+);
+const MonitoringOverviewPage = lazy(() => import("@/modules/monitoring/pages/overview-page"));
+const MonitoringIssuesPage = lazy(() => import("@/modules/monitoring/pages/issues-page"));
+const MonitoringLogsPage = lazy(() => import("@/modules/monitoring/pages/logs-page"));
+const MonitoringIncidentsPage = lazy(() => import("@/modules/monitoring/pages/incidents-page"));
+const MonitoringServicesPage = lazy(() => import("@/modules/monitoring/pages/services-page"));
+const MonitoringInfrastructurePage = lazy(() => import("@/modules/monitoring/pages/infrastructure-page"));
+const MonitoringPerformancePage = lazy(() => import("@/modules/monitoring/pages/performance-page"));
+const MonitoringAiTutorPage = lazy(() => import("@/modules/monitoring/pages/ai-tutor-page"));
+const MonitoringUserExperiencePage = lazy(() => import("@/modules/monitoring/pages/user-experience-page"));
+const MonitoringAlertsPage = lazy(() => import("@/modules/monitoring/pages/alerts-page"));
+const MonitoringDeploymentsPage = lazy(() => import("@/modules/monitoring/pages/deployments-page"));
+const MonitoringReportsPage = lazy(() => import("@/modules/monitoring/pages/reports-page"));
+const MonitoringSettingsPage = lazy(() => import("@/modules/monitoring/pages/settings-page"));
 const OrganizationManageTutorsPage = lazy(() => import("@/modules/organization/pages/manage-tutors-page"));
 const OrganizationManageStudentsPage = lazy(() => import("@/modules/organization/pages/manage-students-page"));
 const OrganizationManageClassesPage = lazy(() => import("@/modules/organization/pages/manage-classes-page"));
@@ -100,6 +116,16 @@ function RoleRoute({
   const allowed = roles.map((r) => normalizeRole(r));
   if (!user || !allowed.includes(userRole)) return <Redirect to={getDashboardPath(user?.role)} />;
   return <AppLayout>{children}</AppLayout>;
+}
+
+/** Master Admin monitoring console — dedicated layout (new tab), not AppLayout. */
+function MonitorRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, user } = useAuthStore();
+  if (!isAuthenticated) return <Redirect to="/login" />;
+  if (normalizeRole(user?.role) !== normalizeRole(UserRole.MASTER_ADMIN)) {
+    return <Redirect to={getDashboardPath(user?.role)} />;
+  }
+  return <MonitorLayout>{children}</MonitorLayout>;
 }
 
 /** School- or tutor-tagged students only — hides Session/Assignments for public signup. */
@@ -394,6 +420,82 @@ function Router() {
         <RoleRoute roles={[UserRole.MASTER_ADMIN]}>
           <MasterAdminSettingsPage />
         </RoleRoute>
+      </Route>
+
+      <Route path="/master-admin/monitor">
+        <MonitorRoute>
+          <Redirect to="/master-admin/monitor/overview" />
+        </MonitorRoute>
+      </Route>
+      <Route path="/master-admin/monitor/">
+        <MonitorRoute>
+          <Redirect to="/master-admin/monitor/overview" />
+        </MonitorRoute>
+      </Route>
+      <Route path="/master-admin/monitor/overview">
+        <MonitorRoute>
+          <MonitoringOverviewPage />
+        </MonitorRoute>
+      </Route>
+      <Route path="/master-admin/monitor/issues">
+        <MonitorRoute>
+          <MonitoringIssuesPage />
+        </MonitorRoute>
+      </Route>
+      <Route path="/master-admin/monitor/logs">
+        <MonitorRoute>
+          <MonitoringLogsPage />
+        </MonitorRoute>
+      </Route>
+      <Route path="/master-admin/monitor/incidents">
+        <MonitorRoute>
+          <MonitoringIncidentsPage />
+        </MonitorRoute>
+      </Route>
+      <Route path="/master-admin/monitor/services">
+        <MonitorRoute>
+          <MonitoringServicesPage />
+        </MonitorRoute>
+      </Route>
+      <Route path="/master-admin/monitor/infrastructure">
+        <MonitorRoute>
+          <MonitoringInfrastructurePage />
+        </MonitorRoute>
+      </Route>
+      <Route path="/master-admin/monitor/performance">
+        <MonitorRoute>
+          <MonitoringPerformancePage />
+        </MonitorRoute>
+      </Route>
+      <Route path="/master-admin/monitor/ai-tutor">
+        <MonitorRoute>
+          <MonitoringAiTutorPage />
+        </MonitorRoute>
+      </Route>
+      <Route path="/master-admin/monitor/user-experience">
+        <MonitorRoute>
+          <MonitoringUserExperiencePage />
+        </MonitorRoute>
+      </Route>
+      <Route path="/master-admin/monitor/alerts">
+        <MonitorRoute>
+          <MonitoringAlertsPage />
+        </MonitorRoute>
+      </Route>
+      <Route path="/master-admin/monitor/deployments">
+        <MonitorRoute>
+          <MonitoringDeploymentsPage />
+        </MonitorRoute>
+      </Route>
+      <Route path="/master-admin/monitor/reports">
+        <MonitorRoute>
+          <MonitoringReportsPage />
+        </MonitorRoute>
+      </Route>
+      <Route path="/master-admin/monitor/settings">
+        <MonitorRoute>
+          <MonitoringSettingsPage />
+        </MonitorRoute>
       </Route>
 
       <Route path="/tutor/dashboard">

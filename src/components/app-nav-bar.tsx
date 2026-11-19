@@ -34,29 +34,45 @@ export function AppNavBar() {
     >
       <ul className="flex h-16 w-full items-stretch">
         {items.map((item) => {
-          const active = isAppNavActive(location, item.url);
+          const active = !item.openInNewTab && isAppNavActive(location, item.url);
+          const className = cn(
+            "flex h-full w-full flex-col items-center justify-center gap-0.5 px-0.5 text-xs font-medium leading-tight transition-colors",
+            active ? "text-primary" : "text-muted-foreground hover:text-foreground",
+          );
+          const inner = (
+            <>
+              <span
+                className={cn(
+                  "flex h-8 w-14 shrink-0 items-center justify-center rounded-full transition-colors",
+                  active && "bg-primary/10",
+                )}
+              >
+                <NavIcon item={item} />
+              </span>
+              <span className="w-full truncate text-center">{item.title}</span>
+            </>
+          );
           return (
             <li key={item.url} className="min-w-0 flex-1">
-              <Link
-                href={item.url}
-                className={cn(
-                  "flex h-full w-full flex-col items-center justify-center gap-0.5 px-0.5 text-xs font-medium leading-tight transition-colors",
-                  active
-                    ? "text-primary"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-                data-testid={`nav-bar-${item.title.toLowerCase().replace(/\s+/g, "-")}`}
-              >
-                <span
-                  className={cn(
-                    "flex h-8 w-14 shrink-0 items-center justify-center rounded-full transition-colors",
-                    active && "bg-primary/10"
-                  )}
+              {item.openInNewTab ? (
+                <a
+                  href={item.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={className}
+                  data-testid={`nav-bar-${item.title.toLowerCase().replace(/\s+/g, "-")}`}
                 >
-                  <NavIcon item={item} />
-                </span>
-                <span className="w-full truncate text-center">{item.title}</span>
-              </Link>
+                  {inner}
+                </a>
+              ) : (
+                <Link
+                  href={item.url}
+                  className={className}
+                  data-testid={`nav-bar-${item.title.toLowerCase().replace(/\s+/g, "-")}`}
+                >
+                  {inner}
+                </Link>
+              )}
             </li>
           );
         })}
