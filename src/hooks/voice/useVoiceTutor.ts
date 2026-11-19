@@ -1,0 +1,719 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { refreshAccessToken } from "@/api";
+import { MSG } from "@/lib/student-messages";
+import { stripGreetSearchParam } from "@/lib/tutor-greeting";
+import { connectVoiceEvents, type VoiceSock } from "@/services/voice/voiceEvents.service";
+import { applyTranscriptEvent } from "@/lib/voice-transcript";
+import type {
+  TranscriptLine,
+  VoiceConversationTurn,
+  VoiceScope,
+  VoiceState,
+} from "@/types/voice";
+import { requestMicrophone, stopStream } from "./useMicrophone";
+import { useAudioPlayback } from "./useAudioPlayback";
+import { canAutoBargeIn } from "@/lib/voice-barge-eligibility";
+import { packPcm, useVoiceActivity } from "./useVoiceActivity";
+
+function floatToInt16(input: Float32Array): Int16Array {
+  const out = new Int16Array(input.length);
+  for (let i = 0; i < input.length; i++) {
+    const s = Math.max(-1, Math.min(1, input[i]));
+    out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+  return out;
+}
+
+function friendlyError(code: string): string {
+  if (code === "denied") return MSG.micPermission;
+  if (code === "missing") return MSG.micNotFound;
+  if (code === "inuse") return MSG.micInUse;
+  if (code === "unsupported") return MSG.speechUnsupported;
+  return MSG.voiceError;
+}
+
+const bargeInEnabled = import.meta.env.VITE_VOICE_BARGE_IN !== "false";
+/** Voiced speech needed to cut the tutor off — a cough, tap or echo blip is shorter. */
+const BARGE_MIN_VOICED_MS = 260;
+/** Barge-in needs the mic this much louder than the tutor's own leak into it. */
+const BARGE_ECHO_RATIO = 1.6;
+/**
+ * Loudness-only barge-in while Silero is still loading or failed to load: no speech
+ * classifier, so demand a clearly louder mic than the tutor leak, held for 2 frames (~0.5 s).
+ */
+const FALLBACK_ECHO_RATIO = 2.2;
+const FALLBACK_MIN_RMS = 0.03;
+const FALLBACK_LOUD_FRAMES = 2;
+/** ~1.3 s of 256 ms frames: covers the confirmation delay so the first words reach STT. */
+const HELD_FRAMES = 5;
+/** Room/AEC tail after the last tutor sample leaves the speaker. */
+const ECHO_TAIL_MS = 400;
+
+export function useVoiceTutor(opts: {
+  token: string;
+  scope: VoiceScope | null;
+  /** Ask AI Tutor — routes Nest to student_assistant. */
+  agentMode?: string;
+  conversationHistory?: VoiceConversationTurn[];
+  greet?: boolean;
+}) {
+  const [state, setState] = useState<VoiceState>("IDLE");
+  const [error, setError] = useState("");
+  const [hint, setHint] = useState("");
+  const [transcript, setTranscript] = useState<TranscriptLine[]>([]);
+  const [muted, setMuted] = useState(false);
+  const [level, setLevel] = useState(0);
+  const [sessionId, setSessionId] = useState("");
+  const [audioReady, setAudioReady] = useState(false);
+  const sockRef = useRef<VoiceSock | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const captureRef = useRef<AudioContext | null>(null);
+  const sampleRateRef = useRef(16000);
+  const heldPcmRef = useRef<ArrayBuffer[]>([]);
+  const mutedRef = useRef(false);
+  const stateRef = useRef<VoiceState>("IDLE");
+  const sessionIdRef = useRef("");
+  const endedRef = useRef(false);
+  const userEndedRef = useRef(false);
+  const reconnectAttemptRef = useRef(0);
+  const resumeOnOpenRef = useRef(false);
+  const reconnectTimerRef = useRef(0);
+  const connectTimerRef = useRef(0);
+  const shouldGreetOnConnectRef = useRef(Boolean(opts.greet));
+  const tokenRef = useRef(opts.token);
+  const listenMuteUntilRef = useRef(0);
+  const drainTimerRef = useRef(0);
+  const echoFloorRef = useRef(0);
+  const loudFramesRef = useRef(0);
+  const agentModeRef = useRef(opts.agentMode);
+  const historyRef = useRef(opts.conversationHistory);
+  const scopeRef = useRef(opts.scope);
+
+  const playback = useAudioPlayback();
+  const vad = useVoiceActivity(setLevel);
+
+  agentModeRef.current = opts.agentMode;
+  historyRef.current = opts.conversationHistory;
+  scopeRef.current = opts.scope;
+
+  const canStart = Boolean(opts.token && (opts.scope || opts.agentMode));
+
+  const markAudioReady = useCallback(() => {
+    setAudioReady(true);
+    if (
+      !endedRef.current &&
+      (stateRef.current === "LISTENING" || stateRef.current === "INTERRUPTED")
+    ) {
+      setHint("Speak now — take your time, I reply once you stop.");
+    }
+  }, []);
+
+  const lastAudioAtRef = useRef(0);
+  const playPcm = useCallback(
+    (buf: ArrayBuffer) => {
+      lastAudioAtRef.current = Date.now();
+      markAudioReady();
+      void playback.play(buf).catch(() => undefined);
+    },
+    [markAudioReady, playback],
+  );
+
+  stateRef.current = state;
+  mutedRef.current = muted;
+  tokenRef.current = opts.token;
+
+  const pushFreshToken = useCallback(async (): Promise<string | null> => {
+    const fresh = await refreshAccessToken();
+    if (fresh) {
+      tokenRef.current = fresh;
+      const sid = sessionIdRef.current;
+      if (sid && sockRef.current) {
+        sockRef.current.send({ type: "token_update", sessionId: sid, token: fresh });
+      }
+    }
+    return fresh;
+  }, []);
+
+  // The app refreshes the access token shortly before it expires; hand each new one to
+  // the live session so Nest's RAG calls never go out with the stale bearer (401 mid-call).
+  useEffect(() => {
+    const sid = sessionIdRef.current;
+    if (!opts.token || !sid || !sockRef.current) return;
+    sockRef.current.send({ type: "token_update", sessionId: sid, token: opts.token });
+  }, [opts.token]);
+
+  const clearDrain = useCallback(() => {
+    if (drainTimerRef.current) window.clearTimeout(drainTimerRef.current);
+    drainTimerRef.current = 0;
+  }, []);
+
+  const clearTimers = useCallback(() => {
+    if (connectTimerRef.current) window.clearTimeout(connectTimerRef.current);
+    if (reconnectTimerRef.current) window.clearTimeout(reconnectTimerRef.current);
+    connectTimerRef.current = 0;
+    reconnectTimerRef.current = 0;
+    clearDrain();
+  }, [clearDrain]);
+
+  const toListening = useCallback(() => {
+    setState("LISTENING");
+    stateRef.current = "LISTENING";
+    setHint("Speak now — take your time, I reply once you stop.");
+  }, []);
+
+  const stopCapture = useCallback(() => {
+    captureRef.current?.close().catch(() => undefined);
+    captureRef.current = null;
+    stopStream(streamRef.current);
+    streamRef.current = null;
+  }, []);
+
+  const teardown = useCallback(() => {
+    clearTimers();
+    endedRef.current = true;
+    sockRef.current?.close();
+    sockRef.current = null;
+    stopCapture();
+    void playback.stop();
+    setAudioReady(false);
+  }, [clearTimers, playback, stopCapture]);
+
+  const failConnect = useCallback(
+    (message: string) => {
+      setError(message);
+      setState("ERROR");
+      setHint("");
+      teardown();
+    },
+    [teardown],
+  );
+
+  const startCapture = useCallback(
+    async (stream: MediaStream) => {
+      const ac = new AudioContext({ sampleRate: 16000 });
+      captureRef.current = ac;
+      sampleRateRef.current = ac.sampleRate;
+      if (ac.state === "suspended") await ac.resume();
+      // A suspended capture context stops onaudioprocess entirely — the mic goes deaf.
+      ac.addEventListener("statechange", () => {
+        if (ac.state === "suspended" && captureRef.current === ac && !endedRef.current) {
+          void ac.resume().catch(() => undefined);
+        }
+      });
+      void vad.warm();
+      const src = ac.createMediaStreamSource(stream);
+      const proc = ac.createScriptProcessor(4096, 1, 1);
+      const mute = ac.createGain();
+      mute.gain.value = 0;
+      const bargeIn = () => {
+        clearDrain();
+        playback.stop();
+        sockRef.current?.send({ type: "interrupt", sessionId: sessionIdRef.current });
+        for (const held of heldPcmRef.current) sockRef.current?.sendBinary(held);
+        heldPcmRef.current = [];
+        listenMuteUntilRef.current = 0;
+        echoFloorRef.current = 0;
+        loudFramesRef.current = 0;
+        setState("INTERRUPTED");
+        stateRef.current = "INTERRUPTED";
+      };
+      proc.onaudioprocess = (ev) => {
+        if (mutedRef.current || endedRef.current) return;
+        const f32 = ev.inputBuffer.getChannelData(0);
+        const i16 = floatToInt16(f32);
+        let sum = 0;
+        for (let i = 0; i < f32.length; i++) sum += f32[i] * f32[i];
+        const rms = Math.sqrt(sum / Math.max(1, f32.length));
+        // Gate on what the speaker is actually playing, not on server state:
+        // the reply's last chunks are still audible after ai_stopped_speaking,
+        // and uplinking them turned the tutor's own voice into student turns.
+        // Allow CONNECTING so frames are ready the instant session_ready attaches sessionId.
+        const tutorAudible = stateRef.current === "SPEAKING" || playback.remainingMs() > 0;
+        const blockUplink = tutorAudible || Date.now() < listenMuteUntilRef.current;
+        const pkt = packPcm(i16, sampleRateRef.current, false);
+        if (!blockUplink) {
+          sockRef.current?.sendBinary(pkt);
+          if (heldPcmRef.current.length) heldPcmRef.current = [];
+        } else {
+          // The words that triggered a barge-in, including the confirmation delay.
+          heldPcmRef.current.push(pkt);
+          if (heldPcmRef.current.length > HELD_FRAMES) heldPcmRef.current.shift();
+        }
+        // Allow barge-in for the whole SPEAKING turn, including inter-chunk TTS
+        // silence when the playback queue is briefly empty. Keep uplink muted
+        // (blockUplink) so tutor audio never becomes a student turn.
+        const canBarge = canAutoBargeIn({
+          bargeInEnabled,
+          state: stateRef.current,
+          remainingMs: playback.remainingMs(),
+        });
+        const tutorPlaying = playback.isPlaying();
+        const vadReady = vad.available();
+        if (!vadReady && canBarge) {
+          const floor = echoFloorRef.current;
+          const loud = tutorPlaying
+            ? floor > 0 && rms > Math.max(FALLBACK_MIN_RMS, floor * FALLBACK_ECHO_RATIO)
+            : rms > FALLBACK_MIN_RMS;
+          if (!loud) {
+            loudFramesRef.current = 0;
+            if (tutorPlaying) {
+              echoFloorRef.current = floor ? floor * 0.8 + rms * 0.2 : rms;
+            }
+          } else if (++loudFramesRef.current >= FALLBACK_LOUD_FRAMES) {
+            bargeIn();
+          }
+        }
+        void vad.push(i16).then(() => {
+          if (!vadReady || !canBarge) return;
+          const voiced = vad.voicedMs();
+          if (!voiced) {
+            // Tutor leak level with nobody talking — the bar a real barge-in has to clear.
+            if (tutorPlaying) {
+              echoFloorRef.current = echoFloorRef.current
+                ? echoFloorRef.current * 0.8 + rms * 0.2
+                : rms;
+            }
+            return;
+          }
+          if (voiced < BARGE_MIN_VOICED_MS) return;
+          // Echo floor only applies while the tutor is audible; in a TTS gap
+          // there is no speaker leak to subtract.
+          if (tutorPlaying && echoFloorRef.current && rms < echoFloorRef.current * BARGE_ECHO_RATIO) {
+            return;
+          }
+          bargeIn();
+        });
+      };
+      src.connect(proc);
+      proc.connect(mute);
+      mute.connect(ac.destination);
+    },
+    [clearDrain, playback, vad],
+  );
+
+  const handleEvent = useCallback(
+    async (msg: Record<string, unknown>) => {
+      const type = String(msg.type || "");
+      if (type === "session_started") {
+        setHint("Starting voice session…");
+      }
+      if (type === "session_ready") {
+        clearTimers();
+        reconnectAttemptRef.current = 0;
+        const sid = String(msg.sessionId || "");
+        sessionIdRef.current = sid;
+        setSessionId(sid);
+        setState("LISTENING");
+        stateRef.current = "LISTENING";
+        // Push a fresh bearer immediately so Nest's RAG token isn't already aged.
+        void pushFreshToken();
+        try {
+          const stream = streamRef.current;
+          if (!stream || stream.getAudioTracks().every((t) => t.readyState === "ended")) {
+            failConnect(MSG.micNotFound);
+            return;
+          }
+          // Prefer capture started in start() (user-gesture). Resume / recreate if needed.
+          if (!captureRef.current) await startCapture(stream);
+          else if (captureRef.current.state === "suspended") {
+            await captureRef.current.resume();
+          }
+          await playback.unlock();
+          markAudioReady();
+          setHint("Speak now — take your time, I reply once you stop.");
+        } catch (err) {
+          const code = (err as { code?: string }).code || "error";
+          failConnect(code === "denied" || code === "missing" || code === "inuse" || code === "unsupported"
+            ? friendlyError(code)
+            : "Could not start the microphone. Restart and try again.");
+        }
+        return;
+      }
+      if (type === "student_started_speaking") {
+        setState("PROCESSING");
+        stateRef.current = "PROCESSING";
+        setHint("Hearing you…");
+        return;
+      }
+      if (type === "related_images") {
+        setTranscript((t) => applyTranscriptEvent(t, msg));
+        return;
+      }
+      if (type === "student_stopped_speaking") {
+        // Stay in PROCESSING — Composing/THINKING only when LLM turn actually starts
+        // (ai_started_processing). VAD stop alone is not a question yet.
+        setState("PROCESSING");
+        setHint("Processing your speech…");
+        return;
+      }
+      if (type === "ai_stopped_processing") {
+        // Noise / too-short / echo discard — no LLM reply is coming.
+        if (
+          stateRef.current === "THINKING" ||
+          stateRef.current === "PROCESSING"
+        ) {
+          setState("LISTENING");
+          stateRef.current = "LISTENING";
+          setHint("Speak now — take your time, I reply once you stop.");
+        }
+        return;
+      }
+      if (type === "turn_cancelled") {
+        setTranscript((t) => applyTranscriptEvent(t, msg));
+        // A cancelled turn may have left us in THINKING/SPEAKING with mic uplink blocked.
+        if (
+          stateRef.current === "THINKING" ||
+          stateRef.current === "PROCESSING" ||
+          stateRef.current === "SPEAKING"
+        ) {
+          clearDrain();
+          void playback.stop();
+          toListening();
+        }
+        return;
+      }
+      if (type === "transcript") {
+        setTranscript((t) => applyTranscriptEvent(t, msg));
+        return;
+      }
+      if (type === "ai_started_processing") {
+        setState("THINKING");
+        setHint("Thinking…");
+      }
+      if (type === "ai_started_speaking") {
+        clearDrain();
+        playback.stop();
+        echoFloorRef.current = 0;
+        loudFramesRef.current = 0;
+        setState("SPEAKING");
+        stateRef.current = "SPEAKING";
+        setHint("Tutor is speaking — tap Interrupt to jump in.");
+        void playback.unlock();
+        markAudioReady();
+      }
+      if (type === "ai_stopped_speaking") {
+        // Also sent when a reply is dropped before any audio (student kept talking):
+        // muting then would cut the rest of their question.
+        if (stateRef.current === "PROCESSING") return;
+        if (stateRef.current !== "SPEAKING") {
+          toListening();
+          return;
+        }
+        // The server is done sending, not the speaker done playing: stay in
+        // SPEAKING (mic gated, barge-in armed) until the queue really drains.
+        clearDrain();
+        const settle = () => {
+          drainTimerRef.current = 0;
+          if (stateRef.current !== "SPEAKING") return;
+          const left = playback.remainingMs();
+          if (left > 0) {
+            drainTimerRef.current = window.setTimeout(settle, left + 30);
+            return;
+          }
+          listenMuteUntilRef.current = Date.now() + ECHO_TAIL_MS;
+          toListening();
+        };
+        settle();
+      }
+      if (type === "ai_interrupted") {
+        // No mic mute here: the student is mid-sentence (that is why we
+        // interrupted), and muting chopped the middle out of their question.
+        clearDrain();
+        void playback.stop();
+        listenMuteUntilRef.current = 0;
+        setState("INTERRUPTED");
+        stateRef.current = "INTERRUPTED";
+        setHint("Speak now — take your time, I reply once you stop.");
+      }
+      if (type === "voice_error") {
+        // Recoverable: the turn failed but the session is fine — say so and keep listening.
+        if (msg.recoverable) {
+          setHint(String(msg.message || MSG.voiceError));
+          return;
+        }
+        setError(String(msg.message || MSG.voiceError));
+        setState("ERROR");
+      }
+      if (type === "token_expired") {
+        // Nest waits briefly for token_update and retries RAG — refresh quietly.
+        const fresh = await pushFreshToken();
+        if (!fresh) {
+          setError(String(msg.message || MSG.voiceError));
+          setState("ERROR");
+        } else {
+          setError("");
+          if (stateRef.current === "ERROR") setState("LISTENING");
+        }
+      }
+      if (type === "session_ended") setState("ENDED");
+    },
+    [clearDrain, clearTimers, failConnect, markAudioReady, playback, pushFreshToken, startCapture, toListening],
+  );
+
+  const openSocketRef = useRef<() => void>(() => undefined);
+
+  openSocketRef.current = () => {
+    const token = tokenRef.current;
+    if (!token || endedRef.current) return;
+    if (!scopeRef.current && !agentModeRef.current) return;
+    sockRef.current?.close();
+    sockRef.current = connectVoiceEvents(
+      token,
+      (msg) => void handleEvent(msg),
+      () => {
+        if (userEndedRef.current || endedRef.current) return;
+        const sid = sessionIdRef.current;
+        if (!sid) {
+          failConnect(MSG.voiceConnection);
+          return;
+        }
+        if (reconnectAttemptRef.current >= 5) {
+          failConnect(MSG.voiceConnection);
+          return;
+        }
+        reconnectAttemptRef.current += 1;
+        setState("CONNECTING");
+        setHint("Connection lost — reconnecting…");
+        reconnectTimerRef.current = window.setTimeout(() => {
+          resumeOnOpenRef.current = true;
+          openSocketRef.current();
+        }, Math.min(1000 * reconnectAttemptRef.current, 5000));
+      },
+      () => {
+        if (resumeOnOpenRef.current && sessionIdRef.current) {
+          sockRef.current?.send({
+            type: "session_resume",
+            token: tokenRef.current,
+            sessionId: sessionIdRef.current,
+          });
+          resumeOnOpenRef.current = false;
+          return;
+        }
+        const sendGreet = shouldGreetOnConnectRef.current;
+        if (sendGreet) {
+          shouldGreetOnConnectRef.current = false;
+          stripGreetSearchParam();
+        }
+        const scope = scopeRef.current;
+        const payload: Record<string, unknown> = {
+          type: "session_start",
+          token: tokenRef.current,
+          greet: sendGreet ? "1" : "0",
+          board: scope?.board || "",
+          classLevel: scope?.classLevel || "",
+          subject: scope?.subject || "",
+          chapterIds: scope?.chapterIds || [],
+          chapterNames: scope?.chapterNames || [],
+        };
+        if (agentModeRef.current) {
+          payload.agentMode = agentModeRef.current;
+          const hist = historyRef.current;
+          if (hist?.length) payload.conversationHistory = hist.slice(-8);
+        }
+        sockRef.current?.send(payload);
+      },
+      () => {
+        if (endedRef.current || userEndedRef.current) return;
+        if (sessionIdRef.current && reconnectAttemptRef.current < 5) return;
+        failConnect(MSG.voiceConnection);
+      },
+      playPcm,
+    );
+  };
+
+  const start = useCallback(async () => {
+    if (!canStart) return;
+    sockRef.current?.close();
+    sockRef.current = null;
+    setError("");
+    setHint("");
+    setTranscript([]);
+    setAudioReady(false);
+    endedRef.current = false;
+    userEndedRef.current = false;
+    reconnectAttemptRef.current = 0;
+    resumeOnOpenRef.current = false;
+    sessionIdRef.current = "";
+    setSessionId("");
+    clearTimers();
+    stopCapture();
+    try {
+      // Unlock playback + open mic + start capture inside the click gesture so
+      // AudioContext is not stuck suspended (common inside modal dialogs).
+      await playback.unlock();
+      setHint("Allow microphone access…");
+      const stream = await requestMicrophone();
+      streamRef.current = stream;
+      await startCapture(stream);
+      markAudioReady();
+    } catch (err) {
+      const code = (err as { code?: string }).code || "error";
+      setError(friendlyError(code));
+      setState("ERROR");
+      stopCapture();
+      return;
+    }
+    setState("CONNECTING");
+    setHint("Connecting to voice server…");
+    connectTimerRef.current = window.setTimeout(() => {
+      if (endedRef.current || sessionIdRef.current) return;
+      failConnect("Voice server didn't respond.");
+    }, 20000);
+    openSocketRef.current();
+  }, [canStart, clearTimers, failConnect, markAudioReady, playback, startCapture, stopCapture]);
+
+  // Keep Nest's RAG bearer fresh. Do NOT depend on `state` — every turn
+  // (LISTENING→THINKING→SPEAKING) used to reset this timer so it never fired
+  // during an active call, and the student heard "session expired" at ~15m.
+  // Access JWT TTL is 15m; refresh at half TTL.
+  useEffect(() => {
+    if (!sessionId) return;
+    const id = window.setInterval(() => {
+      if (endedRef.current || stateRef.current === "ENDED" || stateRef.current === "ERROR") return;
+      void pushFreshToken();
+    }, 7 * 60 * 1000);
+    return () => window.clearInterval(id);
+  }, [pushFreshToken, sessionId]);
+
+  // Watchdog: a lost server event must never leave the student stuck with no reply and a deaf mic.
+  useEffect(() => {
+    if (!sessionId) return;
+    const enteredAt = Date.now();
+    const id = window.setInterval(() => {
+      if (endedRef.current) return;
+      const st = stateRef.current;
+      const since = Date.now() - enteredAt;
+      // 45 s is past the server's own worst case (RAG timeout + one Edge retry), which answers with a spoken fallback.
+      if ((st === "PROCESSING" || st === "THINKING") && since > 45_000) {
+        sockRef.current?.send({ type: "interrupt", sessionId: sessionIdRef.current });
+        setState("LISTENING");
+        setHint("That took too long — please ask again.");
+      } else if (
+        st === "SPEAKING" &&
+        !playback.isPlaying() &&
+        Date.now() - Math.max(lastAudioAtRef.current, enteredAt) > 10_000
+      ) {
+        setState("LISTENING");
+        setHint("Speak now — take your time, I reply once you stop.");
+      } else if (st === "CONNECTING" && sessionIdRef.current && since > 20_000) {
+        // Resume never answered (server restarted / session gone): start a fresh session.
+        sessionIdRef.current = "";
+        resumeOnOpenRef.current = false;
+        reconnectAttemptRef.current = 0;
+        openSocketRef.current();
+      } else if (st === "CONNECTING" && since > 45_000) {
+        failConnect(MSG.voiceConnection);
+      }
+    }, 2000);
+    return () => window.clearInterval(id);
+  }, [failConnect, playback, sessionId, state]);
+
+  // Any gesture or return to the tab is a chance to un-suspend audio that the
+  // browser paused on its own (output device change, background tab).
+  useEffect(() => {
+    if (!sessionId) return;
+    const wake = () => {
+      if (endedRef.current) return;
+      playback.resume();
+      const cap = captureRef.current;
+      if (cap && cap.state !== "running") void cap.resume().catch(() => undefined);
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") wake();
+    };
+    window.addEventListener("pointerdown", wake, { passive: true });
+    window.addEventListener("keydown", wake);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.removeEventListener("pointerdown", wake);
+      window.removeEventListener("keydown", wake);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [playback, sessionId]);
+
+  const interrupt = useCallback(() => {
+    clearDrain();
+    void playback.stop();
+    listenMuteUntilRef.current = 0;
+    sockRef.current?.send({ type: "interrupt", sessionId });
+    toListening();
+  }, [clearDrain, playback, sessionId, toListening]);
+
+  const end = useCallback(() => {
+    // No-op if never started — avoids Ask AI mount cleanup leaving state=ENDED.
+    if (
+      !sessionIdRef.current &&
+      !sockRef.current &&
+      stateRef.current !== "CONNECTING" &&
+      stateRef.current !== "LISTENING" &&
+      stateRef.current !== "SPEAKING" &&
+      stateRef.current !== "THINKING" &&
+      stateRef.current !== "PROCESSING" &&
+      stateRef.current !== "INTERRUPTED"
+    ) {
+      return;
+    }
+    userEndedRef.current = true;
+    const sid = sessionIdRef.current || sessionId;
+    if (sid) sockRef.current?.send({ type: "session_end", sessionId: sid });
+    teardown();
+    setState("ENDED");
+    setHint("");
+  }, [sessionId, teardown]);
+
+  const sendText = useCallback((text: string, imageIds?: string[]): boolean => {
+    const trimmed = text.trim();
+    const ids = (imageIds || []).filter(Boolean);
+    if ((!trimmed && !ids.length) || !sessionIdRef.current || endedRef.current) return false;
+    // Replace an in-flight answer instead of queuing behind it.
+    const st = stateRef.current;
+    if (st === "THINKING" || st === "SPEAKING" || st === "PROCESSING") {
+      clearDrain();
+      void playback.stop();
+      listenMuteUntilRef.current = 0;
+      sockRef.current?.send({ type: "interrupt", sessionId: sessionIdRef.current });
+    }
+    const payload: Record<string, unknown> = {
+      type: "text",
+      sessionId: sessionIdRef.current,
+      text: trimmed || "Please help me with the attached image.",
+    };
+    if (ids.length) payload.image_ids = ids;
+    if (!sockRef.current?.send(payload)) {
+      setHint("Reconnecting — send that again in a moment.");
+      return false;
+    }
+    return true;
+  }, [clearDrain, playback]);
+
+  useEffect(() => {
+    if (state !== "LISTENING" && state !== "INTERRUPTED") return;
+    if (muted) {
+      setHint("Mic muted — unmute to talk.");
+      return;
+    }
+    if (!audioReady) return;
+    if (level >= 0.02) setHint("Mic is picking you up — I reply once you stop.");
+  }, [audioReady, level, muted, state]);
+
+  const teardownRef = useRef(teardown);
+  teardownRef.current = teardown;
+
+  useEffect(() => () => teardownRef.current(), []);
+
+  return {
+    state,
+    error,
+    hint,
+    transcript,
+    muted,
+    setMuted,
+    level,
+    audioReady,
+    sessionId,
+    start,
+    interrupt,
+    end,
+    sendText,
+  };
+}

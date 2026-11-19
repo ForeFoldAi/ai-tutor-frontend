@@ -17,6 +17,7 @@ import {
   CheckCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 interface Subject {
   id: number;
@@ -37,8 +38,8 @@ const subjects: Subject[] = [
     name: "Mathematics",
     description: "Algebra, Geometry, Calculus and more",
     icon: Calculator,
-    color: "text-blue-600",
-    bgColor: "bg-blue-500",
+    color: "text-subject-math",
+    bgColor: "bg-subject-math",
     progress: 72,
     chapters: 12,
     completedChapters: 8,
@@ -49,8 +50,8 @@ const subjects: Subject[] = [
     name: "Science",
     description: "Physics, Chemistry, Biology",
     icon: FlaskConical,
-    color: "text-green-600",
-    bgColor: "bg-green-500",
+    color: "text-subject-science",
+    bgColor: "bg-subject-science",
     progress: 58,
     chapters: 15,
     completedChapters: 9,
@@ -61,8 +62,8 @@ const subjects: Subject[] = [
     name: "English",
     description: "Grammar, Literature, Writing",
     icon: Globe,
-    color: "text-purple-600",
-    bgColor: "bg-purple-500",
+    color: "text-subject-english",
+    bgColor: "bg-subject-english",
     progress: 85,
     chapters: 10,
     completedChapters: 8,
@@ -73,8 +74,8 @@ const subjects: Subject[] = [
     name: "Art & Design",
     description: "Drawing, Painting, Digital Art",
     icon: Palette,
-    color: "text-pink-600",
-    bgColor: "bg-pink-500",
+    color: "text-subject-social",
+    bgColor: "bg-subject-social",
     progress: 45,
     chapters: 8,
     completedChapters: 4,
@@ -85,8 +86,8 @@ const subjects: Subject[] = [
     name: "Computer Science",
     description: "Programming, Algorithms, Data Structures",
     icon: Code,
-    color: "text-orange-600",
-    bgColor: "bg-orange-500",
+    color: "text-subject-cs",
+    bgColor: "bg-subject-cs",
     progress: 91,
     chapters: 14,
     completedChapters: 13,
@@ -97,8 +98,8 @@ const subjects: Subject[] = [
     name: "History",
     description: "World History, Civilizations, Modern Era",
     icon: BookOpen,
-    color: "text-amber-600",
-    bgColor: "bg-amber-500",
+    color: "text-subject-social",
+    bgColor: "bg-subject-social",
     progress: 35,
     chapters: 16,
     completedChapters: 5,
@@ -121,15 +122,18 @@ export default function SubjectsPage() {
           <h1 className="text-xl sm:text-2xl font-semibold">Subjects</h1>
           <p className="text-sm sm:text-base text-muted-foreground">Explore and learn from your enrolled subjects.</p>
         </div>
-        <div className="relative w-full sm:w-64">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search subjects..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9"
-            data-testid="input-search-subjects"
-          />
+        <div className="flex shrink-0 items-center gap-2">
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search subjects..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9"
+              data-testid="input-search-subjects"
+            />
+          </div>
+          <ThemeToggle className="hidden lg:flex" />
         </div>
       </div>
 

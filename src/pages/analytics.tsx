@@ -13,6 +13,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 const overallStats = [
   { label: "Total Study Time", value: "124h", change: "+12%", trend: "up", icon: Clock },
@@ -51,9 +52,12 @@ export default function AnalyticsPage() {
 
   return (
     <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
-      <div>
-        <h1 className="text-xl sm:text-2xl font-semibold">Analytics & Reports</h1>
-        <p className="text-sm sm:text-base text-muted-foreground">Track your learning progress and performance.</p>
+      <div className="flex min-w-0 items-start justify-between gap-3 sm:items-center sm:gap-4">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-semibold">Analytics & Reports</h1>
+          <p className="text-sm sm:text-base text-muted-foreground">Track your learning progress and performance.</p>
+        </div>
+        <ThemeToggle className="hidden lg:flex" />
       </div>
 
       <div className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-4">

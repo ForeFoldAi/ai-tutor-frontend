@@ -1,15 +1,13 @@
-import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { Suspense } from "react";
+import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { AppNavBar } from "@/components/app-nav-bar";
+import { AppMobileHeader } from "@/components/app-mobile-header";
+import { AskAiTutorDialog } from "@/components/ask-ai-tutor-dialog";
+import { FloatingSettingsButton } from "@/components/floating-settings-button";
 import { useAuthStore } from "@/lib/auth-store";
-import { Badge } from "@/components/ui/badge";
-
-const roleLabels: Record<string, string> = {
-  student: "Student",
-  tutor: "Tutor",
-  school_admin: "School Admin",
-  master_admin: "Master Admin",
-};
+import { UserRole } from "@/types/schema";
+import { useLocation } from "wouter";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -17,35 +15,25 @@ interface AppLayoutProps {
 
 export function AppLayout({ children }: AppLayoutProps) {
   const { user } = useAuthStore();
-
-  const style = {
-    "--sidebar-width": "16rem",
-    "--sidebar-width-icon": "3rem",
-  };
+  const [location] = useLocation();
+  const isStudent = !user || user.role === UserRole.STUDENT;
+  const showFloatingSettings =
+    isStudent && (location === "/dashboard" || location === "/settings");
 
   return (
-    <SidebarProvider style={style as React.CSSProperties}>
-      <div className="flex h-screen w-full">
+    <SidebarProvider>
+      <div className="flex h-dvh max-h-dvh w-full flex-col overflow-hidden lg:flex-row">
         <AppSidebar />
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <header className="flex h-14 items-center justify-between gap-4 border-b px-4 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-            <div className="flex items-center gap-4">
-              <SidebarTrigger data-testid="button-sidebar-toggle" />
-            </div>
-            <div className="flex items-center gap-3">
-              {user && (
-                <Badge variant="outline" className="hidden sm:flex">
-                  {roleLabels[user.role] || "User"}
-                </Badge>
-              )}
-              <ThemeToggle />
-            </div>
-          </header>
-          <main className="flex-1 overflow-auto bg-background">
-            {children}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <AppMobileHeader />
+          <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto overflow-x-hidden bg-background pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0 [&:has(.dashboard-fit)]:overflow-x-hidden [&:has(.dashboard-fit)]:overflow-y-auto">
+            <Suspense fallback={null}>{children}</Suspense>
           </main>
+          {showFloatingSettings && <FloatingSettingsButton />}
+          <AppNavBar />
         </div>
       </div>
+      {isStudent ? <AskAiTutorDialog /> : null}
     </SidebarProvider>
   );
 }

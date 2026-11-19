@@ -1,900 +1,666 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
-import { Loader2, Mic, MicOff, PhoneOff, Upload, Volume2, VolumeX } from "lucide-react";
-
-type Phase = "idle" | "listening" | "thinking" | "speaking" | "error";
-
-const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
-
-// Frame type constants — must match rest_api.py
-const FRAME_TEXT  = 1;
-const FRAME_AUDIO = 2;
-const FRAME_DONE  = 3;
-
 /**
- * Parses the binary framed stream from /voice-stream.
- * Frame layout: [type: 1 byte][length: 4 bytes LE][data: N bytes]
- * Accumulates partial network chunks until a complete frame is available.
+ * AI Voice page — thin orchestration layer.
+ *
+ * Logic is split across:
+ *   ai-voice/use-voice-page-state.ts  — all state & refs
+ *   ai-voice/use-voice-session.ts     — transcript helpers, resumeListeningAfterPlayback
+ *   ai-voice/use-voice-audio.ts       — mic, Mp3StreamPlayer, analyser, bootstrapVoiceInput
+ *   ai-voice/use-voice-websocket.ts   — connectWS, disconnect, stopResources, reconnect
+ *   ai-voice/use-voice-stt.ts         — Whisper ticker, barge monitor, browser STT effect
+ *   ai-voice/use-voice-turn.ts        — handleInterrupt, handleUserTurn
+ *   ai-voice/voice-logger.ts          — structured [TAG] logger
+ *   ai-voice/voice-utils.ts           — pure helpers (FrameParser, isTutorAudible, …)
  */
-class FrameParser {
-  private buf = new Uint8Array(0);
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "wouter";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { chapterSelectionPath } from "@/lib/tutor-chapter-nav";
+import { useStudySession } from "@/hooks/use-study-session";
+import { useAuthStore } from "@/lib/auth-store";
+import { getHttpApiBase, getVoiceHttpBase } from "@/lib/api-base";
+import { VoiceLiveCall } from "@/components/voice/voice-live-call";
+import { MSG } from "@/lib/student-messages";
+import {
+  fetchServerSttAvailable,
+  shouldUseServerStt,
+  useWhisperVoiceCapture,
+} from "@/lib/voice-server-stt";
+import { BARGE_IN_DUCK_VOLUME } from "@/lib/voice-conversation-config";
+import {
+  evaluateIncomingTranscript,
+  logSttVerdict,
+} from "@/lib/voice-echo-guard";
+import { detectInterruptIntent } from "@/lib/voice-interrupt-intent";
+import {
+  buildVoiceSessionKey,
+  clearVoiceSession,
+  loadVoiceSession,
+  saveVoiceSession,
+} from "@/lib/voice-session-storage";
+import {
+  saveTutorVoiceGender,
+  tutorVoiceId,
+  type TutorVoiceGender,
+} from "@/lib/tutor-voice";
+import { combineVoiceTextField, liveSpeechInterim } from "@/lib/voice-text-field";
+import { ArrowLeft, BookOpen, RefreshCw } from "lucide-react";
 
-  feed(chunk: Uint8Array): Array<{ type: number; data: Uint8Array }> {
-    // Grow internal buffer
-    const next = new Uint8Array(this.buf.length + chunk.length);
-    next.set(this.buf);
-    next.set(chunk, this.buf.length);
-    this.buf = next;
-
-    const frames: Array<{ type: number; data: Uint8Array }> = [];
-
-    while (this.buf.length >= 5) {
-      // Read 4-byte LE length manually (avoids DataView alignment issues)
-      const length =
-        this.buf[1] |
-        (this.buf[2] << 8) |
-        (this.buf[3] << 16) |
-        ((this.buf[4] << 24) >>> 0);
-
-      if (this.buf.length < 5 + length) break; // wait for more data
-
-      frames.push({ type: this.buf[0], data: this.buf.slice(5, 5 + length) });
-      this.buf = this.buf.slice(5 + length);
-    }
-
-    return frames;
-  }
-}
-
-/** Convert raw int16 LE bytes → float32 samples ready for Web Audio API. */
-function pcmToFloat32(raw: Uint8Array): Float32Array {
-  const aligned = new ArrayBuffer(raw.length);
-  new Uint8Array(aligned).set(raw);
-  const int16 = new Int16Array(aligned);
-  const f32 = new Float32Array(int16.length);
-  for (let i = 0; i < int16.length; i++) f32[i] = int16[i] / 32768.0;
-  return f32;
-}
+import { useVoicePageState } from "./ai-voice/use-voice-page-state";
+import { useVoiceSession } from "./ai-voice/use-voice-session";
+import { useVoiceAudio } from "./ai-voice/use-voice-audio";
+import { useVoiceWebSocket } from "./ai-voice/use-voice-websocket";
+import { useVoiceStt } from "./ai-voice/use-voice-stt";
+import { useVoiceTurn } from "./ai-voice/use-voice-turn";
+import { isTutorAudible, setTutorPlaybackVolume } from "./ai-voice/voice-utils";
 
 export default function AIVoicePage() {
-  const API_URL = import.meta.env.VITE_API_URL || "";
-  const VOICE_URL = import.meta.env.VITE_VOICE_URL || "";
+  const [, setLocation] = useLocation();
+  const { token: accessToken, user } = useAuthStore();
+  const API_URL = getHttpApiBase();
+  const VOICE_URL = getVoiceHttpBase();
+  const bargeInEnabled = import.meta.env.VITE_VOICE_BARGE_IN !== "false";
+
+  // ── Chapter context from URL ──────────────────────────────────────────────
+  const chapterCtx = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    const board = params.get("board");
+    const classLevel = params.get("class");
+    const subject = params.get("subject");
+    const chaptersRaw = params.get("chapters");
+    if (!board || !classLevel || !subject || !chaptersRaw) return null;
+    return {
+      board,
+      classLevel,
+      subject,
+      subjectId: params.get("subjectId"),
+      chapterIds: chaptersRaw.split(",").filter(Boolean),
+      chapterNames: (params.get("chapterNames") || "").split("||").filter(Boolean),
+    };
+  }, []);
+
+  const primaryChapterId = chapterCtx?.chapterIds[0] ? Number(chapterCtx.chapterIds[0]) : null;
+
+  useStudySession({
+    enabled: Boolean(chapterCtx?.subject),
+    subjectName: chapterCtx?.subject,
+    chapterId: primaryChapterId != null && !Number.isNaN(primaryChapterId) ? primaryChapterId : null,
+    chapterName: chapterCtx?.chapterNames[0] ?? null,
+    mode: "ai_voice",
+    agentMode: "free",
+  });
 
   const normalizedVoiceUrl = useMemo(() => {
     const url = (VOICE_URL || API_URL).trim();
-    if (!url) return "";
     return url.endsWith("/") ? url.slice(0, -1) : url;
   }, [VOICE_URL, API_URL]);
 
-  const [phase, setPhase] = useState<Phase>("idle");
-  const [micEnabled, setMicEnabled] = useState(true);
-  const [speakerEnabled, setSpeakerEnabled] = useState(true);
-  const [connectionStatus, setConnectionStatus] = useState("Connecting...");
+  const subjectLabel = chapterCtx?.subject || "General";
 
-  const [interimTranscript, setInterimTranscript] = useState("");
-
-  const [assistantText, setAssistantText] = useState("");
-  const [errorText, setErrorText] = useState<string | null>(null);
-  const [isUploadingPdf, setIsUploadingPdf] = useState(false);
-  const [uploadStatusText, setUploadStatusText] = useState<string | null>(null);
-
-  // Visual voice energy (from mic input).
-  const volumeRef = useRef(0);
-  const [volumeUi, setVolumeUi] = useState(0);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const audioObjectUrlRef = useRef<string | null>(null);
-  const typingTimerRef = useRef<number | null>(null);
-
-  // Web Audio API streaming (replaces blob-based playback)
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const streamReaderRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
-  const pdfInputRef = useRef<HTMLInputElement | null>(null);
-
-  const recognitionRef = useRef<any>(null);
+  // ── STT availability ──────────────────────────────────────────────────────
+  const serverSttPreferred = useMemo(() => shouldUseServerStt(subjectLabel), [subjectLabel]);
   const recognitionAvailable = useMemo(() => {
-    const w = window as any;
+    if (typeof window === "undefined") return false;
+    const w = window as Window & { SpeechRecognition?: unknown; webkitSpeechRecognition?: unknown };
     return Boolean(w.SpeechRecognition || w.webkitSpeechRecognition);
   }, []);
+  // Explicit mode, not a silent degrade: without SpeechRecognition, barge-in
+  // relies solely on the volume-spike monitor (still fully functional — see
+  // tickBargeInMonitorRef — just less precise without the intent text check).
+  const sttMode = recognitionAvailable ? "hybrid" : "volume_only";
 
-  const turnIdRef = useRef(0);
-  const abortRef = useRef<AbortController | null>(null);
+  // ── All state + refs ──────────────────────────────────────────────────────
+  const s = useVoicePageState();
 
-  const analyserCleanupRef = useRef<(() => void) | null>(null);
-  const [micReady, setMicReady] = useState(false);
-  const phaseRef = useRef<Phase>(phase);
-  const micEnabledRef = useRef<boolean>(micEnabled);
-  const speakerEnabledRef = useRef<boolean>(speakerEnabled);
-  const speakingStartedAtRef = useRef<number>(0);
+  // Sync derived values into refs used by callbacks
+  useEffect(() => { s.chapterCtxRef.current = chapterCtx; }, [chapterCtx]); // eslint-disable-line
+  useEffect(() => { s.userRef.current = user; }, [user]); // eslint-disable-line
+  useEffect(() => { s.phaseRef.current = s.phase; }, [s.phase]);
+  useEffect(() => { s.micEnabledRef.current = s.micEnabled; }, [s.micEnabled]);
+  useEffect(() => { s.speakerEnabledRef.current = s.speakerEnabled; }, [s.speakerEnabled]);
+  useEffect(() => { s.voiceGenderRef.current = s.voiceGender; }, [s.voiceGender]);
+  useEffect(() => { s.bargeInEnabledRef.current = bargeInEnabled; }, [bargeInEnabled]);
+  useEffect(() => { s.sttModeRef.current = sttMode; }, [sttMode]);
+  useEffect(() => { s.interimTranscriptRef.current = s.interimTranscript; }, [s.interimTranscript]);
+  useEffect(() => { s.transcriptEntriesRef.current = s.transcriptEntries; }, [s.transcriptEntries]);
+  useEffect(() => { s.tutorStateRef.current = s.tutorState; }, [s.tutorState]);
+  useEffect(() => { s.voiceImagesRef.current = s.voiceRelatedImages; }, [s.voiceRelatedImages]);
+
+  // serverSttActive as reactive state (needed to trigger STT hook re-run)
+  const [serverSttActive, setServerSttActive] = useState(false);
+  useEffect(() => { s.serverSttActiveRef.current = serverSttActive; }, [serverSttActive]);
 
   useEffect(() => {
-    phaseRef.current = phase;
-  }, [phase]);
-
-  useEffect(() => {
-    micEnabledRef.current = micEnabled;
-  }, [micEnabled]);
-
-  useEffect(() => {
-    speakerEnabledRef.current = speakerEnabled;
-  }, [speakerEnabled]);
-
-  useEffect(() => {
-    if (!normalizedVoiceUrl) {
-      setConnectionStatus("Missing VITE_API_URL (or VITE_VOICE_URL)");
-      setPhase("error");
-      return;
-    }
-
-    // Connection check (best-effort).
+    if (!serverSttPreferred) { setServerSttActive(false); return; }
     let cancelled = false;
-    (async () => {
+    void fetchServerSttAvailable(normalizedVoiceUrl).then((ok) => {
+      if (!cancelled) setServerSttActive(ok);
+    });
+    return () => { cancelled = true; };
+  }, [serverSttPreferred, normalizedVoiceUrl]); // eslint-disable-line
+
+  // Whisper primary
+  const whisperPrimary = useWhisperVoiceCapture(serverSttActive, recognitionAvailable);
+  useEffect(() => { s.whisperPrimaryRef.current = whisperPrimary; }, [whisperPrimary]);
+
+  // Session key + save/restore
+  const voiceSessionKey = useMemo(() => {
+    if (!chapterCtx) return "voice-general";
+    return buildVoiceSessionKey({
+      board: chapterCtx.board,
+      classLevel: chapterCtx.classLevel,
+      subject: chapterCtx.subject,
+      chapterIds: chapterCtx.chapterIds,
+    });
+  }, [chapterCtx]);
+
+  useEffect(() => {
+    const saved = loadVoiceSession(voiceSessionKey);
+    if (saved.length > 0) { s.setTranscriptEntries(saved); s.setSessionRestored(true); }
+  }, [voiceSessionKey]); // eslint-disable-line
+  useEffect(() => {
+    saveVoiceSession(voiceSessionKey, s.transcriptEntries);
+  }, [voiceSessionKey, s.transcriptEntries]); // eslint-disable-line
+
+  // Server health check
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
       try {
-        const res = await fetch(`${normalizedVoiceUrl}/health`, { method: "GET" });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        if (cancelled) return;
-        setConnectionStatus("Connected");
+        const res = await fetch(`${normalizedVoiceUrl}/health`);
+        if (!res.ok) throw new Error();
+        if (!cancelled) s.setConnectionStatus((prev) => prev === "Connected" || prev === "Reconnecting…" ? prev : "Server ready");
       } catch {
-        if (cancelled) return;
-        setConnectionStatus("Voice API unreachable");
+        if (!cancelled) {
+          s.setConnectionStatus("Can't reach your tutor right now");
+          s.setErrorText(MSG.voiceUnavailable);
+        }
       }
     })();
+    return () => { cancelled = true; };
+  }, [normalizedVoiceUrl]); // eslint-disable-line
+
+  // Call timer
+  useEffect(() => {
+    if (!s.isCallLive) return;
+    const id = window.setInterval(() => {
+      if (s.callStartRef.current) s.setCallSeconds(Math.floor((Date.now() - s.callStartRef.current) / 1000));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [s.isCallLive]); // eslint-disable-line
+
+  // ── Sub-hooks ─────────────────────────────────────────────────────────────
+  const session = useVoiceSession(s);
+  const audio = useVoiceAudio(s);
+
+  // Wire up bootstrap ref
+  s.bootstrapVoiceInputRef.current = audio.bootstrapVoiceInput;
+  s.finalizeAssistantTurnRef.current = session.finalizeAssistantTurn;
+
+  // canAcceptSttNow / rejectTranscriptCandidate (stable refs for STT callbacks)
+  const isSttCooldownActive = useCallback(() => Date.now() < s.sttCooldownUntilRef.current, []); // eslint-disable-line
+  const isAiSpeakingNow = useCallback(
+    () => s.phaseRef.current === "speaking" || isTutorAudible(s.mp3PlayerRef.current, s.fallbackMp3Ref.current),
+    [], // eslint-disable-line
+  );
+  const canAcceptSttNow = useCallback(() => {
+    if (s.shuttingDownRef.current) return false;
+    if (isAiSpeakingNow()) return false;
+    if (isSttCooldownActive()) return false;
+    return true;
+  }, [isAiSpeakingNow, isSttCooldownActive]);
+
+  // rejectTranscriptCandidate — stable ref, updated when subjectLabel changes
+  const rejectTranscriptCandidateRef = useRef((_raw: string, _source: string): boolean => false);
+  const canAcceptSttNowRef = useRef(canAcceptSttNow);
+  useEffect(() => { canAcceptSttNowRef.current = canAcceptSttNow; }, [canAcceptSttNow]);
+
+  useEffect(() => {
+    rejectTranscriptCandidateRef.current = (raw: string, source: string): boolean => {
+      const cleaned = raw.trim();
+      // Echo check runs first and unconditionally: "hi"/"wait"/"stop" are common
+      // tutor openers too, so matching an interrupt phrase is not proof the student
+      // said it — a near-verbatim echo of the AI's own recent speech must still
+      // be rejected even when it happens to match an intent phrase.
+      const { verdict, similarity } = evaluateIncomingTranscript(cleaned, s.recentAiSpeechRef.current);
+      if (verdict === "echo_rejected") {
+        s.protectionMetricsRef.current.bump("echo_rejected_count");
+        s.protectionMetricsRef.current.set("echo_similarity_score", similarity);
+        logSttVerdict(verdict, cleaned, { source, similarity });
+        return true;
+      }
+      const intent = detectInterruptIntent(cleaned);
+      if (intent.isInterruptIntent) {
+        logSttVerdict("accepted", cleaned, { source, reason: "interrupt_intent", phrase: intent.matchedPhrase });
+        return false;
+      }
+      if (verdict !== "accepted") { logSttVerdict(verdict, cleaned, { source, similarity }); return true; }
+      logSttVerdict("accepted", cleaned, { source, similarity });
+      return false;
+    };
+  }, [subjectLabel]); // eslint-disable-line
+
+  // WS hook
+  const ws = useVoiceWebSocket({ s, normalizedVoiceUrl, session, audio });
+
+  // STT hook
+  const stt = useVoiceStt({
+    s,
+    subjectLabel,
+    normalizedVoiceUrl,
+    recognitionAvailable,
+    serverSttActive: s.serverSttActiveRef.current,
+    micEnabled: s.micEnabled,
+    bargeInEnabled,
+    rejectTranscriptCandidateRef,
+    canAcceptSttNowRef,
+    isSttCooldownActive,
+    isAiSpeakingNow,
+    armSttCooldown: session.armSttCooldown,
+  });
+
+  // Turn hook
+  const turn = useVoiceTurn({
+    s, subjectLabel, normalizedVoiceUrl, micEnabled: s.micEnabled,
+    session, audio,
+    rejectTranscriptCandidate: (raw, src) => rejectTranscriptCandidateRef.current(raw, src),
+    beginPostInterruptCapture: stt.beginPostInterruptCapture,
+  });
+
+  // Wire handleInterrupt + handleUserTurn into refs
+  s.handleInterruptRef.current = turn.handleInterrupt;
+  s.handleUserTurnRef.current = turn.handleUserTurn;
+
+  // ── WS connect/disconnect lifecycle ──────────────────────────────────────
+  useEffect(() => {
+    s.shuttingDownRef.current = false;
+    ws.connectWS();
+    return () => { ws.stopVoiceSessionResources(); };
+  }, [ws.connectWS, ws.stopVoiceSessionResources, normalizedVoiceUrl]); // eslint-disable-line
+
+  // ── Volume duck during barge-in ──────────────────────────────────────────
+  useEffect(() => {
+    const duck = bargeInEnabled && s.phase === "speaking";
+    setTutorPlaybackVolume(s.mp3PlayerRef.current, s.fallbackMp3Ref.current, duck ? BARGE_IN_DUCK_VOLUME : 1);
+  }, [s.phase, bargeInEnabled]); // eslint-disable-line
+
+  // ── Idle → listening transition ──────────────────────────────────────────
+  useEffect(() => {
+    if (!s.micEnabled || s.phase === "error") return;
+    if (s.phase === "idle" && s.micListenAllowedRef.current) s.setPhase("listening");
+  }, [s.micEnabled, s.phase]); // eslint-disable-line
+
+  // ── Stuck-in-connecting watchdog ─────────────────────────────────────────
+  useEffect(() => {
+    if (s.phase !== "connecting" || !s.isCallLive) return;
+    const t = window.setTimeout(() => {
+      if (s.phaseRef.current !== "connecting" || s.shuttingDownRef.current) return;
+      s.micListenAllowedRef.current = true;
+      s.setPhase("listening");
+      s.scheduleVoiceCaptureRef.current();
+    }, 6000);
+    return () => window.clearTimeout(t);
+  }, [s.phase, s.isCallLive]); // eslint-disable-line
+
+  // ── Keep STT alive while listening ──────────────────────────────────────
+  useEffect(() => {
+    if (!s.isCallLive || s.phase !== "listening" || !s.micEnabled || !s.micBootstrappedRef.current) return;
+    s.scheduleVoiceCaptureRef.current();
+    const id = window.setInterval(() => {
+      if (s.phaseRef.current !== "listening" || s.shuttingDownRef.current || !s.micBootstrappedRef.current) return;
+      s.micListenAllowedRef.current = true;
+      s.scheduleVoiceCaptureRef.current();
+    }, 3000);
+    return () => window.clearInterval(id);
+  }, [s.isCallLive, s.phase, s.micEnabled, stt.scheduleVoiceCapture]); // eslint-disable-line
+
+  // ── Screen wake lock — mobile screens auto-lock mid-call and Android/iOS
+  // suspend the mic/audio pipeline once the screen turns off; keep it awake
+  // for the duration of the call and re-acquire if the OS revokes it.
+  useEffect(() => {
+    if (!s.isCallLive || typeof navigator === "undefined" || !("wakeLock" in navigator)) return;
+    let sentinel: WakeLockSentinel | null = null;
+    let cancelled = false;
+    const acquire = async () => {
+      try {
+        sentinel = await navigator.wakeLock.request("screen");
+        sentinel.addEventListener("release", () => { sentinel = null; });
+      } catch {
+        /* denied or unsupported — call still works, screen may just dim */
+      }
+    };
+    void acquire();
+    const onVisibility = () => {
+      if (!cancelled && document.visibilityState === "visible" && !sentinel) void acquire();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", onVisibility);
+      void sentinel?.release().catch(() => {});
     };
-  }, [normalizedVoiceUrl]);
+  }, [s.isCallLive]); // eslint-disable-line
 
+  // ── Gesture unlock ───────────────────────────────────────────────────────
   useEffect(() => {
-    if (!recognitionAvailable) return;
-
-    const w = window as any;
-    const SpeechRecognitionCtor = w.SpeechRecognition || w.webkitSpeechRecognition;
-    const recognition = new SpeechRecognitionCtor();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = "en-US";
-
-    recognition.onstart = () => {
-      // No-op; phase is driven by our state machine.
-    };
-
-    recognition.onerror = (e: any) => {
-      // Avoid spamming; also browsers can throw harmless errors when stopping/starting quickly.
-      console.debug("SpeechRecognition error:", e?.error || e);
-    };
-
-    let finalAccumulator = "";
-    let finalizeTimer: number | null = null;
-
-    const finalizeSoon = () => {
-      if (finalizeTimer) window.clearTimeout(finalizeTimer);
-      finalizeTimer = window.setTimeout(() => {
-        const t = finalAccumulator.trim();
-        if (!t) return;
-        finalAccumulator = "";
-        const nowTurn = ++turnIdRef.current;
-        // Store latest transcript for UI.
-        setInterimTranscript("");
-        void handleUserTurn(t, nowTurn);
-      }, 420);
-    };
-
-    recognition.onresult = (event: any) => {
-      let interim = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const res = event.results[i];
-        const txt = res[0]?.transcript || "";
-        if (res.isFinal) {
-          finalAccumulator += (finalAccumulator ? " " : "") + txt;
-          finalizeSoon();
-        } else {
-          interim += txt;
-        }
-      }
-      setInterimTranscript(interim.trim());
-      // Keep final transcript field as last finalized value.
-      if (!interim.trim()) {
-        // don't clear finalTranscript automatically
-      }
-    };
-
-    recognitionRef.current = recognition;
-
+    const onGesture = () => { void audio.bootstrapVoiceInput(); };
+    window.addEventListener("pointerdown", onGesture, { passive: true });
+    window.addEventListener("keydown", onGesture);
     return () => {
-      try {
-        recognition.stop();
-      } catch {
-        // ignore
-      }
-      recognitionRef.current = null;
+      window.removeEventListener("pointerdown", onGesture);
+      window.removeEventListener("keydown", onGesture);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recognitionAvailable, normalizedVoiceUrl]);
+  }, []); // eslint-disable-line
 
+  // ── Skip the tap prompt when mic permission is already granted ──────────
+  // getUserMedia() only *needs* a user gesture for its permission prompt to
+  // reliably appear — once a returning student has already granted access,
+  // the browser skips the prompt and resolves immediately regardless of
+  // gesture. Bootstrapping here (before the greeting even starts) means the
+  // mic is warm by the time "listening" fires, so no tap is needed at all.
+  // navigator.permissions doesn't support the 'microphone' query on Safari —
+  // that's also the one browser family that genuinely enforces a fresh
+  // per-call gesture for audio, so it correctly falls through to the
+  // existing tap-required flow below unchanged.
   useEffect(() => {
-    // Mic volume analyser for the orb + interrupt detection (initialize once).
-    let destroyed = false;
-    const setup = async () => {
+    let cancelled = false;
+    void (async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext;
-        const audioContext = new AudioContextCtor();
-        const analyser = audioContext.createAnalyser();
-        analyser.fftSize = 1024;
-        analyser.smoothingTimeConstant = 0.8;
-
-        const source = audioContext.createMediaStreamSource(stream);
-        source.connect(analyser);
-
-        const data = new Uint8Array(analyser.fftSize);
-
-        const cleanup = () => {
-          stream.getTracks().forEach((t) => t.stop());
-          try {
-            audioContext.close();
-          } catch {
-            // ignore
-          }
-        };
-        analyserCleanupRef.current = cleanup;
-        setMicReady(true);
-
-        let lastInterruptAt = 0;
-
-        const tick = () => {
-          if (destroyed) return;
-
-          analyser.getByteTimeDomainData(data);
-          // RMS in 0..1
-          let sumSq = 0;
-          for (let i = 0; i < data.length; i++) {
-            const v = (data[i] - 128) / 128;
-            sumSq += v * v;
-          }
-          const rms = Math.sqrt(sumSq / data.length);
-          const level = clamp01(rms * 3.2); // gain
-
-          volumeRef.current = level;
-          setVolumeUi(level);
-
-          // Interrupt if user starts speaking during "speaking".
-          if (phaseRef.current === "speaking" && micEnabledRef.current && speakerEnabledRef.current) {
-            const graceOk = Date.now() - speakingStartedAtRef.current > 700;
-            if (!graceOk) {
-              requestAnimationFrame(tick);
-              return;
-            }
-            if (level > 0.12) {
-              const now = Date.now();
-              if (now - lastInterruptAt > 650) {
-                lastInterruptAt = now;
-                void interruptAI();
-              }
-            }
-          }
-
-          requestAnimationFrame(tick);
-        };
-
-        requestAnimationFrame(tick);
-      } catch (e) {
-        console.debug("Mic setup failed:", e);
-        setMicReady(false);
-      }
-    };
-
-    void setup();
-
-    return () => {
-      destroyed = true;
-      analyserCleanupRef.current?.();
-      analyserCleanupRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    // Auto start conversation when we can.
-    if (!micEnabled) return;
-    if (!micReady) return;
-    if (phase === "error") return;
-    if (phase === "idle") {
-      setPhase("listening");
-      startRecognition();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [micEnabled, micReady, phase]);
-
-  const startRecognition = () => {
-    if (!recognitionRef.current) return;
-    try {
-      recognitionRef.current.start();
-    } catch {
-      // Some browsers throw if start is called too frequently.
-    }
-  };
-
-  const stopRecognition = () => {
-    if (!recognitionRef.current) return;
-    try {
-      recognitionRef.current.stop();
-    } catch {
-      // ignore
-    }
-  };
-
-  const stopAudioPlayback = () => {
-    // Cancel streaming reader — stops network transfer immediately
-    if (streamReaderRef.current) {
-      try { streamReaderRef.current.cancel(); } catch { /* ignore */ }
-      streamReaderRef.current = null;
-    }
-    // Close Web Audio context — silences any scheduled buffers instantly
-    if (audioCtxRef.current) {
-      try { audioCtxRef.current.close(); } catch { /* ignore */ }
-      audioCtxRef.current = null;
-    }
-    // Legacy <audio> element cleanup
-    if (audioRef.current) {
-      try { audioRef.current.pause(); audioRef.current.currentTime = 0; } catch { /* ignore */ }
-      audioRef.current = null;
-    }
-    if (audioObjectUrlRef.current) {
-      try { URL.revokeObjectURL(audioObjectUrlRef.current); } catch { /* ignore */ }
-      audioObjectUrlRef.current = null;
-    }
-  };
-
-  const interruptAI = async () => {
-    // Cancel in-flight fetch and stop audio. We intentionally do not rely on
-    // server-side cancellation; we just make the UI feel responsive.
-    abortRef.current?.abort();
-    abortRef.current = null;
-    stopAudioPlayback();
-    speakingStartedAtRef.current = 0;
-    if (typingTimerRef.current) {
-      window.clearInterval(typingTimerRef.current);
-      typingTimerRef.current = null;
-    }
-    setAssistantText("");
-    setPhase("listening");
-    setErrorText(null);
-    startRecognition();
-  };
-
-  const handleUserTurn = async (userText: string, turnId: number) => {
-    if (!normalizedVoiceUrl || !micEnabled) return;
-    if (userText.trim().length < 2) return;
-
-    stopRecognition();
-    setPhase("thinking");
-    setInterimTranscript("");
-    setErrorText(null);
-    setAssistantText("");
-
-    const controller = new AbortController();
-    abortRef.current = controller;
-    stopAudioPlayback();
-
-    try {
-      // Single request — text tokens and audio PCM arrive in the same stream.
-      // The backend speaks each sentence as it finishes generating it, so
-      // audio starts while the LLM is still producing the next sentence.
-      const res = await fetch(`${normalizedVoiceUrl}/voice-stream`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userText, conversation_id: "frontend-call" }),
-        signal: controller.signal,
-      });
-      if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
-      if (!res.body) throw new Error("No streaming body");
-      if (turnIdRef.current !== turnId) return;
-
-      // Web Audio setup
-      const SAMPLE_RATE = 24000;
-      const ctx = new AudioContext({ sampleRate: SAMPLE_RATE });
-      // Some browsers keep AudioContext suspended until an explicit resume.
-      // Without this, we can receive tokens/audio frames but still hear nothing.
-      if (ctx.state !== "running") {
-        try {
-          await ctx.resume();
-        } catch {
-          // handled below by state check
-        }
-      }
-      if (ctx.state !== "running") {
-        throw new Error(
-          "Audio output is blocked by the browser. Click anywhere on the page and try again."
-        );
-      }
-      audioCtxRef.current = ctx;
-      let nextTime = ctx.currentTime + 0.08; // 80 ms pre-buffer for clean start
-
-      const frameParser = new FrameParser();
-      const reader = res.body.getReader();
-      streamReaderRef.current = reader;
-
-      let firstAudio = true;
-      let displayText = "";
-
-      try {
-        outer: while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          if (turnIdRef.current !== turnId) { reader.cancel(); break; }
-
-          for (const frame of frameParser.feed(value)) {
-            switch (frame.type) {
-              case FRAME_TEXT: {
-                // Token arrives from LLM — append to display text immediately
-                const token = new TextDecoder().decode(frame.data);
-                displayText += token;
-                setAssistantText(displayText);
-                // Switch from "thinking" to "speaking" on first text (audio may
-                // not have started yet, but the response has begun)
-                if (firstAudio) setPhase("speaking");
-                break;
-              }
-              case FRAME_AUDIO: {
-                if (!speakerEnabled) break;
-                const f32 = pcmToFloat32(frame.data);
-                if (f32.length === 0) break;
-
-                // Schedule this PCM chunk gaplessly after the previous one
-                const audioBuf = ctx.createBuffer(1, f32.length, SAMPLE_RATE);
-                // TS libdom expects Float32Array<ArrayBuffer>; normalize to that type.
-                const channelData = new Float32Array(f32.length);
-                channelData.set(f32);
-                audioBuf.copyToChannel(channelData, 0);
-                const src = ctx.createBufferSource();
-                src.buffer = audioBuf;
-                src.connect(ctx.destination);
-                const startAt = Math.max(nextTime, ctx.currentTime + 0.02);
-                src.start(startAt);
-                nextTime = startAt + audioBuf.duration;
-
-                if (firstAudio) {
-                  firstAudio = false;
-                  setPhase("speaking");
-                  speakingStartedAtRef.current = Date.now();
-                }
-                break;
-              }
-              case FRAME_DONE:
-                break outer;
-            }
-          }
-        }
-      } finally {
-        streamReaderRef.current = null;
-      }
-
-      // Wait for any remaining scheduled audio to finish, then go back to listening
-      if (turnIdRef.current === turnId) {
-        const msLeft = Math.max(0, (nextTime - ctx.currentTime) * 1000);
-        await new Promise<void>((resolve) => {
-          const tid = window.setTimeout(resolve, msLeft);
-          controller.signal.addEventListener("abort", () => {
-            window.clearTimeout(tid);
-            resolve();
-          }, { once: true });
+        const status = await navigator.permissions?.query({
+          name: "microphone" as PermissionName,
         });
-
-        if (turnIdRef.current === turnId) {
-          setPhase("listening");
-          setInterimTranscript("");
-          startRecognition();
+        if (!cancelled && status?.state === "granted") {
+          void audio.bootstrapVoiceInput();
         }
+      } catch {
+        /* Permissions API unsupported for 'microphone' (Safari) — keep tap-required flow */
       }
+    })();
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line
 
-    } catch (e: any) {
-      if (e?.name === "AbortError") return;
-      console.error("handleUserTurn error:", e);
-      setErrorText(e instanceof Error ? e.message : "Unable to reach the voice assistant.");
-      setPhase("error");
-    } finally {
-      abortRef.current = null;
-    }
-  };
+  // ── Analyser cleanup ─────────────────────────────────────────────────────
+  useEffect(() => () => { s.analyserCleanupRef.current?.(); }, []); // eslint-disable-line
 
-  // Draw waveform orb visualization.
+  // ── pagehide ─────────────────────────────────────────────────────────────
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    const onHide = () => { ws.stopVoiceSessionResources(); };
+    window.addEventListener("pagehide", onHide);
+    return () => window.removeEventListener("pagehide", onHide);
+  }, [ws.stopVoiceSessionResources]); // eslint-disable-line
 
-    let raf = 0;
-    const dpr = window.devicePixelRatio || 1;
+  // ── Session actions ───────────────────────────────────────────────────────
+  const leaveVoiceSession = useCallback(() => {
+    session.finalizeAssistantTurn();
+    ws.stopVoiceSessionResources();
+    clearVoiceSession(voiceSessionKey);
+    s.setTranscriptEntries([]);
+    s.setSessionRestored(false);
+    session.syncAssistantText("");
+    s.setInterimTranscript("");
+    s.setPhase("idle");
+    s.setIsCallLive(false);
+    s.callStartRef.current = null;
+    s.setCallSeconds(0);
+  }, [session.finalizeAssistantTurn, ws.stopVoiceSessionResources, voiceSessionKey, session.syncAssistantText]); // eslint-disable-line
 
-    const resize = () => {
-      const rect = canvas.getBoundingClientRect();
-      canvas.width = Math.floor(rect.width * dpr);
-      canvas.height = Math.floor(rect.height * dpr);
-    };
-    resize();
-
-    const draw = (t: number) => {
-      const { width, height } = canvas;
-      ctx.clearRect(0, 0, width, height);
-
-      const time = t / 1000;
-      const vol = volumeRef.current;
-
-      const cx = width / 2;
-      const cy = height / 2;
-      const radius = Math.min(width, height) * 0.28;
-
-      const intensity =
-        phase === "listening"
-          ? 0.25 + vol * 0.9
-          : phase === "thinking"
-            ? 0.35 + 0.25 * (0.5 + 0.5 * Math.sin(time * 2.8))
-            : phase === "speaking"
-              ? 0.4 + 0.6 * vol
-              : 0.18;
-
-      // Outer glow.
-      ctx.beginPath();
-      ctx.arc(cx, cy, radius * (1.05 + intensity * 0.12), 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(99, 102, 241, ${0.12 + intensity * 0.18})`;
-      ctx.fill();
-
-      // Waveform ring.
-      ctx.strokeStyle = `rgba(167, 139, 250, ${0.35 + intensity * 0.35})`;
-      ctx.lineWidth = Math.max(2, Math.floor(2 * dpr));
-      ctx.beginPath();
-      const points = 180;
-      for (let i = 0; i <= points; i++) {
-        const a = (i / points) * Math.PI * 2;
-        const wobble =
-          (phase === "listening" || phase === "speaking"
-            ? (0.65 + intensity) * vol
-            : 0.15) *
-          Math.sin(a * 6 + time * (phase === "thinking" ? 3.2 : 9));
-        const r = radius * (1.0 + wobble * 0.55);
-        const x = cx + Math.cos(a) * r;
-        const y = cy + Math.sin(a) * r;
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      }
-      ctx.closePath();
-      ctx.stroke();
-
-      raf = requestAnimationFrame(draw);
-    };
-
-    raf = requestAnimationFrame(draw);
-    const onResize = () => resize();
-    window.addEventListener("resize", onResize);
-    return () => {
-      window.removeEventListener("resize", onResize);
-      cancelAnimationFrame(raf);
-    };
-  }, [phase]);
-
-  const statusText =
-    phase === "listening"
-      ? "Listening…"
-      : phase === "thinking"
-        ? "Thinking…"
-        : phase === "speaking"
-          ? "Speaking…"
-          : phase === "error"
-            ? "Connection error"
-            : "Idle";
-
-  const handlePdfUpload = async (file: File) => {
-    if (!normalizedVoiceUrl) {
-      setErrorText("VITE_API_URL (or VITE_VOICE_URL) is not configured.");
-      return;
-    }
-    if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
-      setErrorText("Please upload a PDF file.");
-      return;
-    }
-
-    const form = new FormData();
-    form.append("file", file);
-
-    try {
-      setIsUploadingPdf(true);
-      setUploadStatusText(`Uploading ${file.name}...`);
-      setErrorText(null);
-
-      const resp = await fetch(`${normalizedVoiceUrl}/upload-pdf`, {
-        method: "POST",
-        body: form,
-      });
-
-      if (!resp.ok) {
-        const t = await resp.text();
-        throw new Error(t || `Upload failed (HTTP ${resp.status})`);
-      }
-
-      setUploadStatusText("PDF uploaded. Ask questions and I will use the document context.");
-    } catch (e) {
-      console.error("PDF upload failed:", e);
-      setErrorText(e instanceof Error ? e.message : "PDF upload failed.");
-      setUploadStatusText(null);
-    } finally {
-      setIsUploadingPdf(false);
-      if (pdfInputRef.current) {
-        pdfInputRef.current.value = "";
-      }
-    }
+  const handleEndCall = () => {
+    leaveVoiceSession();
+    if (chapterCtx) setLocation(chapterSelectionPath(chapterCtx.subjectId));
   };
 
-  const orbScale =
-    phase === "listening"
-      ? 1 + volumeUi * 0.06
-      : phase === "thinking"
-        ? 1 + 0.04
-        : phase === "speaking"
-          ? 1.08
-          : 1;
+  const handleBackToChapters = () => {
+    leaveVoiceSession();
+    setLocation(chapterSelectionPath(chapterCtx?.subjectId));
+  };
 
+  const handleSendText = useCallback(() => {
+    const combined = combineVoiceTextField(s.textInput, s.interimTranscript);
+    if (combined.length < 2) return;
+    s.setTextInput("");
+    s.setInterimTranscript("");
+    s.textDictationRef.current = "";
+    void s.handleUserTurnRef.current(combined, ++s.turnIdRef.current, {
+      requireMic: false, skipPlaybackCheck: true, skipPhaseCheck: true,
+    });
+  }, [s.textInput, s.interimTranscript]); // eslint-disable-line
+
+  const handleVoiceGenderChange = useCallback((gender: TutorVoiceGender) => {
+    s.setVoiceGender(gender);
+    saveTutorVoiceGender(gender);
+    const wsSocket = s.wsRef.current;
+    if (wsSocket?.readyState === WebSocket.OPEN && s.wsReadyRef.current) {
+      try {
+        wsSocket.send(JSON.stringify({ type: "set_voice", voice_gender: gender, tts_voice: tutorVoiceId(gender) }));
+      } catch { /* ignore */ }
+    }
+  }, []); // eslint-disable-line
+
+  // ── Derived UI values ─────────────────────────────────────────────────────
+  const studentName = user?.fullName || "Student";
+  const studentInitial = (studentName.split(/\s+/)[0]?.[0] || "S").toUpperCase();
+  const isTyping = s.phase === "thinking" || (Boolean(s.assistantText) && s.phase === "speaking");
+  const aiWaveActive = s.phase === "speaking";
+  const aiWaveIntensity = aiWaveActive ? 0.72 : 0.2;
+  const studentWaveActive =
+    (s.phase === "listening" ||
+      (bargeInEnabled && !s.isGreetingActiveRef.current && (s.phase === "thinking" || s.phase === "speaking"))) &&
+    s.micEnabled &&
+    (s.volumeUi > 0.06 || Boolean(s.interimTranscript.trim()));
+  const studentWaveIntensity = Math.max(0.35, 0.35 + s.volumeUi * 0.65);
+
+  const showReconnectBar =
+    Boolean(s.errorText) ||
+    s.isReconnecting ||
+    s.connectionStatus === "Connection problem" ||
+    s.connectionStatus === "Reconnecting…" ||
+    s.connectionStatus === "Can't reach your tutor right now" ||
+    s.connectionStatus === "Can't connect to tutor";
+
+  const reconnectMessage =
+    s.errorText ||
+    (s.connectionStatus === "Reconnecting…" || s.isReconnecting
+      ? "Reconnecting to your tutor…"
+      : s.connectionStatus === "Can't reach your tutor right now"
+        ? MSG.voiceUnavailable
+        : MSG.voiceConnection);
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div
-      className="min-h-screen w-full relative overflow-hidden"
-      style={{
-        background:
-          "linear-gradient(135deg, rgba(17,24,39,1) 0%, rgba(10,10,20,1) 45%, rgba(25,10,45,1) 100%)",
-      }}
-    >
-      <style>{`
-        @keyframes bgShift {
-          0% { filter: hue-rotate(0deg) }
-          50% { filter: hue-rotate(12deg) }
-          100% { filter: hue-rotate(0deg) }
-        }
-        .orbBackdrop {
-          background: radial-gradient(circle at 50% 40%, rgba(99,102,241,0.18), rgba(0,0,0,0) 55%),
-                      radial-gradient(circle at 60% 60%, rgba(168,85,247,0.16), rgba(0,0,0,0) 50%);
-          animation: bgShift 6s ease-in-out infinite;
-        }
-        .glass {
-          background: rgba(5, 5, 15, 0.45);
-          backdrop-filter: blur(10px);
-          border: 1px solid rgba(255,255,255,0.08);
-        }
-        @keyframes ringPulse {
-          0% { transform: translate(-50%, -50%) scale(0.75); opacity: 0.0; }
-          15% { opacity: 0.4; }
-          100% { transform: translate(-50%, -50%) scale(1.35); opacity: 0.0; }
-        }
-      `}</style>
-
-      <div className="orbBackdrop absolute inset-0" />
-
-      <div className="relative z-10 flex flex-col min-h-screen">
-        <header className="px-4 pt-4 flex items-start justify-between gap-3">
-          <div>
-            <div className="text-sm text-slate-300">ForeFold Assistant</div>
-            <div className="text-xs text-slate-500">{connectionStatus}</div>
-            {uploadStatusText ? (
-              <div className="text-xs text-indigo-300 mt-1">{uploadStatusText}</div>
-            ) : null}
-          </div>
-          <div className="flex flex-col items-end gap-2">
+    <div className="h-full min-h-0 w-full flex flex-col overflow-hidden bg-background">
+      <header className="shrink-0 px-3 py-2 sm:px-4 sm:py-2.5 flex items-center justify-between gap-3 border-b border-border bg-card/80 backdrop-blur-sm">
+        <div className="flex items-center gap-2 min-w-0">
+          {chapterCtx && (
             <Button
-              variant="outline"
-              size="sm"
-              className="border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
-              onClick={() => pdfInputRef.current?.click()}
-              disabled={isUploadingPdf}
+              variant="ghost" size="icon"
+              className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+              onClick={handleBackToChapters}
             >
-              {isUploadingPdf ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Upload className="h-4 w-4 mr-2" />
-              )}
-              {isUploadingPdf ? "Uploading..." : "Upload PDF"}
+              <ArrowLeft className="h-4 w-4" />
             </Button>
-            <input
-              ref={pdfInputRef}
-              type="file"
-              accept="application/pdf,.pdf"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) void handlePdfUpload(f);
-              }}
-            />
-            <div className="text-xs text-slate-400 text-right">
-              {phase === "speaking" || phase === "thinking"
-                ? "Talk naturally, I’ll respond."
-                : "Press mic and speak."}
-            </div>
+          )}
+          <div className="flex items-center gap-2 text-sm font-semibold text-foreground min-w-0">
+            <BookOpen className="h-4 w-4 text-primary shrink-0" />
+            <span className="truncate">{subjectLabel} Tutor</span>
           </div>
-        </header>
-
-        <main className="flex-1 flex items-center justify-center px-4 pb-24">
-          <div className="w-full max-w-lg flex flex-col items-center gap-4">
-            <div className="relative w-72 h-72 sm:w-80 sm:h-80">
-              {/* Rings for speaking state */}
-              {phase === "speaking" ? (
-                <>
-                  <div
-                    className="absolute left-1/2 top-1/2 rounded-full border border-indigo-400/40"
-                    style={{
-                      width: "110%",
-                      height: "110%",
-                      animation: "ringPulse 1.2s ease-out infinite",
-                    }}
-                  />
-                  <div
-                    className="absolute left-1/2 top-1/2 rounded-full border border-purple-300/35"
-                    style={{
-                      width: "95%",
-                      height: "95%",
-                      animation: "ringPulse 1.2s ease-out infinite",
-                      animationDelay: "0.25s",
-                    }}
-                  />
-                </>
-              ) : null}
-
-              <div
-                className="glass rounded-full absolute inset-0"
-                style={{
-                  transform: `scale(${orbScale})`,
-                  transition: "transform 180ms ease",
-                  boxShadow:
-                    phase === "listening"
-                      ? `0 0 ${12 + volumeUi * 45}px rgba(99,102,241,0.35)`
-                      : phase === "thinking"
-                        ? "0 0 28px rgba(167,139,250,0.25)"
-                        : phase === "speaking"
-                          ? "0 0 42px rgba(167,139,250,0.35)"
-                          : "0 0 18px rgba(99,102,241,0.18)",
-                }}
-              />
-
-              <canvas
-                ref={canvasRef}
-                className="absolute inset-0 w-full h-full"
-              />
-
-              {/* Status */}
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="glass rounded-2xl px-4 py-2 text-center">
-                  <div className="text-sm sm:text-base text-white font-medium">
-                    {statusText}
-                  </div>
-                  <div className="text-[11px] text-slate-400 mt-1">
-                    {phase === "listening"
-                      ? interimTranscript
-                        ? `“${interimTranscript}”`
-                        : "Say something…"
-                      : phase === "thinking"
-                        ? "Generating reply…"
-                        : phase === "speaking"
-                          ? "You can interrupt me."
-                          : "Ready."}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Progressive AI text (minimal, as requested) */}
-            {assistantText ? (
-              <div className="glass w-full rounded-2xl p-4">
-                <div className="text-xs text-slate-400 mb-2">Assistant</div>
-                <div className="text-sm text-slate-100 leading-relaxed">
-                  {assistantText}
-                </div>
-              </div>
-            ) : null}
-
-            {/* Errors */}
-            {errorText ? (
-              <div className="glass w-full rounded-2xl p-4 border-red-400/20">
-                <div className="text-sm font-medium text-red-200">Error</div>
-                <div className="text-sm text-slate-300 mt-1">{errorText}</div>
-              </div>
-            ) : null}
-          </div>
-        </main>
-
-        <footer className="absolute bottom-4 left-0 right-0 px-4">
-          <div className="glass rounded-2xl mx-auto max-w-lg px-4 py-3 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn(
-                  micEnabled ? "text-indigo-300" : "text-slate-400",
-                  micEnabled ? "hover:bg-indigo-500/10" : "hover:bg-white/5"
-                )}
-                onClick={() => {
-                  setMicEnabled((v) => !v);
-                  if (micEnabled) {
-                    // Muting: stop listening immediately.
-                    stopRecognition();
-                    setPhase("idle");
-                  } else {
-                    if (micReady) {
-                      setPhase("listening");
-                      startRecognition();
-                    }
-                  }
-                }}
-                aria-label={micEnabled ? "Mute mic" : "Unmute mic"}
-              >
-                {micEnabled ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
-              </Button>
-
-              <div className="hidden sm:block">
-                <div className="text-xs text-slate-400">Mic</div>
-                <div className="text-sm text-slate-200">{micEnabled ? "On" : "Muted"}</div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn(
-                  speakerEnabled ? "text-indigo-300" : "text-slate-400",
-                  speakerEnabled ? "hover:bg-indigo-500/10" : "hover:bg-white/5"
-                )}
-                onClick={() => {
-                  setSpeakerEnabled((v) => !v);
-                  // If we disable speaker mid-call, stop audio feel-good.
-                  if (speakerEnabled) {
-                    stopAudioPlayback();
-                    stopRecognition();
-                    setPhase("listening");
-                    startRecognition();
-                  }
-                }}
-                aria-label={speakerEnabled ? "Disable speaker" : "Enable speaker"}
-                title="Speaker toggle"
-              >
-                {speakerEnabled ? <Volume2 className="h-5 w-5" /> : <VolumeX className="h-5 w-5" />}
-              </Button>
-            </div>
-
-            <Button
-              variant="destructive"
-              size="icon"
-              onClick={() => {
-                abortRef.current?.abort();
-                abortRef.current = null;
-                stopAudioPlayback();
-                stopRecognition();
-                if (typingTimerRef.current) {
-                  window.clearInterval(typingTimerRef.current);
-                  typingTimerRef.current = null;
-                }
-                setAssistantText("");
-                setInterimTranscript("");
-                setErrorText(null);
-                setPhase("idle");
-              }}
-              aria-label="End conversation"
-              title="End conversation"
-            >
-              <PhoneOff className="h-5 w-5" />
-            </Button>
-          </div>
-        </footer>
-      </div>
-
-      {!recognitionAvailable ? (
-        <div className="fixed inset-0 flex items-center justify-center p-6">
-          <div className="glass rounded-2xl p-6 max-w-md">
-            <div className="text-sm font-medium text-slate-100">Speech Recognition not supported</div>
-            <div className="text-sm text-slate-300 mt-2">
-              Your browser doesn’t support the Web Speech API. Try Chrome on desktop/macOS.
-            </div>
+          <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground min-w-0">
+            <span className="text-border">·</span>
+            {s.isCallLive ? (
+              <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium shrink-0">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Live
+              </span>
+            ) : showReconnectBar ? (
+              <span className="text-destructive shrink-0 font-medium">Offline</span>
+            ) : (
+              <span className="text-amber-600 dark:text-amber-400 shrink-0">Connecting…</span>
+            )}
+            {chapterCtx && chapterCtx.chapterNames.length > 0 && (
+              <>
+                <span className="text-border">·</span>
+                <span className="truncate">{chapterCtx.chapterNames[0]}</span>
+              </>
+            )}
           </div>
         </div>
-      ) : null}
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          <span className="sm:hidden inline-flex items-center gap-1 text-[10px] font-medium">
+            {s.isCallLive ? (
+              <>
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-emerald-600 dark:text-emerald-400">Live</span>
+              </>
+            ) : showReconnectBar ? (
+              <span className="text-destructive">Offline</span>
+            ) : (
+              <span className="text-amber-600 dark:text-amber-400">…</span>
+            )}
+          </span>
+          <Select value={s.voiceGender} onValueChange={(v) => handleVoiceGenderChange(v as TutorVoiceGender)}>
+            <SelectTrigger
+              className="h-8 w-[7.5rem] rounded-md border-border bg-muted/50 px-2.5 text-xs font-medium shadow-none focus:ring-1"
+              aria-label="Tutor voice"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end">
+              <SelectItem value="female">Female</SelectItem>
+              <SelectItem value="male">Male</SelectItem>
+            </SelectContent>
+          </Select>
+          <Badge
+            variant="outline"
+            className="font-mono text-xs tabular-nums border-border text-foreground bg-muted/50 px-2.5 py-0.5"
+          >
+            {String(Math.floor(s.callSeconds / 60)).padStart(2, "0")}:{String(s.callSeconds % 60).padStart(2, "0")}
+          </Badge>
+          <span className="text-xs text-muted-foreground hidden sm:inline">
+            {s.wsConnected ? "Connected" : s.connectionStatus}
+          </span>
+        </div>
+      </header>
+
+      {showReconnectBar && (
+        <div className="shrink-0 flex items-center justify-between gap-3 border-b border-destructive/30 bg-destructive/10 px-3 py-2 sm:px-4">
+          <p className="text-xs sm:text-sm text-destructive min-w-0">{reconnectMessage}</p>
+          <Button
+            type="button" size="sm" variant="outline"
+            className="shrink-0 h-8 gap-1.5 border-destructive/40 text-destructive hover:bg-destructive/10"
+            onClick={ws.handleReconnect}
+            disabled={s.isReconnecting && s.connectionStatus === "Reconnecting…"}
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${s.isReconnecting ? "animate-spin" : ""}`} />
+            {s.isReconnecting ? "Reconnecting…" : "Reconnect"}
+          </Button>
+        </div>
+      )}
+
+      {chapterCtx && chapterCtx.chapterNames.length > 0 && (
+        <div className="sm:hidden shrink-0 px-3 py-1 border-b border-border text-[11px] text-muted-foreground truncate bg-muted/30">
+          {s.isCallLive
+            ? <span className="text-emerald-600 dark:text-emerald-400">Live · </span>
+            : <span className="text-amber-600 dark:text-amber-400">Connecting · </span>}
+          {chapterCtx.chapterNames[0]}
+        </div>
+      )}
+
+      <main className="flex-1 min-h-0 overflow-hidden w-full h-full">
+        <VoiceLiveCall
+          phase={s.phase}
+          subjectLabel={subjectLabel}
+          studentName={studentName}
+          studentInitial={studentInitial}
+          micEnabled={s.micEnabled}
+          speakerEnabled={s.speakerEnabled}
+          aiActive={aiWaveActive}
+          aiIntensity={aiWaveIntensity}
+          studentActive={studentWaveActive}
+          studentIntensity={studentWaveIntensity}
+          tutorState={s.tutorState}
+          understandingHint={s.tutorUnderstandingHint}
+          entries={s.transcriptEntries}
+          isTyping={isTyping}
+          streamingAssistantText={s.assistantText || undefined}
+          streamingRelatedImages={s.voiceRelatedImages}
+          streamingMathLesson={s.streamingMathLesson}
+          streamingScienceExperiment={s.streamingScienceExperiment}
+          imagesRetrieving={isTyping && s.voiceRelatedImages.length === 0}
+          imagesRetrievingHint={
+            chapterCtx?.chapterNames?.[0]
+              ? `Looking up figures from ${chapterCtx.chapterNames[0]}…`
+              : undefined
+          }
+          accessToken={accessToken}
+          onToggleMic={() => {
+            if (bargeInEnabled && s.micEnabled && (s.phase === "speaking" || s.phase === "thinking")) {
+              turn.handleInterrupt({ fromUi: true });
+              return;
+            }
+            s.setMicEnabled((v) => !v);
+            if (s.micEnabled) {
+              s.stopRecognitionRef.current();
+              s.setPhase("idle");
+            } else {
+              s.micListenAllowedRef.current = true;
+              s.setPhase("listening");
+              void audio.bootstrapVoiceInput();
+            }
+          }}
+          onToggleSpeaker={() => {
+            s.setSpeakerEnabled((v) => !v);
+            if (s.speakerEnabled) audio.stopAudioPlayback();
+          }}
+          onInterrupt={() => turn.handleInterrupt({ fromUi: true })}
+          canInterrupt={s.phase === "speaking" || s.phase === "thinking"}
+          onEndCall={handleEndCall}
+          textInput={s.textInput}
+          interimTranscript={s.interimTranscript}
+          onTextInputChange={(value) => {
+            s.textDictationRef.current = value;
+            s.setTextInput(value);
+            if (!value.trim()) s.setInterimTranscript("");
+          }}
+          onTextInputOpenChange={(open) => {
+            if (s.textInputOpenRef.current === open) return;
+            s.textInputOpenRef.current = open;
+            if (open) {
+              const mic = s.serverSttRecorderRef.current;
+              if (mic?.isCapturingUtterance()) void mic.endUtteranceCapture();
+              s.listeningUtteranceActiveRef.current = false;
+              s.speechActiveRef.current = false;
+              s.silenceSinceRef.current = null;
+              if (!liveSpeechInterim(s.interimTranscriptRef.current)) s.setInterimTranscript("");
+              s.textDictationRef.current = s.textInput;
+              void audio.bootstrapVoiceInput();
+            } else {
+              s.setInterimTranscript("");
+              s.micListenAllowedRef.current = true;
+              s.listeningUtteranceActiveRef.current = false;
+              s.speechActiveRef.current = false;
+              void audio.bootstrapVoiceInput();
+              s.scheduleVoiceCaptureRef.current();
+            }
+          }}
+          onSendText={handleSendText}
+          isCallLive={s.isCallLive}
+          sessionResumed={s.sessionRestored}
+        />
+      </main>
+
+      {!recognitionAvailable && !s.serverSttActiveRef.current && (
+        <div className="fixed bottom-4 left-4 right-4 lg:left-auto lg:right-4 lg:max-w-sm rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-100 z-50">
+          {MSG.speechUnsupported}
+        </div>
+      )}
+
+      {s.needsVoiceTap && s.phase === "listening" && s.micEnabled && (
+        <div className="fixed bottom-20 left-4 right-4 lg:left-auto lg:right-4 lg:max-w-sm rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-foreground z-50 shadow-lg">
+          Tap anywhere on the page to allow the microphone, then speak your question.
+        </div>
+      )}
     </div>
   );
 }
-

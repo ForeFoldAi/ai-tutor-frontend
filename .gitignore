@@ -26,3 +26,13 @@ dist-ssr
 *.sln
 *.sw?
 .vercel
+
+# Copied from node_modules by scripts/copy-vad-assets.mjs
+public/vad/ort/
+
+# Playwright
+test-results
+playwright-report
+tests/e2e/
+tests
+tests-report

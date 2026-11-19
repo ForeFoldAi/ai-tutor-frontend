@@ -5,10 +5,15 @@ import type { User, UserRoleType } from "@/types/schema";
 interface AuthState {
   user: User | null;
   token: string | null;
+  refreshToken: string | null;
   isAuthenticated: boolean;
-  login: (user: User, token: string) => void;
+  hasHydrated: boolean;
+  login: (user: User, token: string, refreshToken: string) => void;
   logout: () => void;
   updateUser: (user: Partial<User>) => void;
+  setToken: (token: string) => void;
+  setRefreshToken: (refreshToken: string) => void;
+  setHasHydrated: (value: boolean) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -16,29 +21,53 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       user: null,
       token: null,
+      refreshToken: null,
       isAuthenticated: false,
-      login: (user, token) =>
+      hasHydrated: false,
+      login: (user, token, refreshToken) =>
         set({
           user,
           token,
+          refreshToken,
           isAuthenticated: true,
         }),
       logout: () =>
         set({
           user: null,
           token: null,
+          refreshToken: null,
           isAuthenticated: false,
         }),
       updateUser: (updates) =>
         set((state) => ({
           user: state.user ? { ...state.user, ...updates } : null,
         })),
+      setToken: (token) => set({ token }),
+      setRefreshToken: (refreshToken) => set({ refreshToken }),
+      setHasHydrated: (value) => set({ hasHydrated: value }),
     }),
     {
       name: "auth-storage",
+      partialize: (state) => ({
+        user: state.user,
+        token: state.token,
+        refreshToken: state.refreshToken,
+        isAuthenticated: state.isAuthenticated,
+      }),
+      onRehydrateStorage: () => () => {
+        useAuthStore.getState().setHasHydrated(true);
+      },
     }
   )
 );
+
+// Keep tabs in sync: a token refreshed (or a logout) in one tab is picked up by the others, so they
+// never present an already-rotated refresh token.
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (e) => {
+    if (e.key === "auth-storage") void useAuthStore.persist.rehydrate();
+  });
+}
 
 export const hasRole = (user: User | null, roles: UserRoleType[]): boolean => {
   if (!user) return false;

@@ -1,0 +1,41 @@
+# Used by Coolify/Nixpacks via nixpacks.toml (replaces Nixpacks' built-in SPA Caddyfile,
+# whose `try_files {path} /index.html` would serve "/"'s <head> for /login and /signup).
+{
+	admin off
+	persist_config off
+	auto_https off
+	log {
+		format json
+	}
+	servers {
+		trusted_proxies static private_ranges 100.0.0.0/8
+	}
+}
+
+:{$PORT:3000} {
+	log {
+		format json
+	}
+	rewrite /health /*
+
+	root * "{$SITE_ROOT:/app/dist}"
+	encode gzip
+
+	# Per-route pages are flat files (/login -> login.html); everything else falls back to the SPA.
+	# Hashed /assets/* never fall back, so a missing chunk is a real 404 instead of HTML.
+	@spa {
+		not path /assets/*
+		file {
+			try_files {path} {path}.html /index.html
+		}
+	}
+	@trailingSlash path_regexp slash ^(.+)/$
+	route {
+		redir @trailingSlash {re.slash.1}{?query} 308
+		rewrite @spa {file_match.relative}
+	}
+
+	header /assets/* Cache-Control "public, max-age=31536000, immutable"
+
+	file_server
+}
