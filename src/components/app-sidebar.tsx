@@ -128,16 +128,25 @@ export function AppSidebar() {
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     asChild
-                    isActive={isAppNavActive(location, item.url)}
+                    isActive={!item.openInNewTab && isAppNavActive(location, item.url)}
                     tooltip={item.title}
                     data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, "-")}`}
                   >
-                    <Link href={item.url}>
-                      <SidebarMenuIcon item={item} />
-                      <span className="group-data-[collapsible=icon]:hidden">
-                        {item.title}
-                      </span>
-                    </Link>
+                    {item.openInNewTab ? (
+                      <a href={item.url} target="_blank" rel="noopener noreferrer">
+                        <SidebarMenuIcon item={item} />
+                        <span className="group-data-[collapsible=icon]:hidden">
+                          {item.title}
+                        </span>
+                      </a>
+                    ) : (
+                      <Link href={item.url}>
+                        <SidebarMenuIcon item={item} />
+                        <span className="group-data-[collapsible=icon]:hidden">
+                          {item.title}
+                        </span>
+                      </Link>
+                    )}
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}

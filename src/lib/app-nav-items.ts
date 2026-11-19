@@ -15,6 +15,7 @@ import {
   Database,
   LayoutGrid,
   KeyRound,
+  Activity,
   type LucideIcon,
 } from "lucide-react";
 import { UserRole, type UserRoleType } from "@/types/schema";
@@ -24,6 +25,8 @@ export type AppNavItem = {
   url: string;
   icon?: LucideIcon;
   imageIcon?: string;
+  /** Opens in a new browser tab (used for Monitor console). */
+  openInNewTab?: boolean;
 };
 
 const studentMenuItems: AppNavItem[] = [
@@ -80,6 +83,12 @@ const masterAdminMenuItems: AppNavItem[] = [
   { title: "Subscriptions", url: "/master-admin/subscriptions", icon: CreditCard },
   { title: "Reports", url: "/master-admin/reports", icon: BookOpen },
   { title: "Settings", url: "/master-admin/settings", icon: Settings },
+  {
+    title: "Monitor",
+    url: "/master-admin/monitor/overview",
+    icon: Activity,
+    openInNewTab: true,
+  },
 ];
 
 export function isIndividualTutor(
