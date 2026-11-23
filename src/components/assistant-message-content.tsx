@@ -91,6 +91,8 @@ const PROSE_CAPTION_RE =
 
 /** One short caption line (no figure/activity prefix, no long prose). */
 export function figureCaptionText(img: RelatedTextbookImage, idx = 0): string {
+  const subtopic = img.subtopic?.trim() || "";
+  const title = img.title?.trim() || "";
   let cap = img.caption?.trim() || "";
   if (cap) {
     cap = cap.replace(ACTIVITY_NUMBER_PREFIX_RE, "").replace(FIG_NUMBER_PREFIX_RE, "").trim();
@@ -101,12 +103,18 @@ export function figureCaptionText(img: RelatedTextbookImage, idx = 0): string {
       sentence.length <= 140 &&
       !PROSE_CAPTION_RE.test(sentence)
     ) {
-      return sentence;
+      // Prefer a distinct caption; skip when it only repeats title/subtopic.
+      const key = normalizeSubtopicKey(sentence);
+      if (
+        (title && key === normalizeSubtopicKey(title)) ||
+        (subtopic && key === normalizeSubtopicKey(subtopic))
+      ) {
+        // Keep one label — fall through to title/subtopic once.
+      } else {
+        return sentence;
+      }
     }
   }
-
-  const subtopic = img.subtopic?.trim();
-  const title = img.title?.trim();
 
   if (subtopic) {
     return subtopic;
@@ -395,7 +403,8 @@ function TextbookFigureCard({
   const src = retriedSrc === baseSrc ? `${baseSrc}${baseSrc.includes("?") ? "&" : "?"}retry=1` : baseSrc;
   const figLabel = figureNumberLabel(img);
   const captionBody = figureCaptionText(img, idx);
-  const altText = displayFigureCaption(img, idx);
+  // Prefer figcaption for a11y; empty alt avoids duplicating the same title in copied text.
+  const showCaptionRow = Boolean(figLabel || captionBody);
 
   return (
     <figure
@@ -403,6 +412,7 @@ function TextbookFigureCard({
         "rounded-xl border border-primary/20 bg-background/60 overflow-hidden flex flex-col shadow-sm",
         figureCardWidthClass(count),
       )}
+      aria-label={showCaptionRow ? displayFigureCaption(img, idx) : undefined}
     >
       <div className="bg-muted/30 p-2 flex items-center justify-center min-h-[120px] relative">
         {!loaded && !failed ? (
@@ -414,7 +424,7 @@ function TextbookFigureCard({
         {!failed ? (
           <img
             src={src}
-            alt={altText}
+            alt=""
             className={cn(
               "block w-full h-auto object-contain relative z-[1]",
               count === 1 ? "max-h-96" : "max-h-52",
@@ -435,17 +445,19 @@ function TextbookFigureCard({
         )}
       </div>
       <figcaption className="px-3 py-2.5 text-xs text-foreground/90 leading-relaxed border-t border-border/50 space-y-1">
-        <p className="whitespace-normal break-words">
-          {figLabel ? <span className="font-semibold text-foreground">{figLabel}</span> : null}
-          {figLabel && captionBody ? (
-            <span className="text-muted-foreground mx-1.5" aria-hidden>
-              —
-            </span>
-          ) : null}
-          {captionBody ? (
-            <span className="text-foreground/85">{captionBody}</span>
-          ) : null}
-        </p>
+        {showCaptionRow ? (
+          <p className="whitespace-normal break-words">
+            {figLabel ? <span className="font-semibold text-foreground">{figLabel}</span> : null}
+            {figLabel && captionBody && normalizeSubtopicKey(figLabel) !== normalizeSubtopicKey(captionBody) ? (
+              <span className="text-muted-foreground mx-1.5" aria-hidden>
+                —
+              </span>
+            ) : null}
+            {captionBody && (!figLabel || normalizeSubtopicKey(figLabel) !== normalizeSubtopicKey(captionBody)) ? (
+              <span className="text-foreground/85">{captionBody}</span>
+            ) : null}
+          </p>
+        ) : null}
         {img.structured_content?.trim() && isFormulaAsset(img) ? (
           <div className="text-[11px] text-foreground/90 whitespace-pre-wrap border-t border-border/40 pt-2 mt-1">
             {renderTutorText(formatStructuredMath(img.structured_content))}
@@ -505,16 +517,20 @@ function TextbookImageGallery({
   token?: string | null;
   className?: string;
 }) {
-  if (images.length === 0) return null;
+  const unique = images.filter((img, idx) => {
+    if (!img.url) return true;
+    return images.findIndex((o) => o.url === img.url) === idx;
+  });
+  if (unique.length === 0) return null;
 
   return (
     <div
       className={cn("mt-4 pt-3 border-t border-primary/15 w-full min-w-0 max-w-full overflow-hidden", className)}
       data-testid="textbook-image-block"
     >
-      <div className={imageGalleryLayoutClass(images.length)}>
-        {images.map((img, idx) => (
-          <TextbookFigureCard key={`${img.url}-${idx}`} img={img} idx={idx} token={token} count={images.length} />
+      <div className={imageGalleryLayoutClass(unique.length)}>
+        {unique.map((img, idx) => (
+          <TextbookFigureCard key={`${img.url || "fig"}-${idx}`} img={img} idx={idx} token={token} count={unique.length} />
         ))}
       </div>
     </div>
