@@ -33,12 +33,19 @@ export function applyTranscriptEvent(
     if (!images.length) return lines;
     const idx = lines.findIndex((l) => l.role === "assistant" && l.turnId === turnId);
     if (idx >= 0) {
+      const prev = lines[idx].images ?? [];
+      const byUrl = new Map<string, (typeof images)[number]>();
+      for (const img of [...prev, ...images]) {
+        if (!img?.url) continue;
+        byUrl.set(img.url, img);
+      }
+      const merged = byUrl.size ? [...byUrl.values()] : images;
       const next = lines.slice();
-      next[idx] = { ...lines[idx], images };
+      next[idx] = { ...lines[idx], images: merged };
       return next;
     }
     // Figures often arrive before the first spoken sentence: hold them on an
-    // empty assistant line that the answer text fills in.
+    // empty assistant line that the answer text fills in (UI hides until text).
     return [...lines, { role: "assistant", text: "", turnId, images }];
   }
 

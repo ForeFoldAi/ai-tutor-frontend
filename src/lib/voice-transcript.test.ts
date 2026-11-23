@@ -162,6 +162,28 @@ describe("applyTranscriptEvent", () => {
     assert.equal(lines.length, 0);
   });
 
+  it("merges related_images batches by URL on the same turn", () => {
+    let lines = applyTranscriptEvent([], { role: "user", text: "Q", turnId: 1, pending: false });
+    lines = applyTranscriptEvent(lines, {
+      type: "related_images",
+      turnId: 1,
+      images: [{ url: "/a.png", caption: "early" }] as never,
+    });
+    lines = applyTranscriptEvent(lines, {
+      type: "related_images",
+      turnId: 1,
+      images: [
+        { url: "/a.png", caption: "final" },
+        { url: "/b.png", caption: "extra" },
+      ] as never,
+    });
+    lines = applyTranscriptEvent(lines, { role: "assistant", text: "Answer", turnId: 1 });
+    const imgs = lines.find((l) => l.role === "assistant")?.images ?? [];
+    assert.equal(imgs.length, 2);
+    assert.equal(imgs.find((i) => i.url === "/a.png")?.caption, "final");
+    assert.equal(imgs.find((i) => i.url === "/b.png")?.caption, "extra");
+  });
+
   it("simulates delayed async ordering with stable turnIds", () => {
     let lines: ReturnType<typeof applyTranscriptEvent> extends infer T ? T : never = [];
     const events = [

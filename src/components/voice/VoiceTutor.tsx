@@ -318,9 +318,13 @@ export function VoiceTutor({
             </div>
           ) : null}
 
-          {entriesWithTime.map(({ line, timeSec }) => (
-            <MessageBubble key={`${line.turnId}-${line.role}`} line={line} timeSec={timeSec} accessToken={accessToken} />
-          ))}
+          {entriesWithTime
+            // Hold figures-only placeholders until spoken text arrives — avoids orphan
+            // "AI Voice" bubbles that are just a caption + page number mid-thread.
+            .filter(({ line }) => !(line.role === "assistant" && !line.text.trim()))
+            .map(({ line, timeSec }) => (
+              <MessageBubble key={`${line.turnId}-${line.role}`} line={line} timeSec={timeSec} accessToken={accessToken} />
+            ))}
 
           {showThinking ? <ThinkingBubble /> : null}
 
