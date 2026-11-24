@@ -22,6 +22,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { exportCsv } from "@/modules/master-admin/utils/export-csv";
 import { Pagination } from "../components/pagination";
+import { AddUserDialog } from "../components/add-user-dialog";
 import { StatusPill } from "../components/status-pill";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -40,6 +41,7 @@ import {
   BookOpen,
   UserCheck,
   Clock,
+  UserPlus,
 } from "lucide-react";
 import {
   approveUser,
@@ -96,6 +98,7 @@ export default function MasterAdminUsersPage() {
   const [editUser, setEditUser] = useState<ApiUser | null>(null);
   const [editForm, setEditForm] = useState<EditForm>({ full_name: "", email: "", phone: "", school: "none", new_password: "" });
   const [deleteUser, setDeleteUser] = useState<ApiUser | null>(null);
+  const [addUserOpen, setAddUserOpen] = useState(false);
 
   const openEdit = (u: ApiUser) => {
     setEditUser(u);
@@ -297,6 +300,10 @@ export default function MasterAdminUsersPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Button size="sm" className="h-9 gap-1.5 text-xs" onClick={() => setAddUserOpen(true)}>
+            <UserPlus className="h-4 w-4" />
+            Add User
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -946,6 +953,15 @@ export default function MasterAdminUsersPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <AddUserDialog
+        open={addUserOpen}
+        onOpenChange={setAddUserOpen}
+        onCreated={async ({ fullName, userId }) => {
+          await invalidateManyAndBroadcast(qc, ["users", "students", "teachers", "schools", "dashboard"]);
+          toast({ title: "User created", description: `${fullName} (${userId}) can sign in now.` });
+        }}
+      />
 
       {/* EDIT USER DIALOG */}
       <Dialog open={!!editUser} onOpenChange={(open) => !open && setEditUser(null)}>
