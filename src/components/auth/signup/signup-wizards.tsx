@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { API_BASE } from "@/api";
+import { API_BASE, apiFetch } from "@/api";
 import { MSG, studentFriendlyApiError, studentFriendlyError } from "@/lib/student-messages";
 import { cn } from "@/lib/utils";
 import { SIGNUP_THEMES } from "./signup-shell";
@@ -51,6 +51,31 @@ const LEARNING_METHOD_META: Record<string, { title: string; description: string;
   "ai-voice": { title: "AI Voice Tutor", description: "Learn hands-free with voice interaction.", icon: Mic },
   videos: { title: "Pre-recorded Videos", description: "Watch concept videos at your own pace.", icon: PlayCircle },
 };
+
+/**
+ * Wizards double as the master-admin "Add User" form. With `onCreated` set they post to the
+ * authenticated, pre-approved `/auth/admin/signup/*` endpoints and report back instead of
+ * showing the public success screen / redirecting to pending-approval.
+ */
+export type SignupWizardProps = {
+  onCreated?: (created: { fullName: string; userId: string }) => void;
+};
+
+type SignupKind = "student" | "tutor" | "school";
+
+async function submitSignup(kind: SignupKind, body: unknown, admin: boolean): Promise<void> {
+  if (admin) {
+    await apiFetch(`/auth/admin/signup/${kind}`, { method: "POST", body: JSON.stringify(body) });
+    return;
+  }
+  const res = await fetch(`${API_BASE}/auth/signup/${kind}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const txt = await res.text();
+  if (!res.ok) throw new Error(studentFriendlyApiError(txt, res.status, MSG.signupFailed));
+}
 
 function slugName(name: string) {
   return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/^\.+|\.+$/g, "");
@@ -102,7 +127,7 @@ type SignupCatalogSubject = {
   publishers: { id: number; publisher: string }[];
 };
 
-export function StudentSignupWizard() {
+export function StudentSignupWizard({ onCreated }: SignupWizardProps = {}) {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const { options, loading: optionsLoading, error: optionsError, retry: retryOptions } = useSignupOptions();
@@ -192,10 +217,9 @@ export function StudentSignupWizard() {
     }
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/auth/signup/student`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      await submitSignup(
+        "student",
+        {
           full_name: fullName.trim(),
           grade: grade.replace("Grade ", ""),
           user_id: userId.trim(),
@@ -209,11 +233,11 @@ export function StudentSignupWizard() {
           ),
           learning_goals: goals,
           preferred_learning_method: method || undefined,
-        }),
-      });
-      const txt = await res.text();
-      if (!res.ok) throw new Error(studentFriendlyApiError(txt, res.status, MSG.signupFailed));
-      setSuccess(true);
+        },
+        !!onCreated,
+      );
+      if (onCreated) onCreated({ fullName: fullName.trim(), userId: userId.trim() });
+      else setSuccess(true);
     } catch (e) {
       toast({ title: "Couldn't create account", description: studentFriendlyError(e, MSG.signupFailed), variant: "destructive" });
     } finally {
@@ -240,8 +264,8 @@ export function StudentSignupWizard() {
     <div className="mx-auto w-full max-w-3xl space-y-6">
       <FormHeader
         accountType="student"
-        eyebrow="Individual Student Signup"
-        title="Start your personalized learning journey"
+        eyebrow={onCreated ? "Add Student" : "Individual Student Signup"}
+        title={onCreated ? "Create a student account" : "Start your personalized learning journey"}
       />
 
       <FormSection title="Basic Information" accountType="student">
@@ -388,7 +412,7 @@ export function StudentSignupWizard() {
 
 // ─── Teacher ─────────────────────────────────────────────────────────────────
 
-export function TeacherSignupWizard() {
+export function TeacherSignupWizard({ onCreated }: SignupWizardProps = {}) {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const { options, loading: optionsLoading, error: optionsError, retry: retryOptions } = useSignupOptions();
@@ -445,10 +469,9 @@ export function TeacherSignupWizard() {
     }
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/auth/signup/tutor`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      await submitSignup(
+        "tutor",
+        {
           full_name: fullName.trim(),
           user_id: userId.trim(),
           password,
@@ -460,11 +483,11 @@ export function TeacherSignupWizard() {
           teaching_subjects: teachSubjects,
           teaching_modes: teachingModes,
           bio: bio.trim() || undefined,
-        }),
-      });
-      const txt = await res.text();
-      if (!res.ok) throw new Error(studentFriendlyApiError(txt, res.status, MSG.signupFailed));
-      setSuccess(true);
+        },
+        !!onCreated,
+      );
+      if (onCreated) onCreated({ fullName: fullName.trim(), userId: userId.trim() });
+      else setSuccess(true);
     } catch (e) {
       toast({ title: "Couldn't create account", description: studentFriendlyError(e, MSG.signupFailed), variant: "destructive" });
     } finally {
@@ -489,7 +512,11 @@ export function TeacherSignupWizard() {
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6">
-      <FormHeader accountType="teacher" eyebrow="Individual Teacher Signup" title="Set up your teaching profile" />
+      <FormHeader
+        accountType="teacher"
+        eyebrow={onCreated ? "Add Teacher" : "Individual Teacher Signup"}
+        title={onCreated ? "Create a teacher account" : "Set up your teaching profile"}
+      />
 
       <FormSection title="Teacher Details" accountType="teacher">
         <FormRow cols={2}>
@@ -601,7 +628,7 @@ export function TeacherSignupWizard() {
 
 // ─── School ──────────────────────────────────────────────────────────────────
 
-export function SchoolSignupWizard() {
+export function SchoolSignupWizard({ onCreated }: SignupWizardProps = {}) {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const { options, loading: optionsLoading, error: optionsError, retry: retryOptions } = useSignupOptions();
@@ -661,10 +688,9 @@ export function SchoolSignupWizard() {
     }
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/auth/signup/school`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      await submitSignup(
+        "school",
+        {
           school_name: schoolName.trim(),
           school_email: schoolEmail.trim(),
           phone: schoolPhone.trim(),
@@ -679,11 +705,11 @@ export function SchoolSignupWizard() {
           grades_offered: gradesOffered,
           student_strength: studentStrength,
           curricula,
-        }),
-      });
-      const txt = await res.text();
-      if (!res.ok) throw new Error(studentFriendlyApiError(txt, res.status, MSG.signupFailed));
-      setSuccess(true);
+        },
+        !!onCreated,
+      );
+      if (onCreated) onCreated({ fullName: adminName.trim(), userId: adminUserId.trim() });
+      else setSuccess(true);
     } catch (e) {
       toast({ title: "Couldn't create account", description: studentFriendlyError(e, MSG.signupFailed), variant: "destructive" });
     } finally {
@@ -721,7 +747,11 @@ export function SchoolSignupWizard() {
 
   return (
     <div className="mx-auto w-full max-w-4xl space-y-6">
-      <FormHeader accountType="school" eyebrow="School Signup" title="Set up your school workspace in minutes" />
+      <FormHeader
+        accountType="school"
+        eyebrow={onCreated ? "Add School" : "School Signup"}
+        title={onCreated ? "Create a school and its administrator" : "Set up your school workspace in minutes"}
+      />
 
       <FormSection title="School Information" accountType="school">
         <FormRow cols={2}>
