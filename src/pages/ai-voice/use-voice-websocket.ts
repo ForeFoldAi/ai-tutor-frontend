@@ -9,6 +9,7 @@ import { stripGreetSearchParam } from "@/lib/tutor-greeting";
 import { POST_PLAYBACK_LISTEN_MS } from "@/lib/voice-conversation-config";
 import { MSG, studentFriendlyError } from "@/lib/student-messages";
 import { tutorVoiceId } from "@/lib/tutor-voice";
+import { handleSessionReplaced, WS_CLOSE_SESSION_REPLACED } from "@/lib/session-replaced";
 import { endVoiceSession } from "@/lib/voice-protection";
 import { logVoiceStreamMetrics } from "@/lib/voice-stream-diagnostics";
 import { logVoicePlayerStats } from "@/lib/voice-audio-diagnostics";
@@ -360,12 +361,17 @@ export function useVoiceWebSocket({ s, normalizedVoiceUrl, session, audio }: WSD
       s.setErrorText((prev) => prev ?? MSG.voiceUnavailable);
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       s.wsReadyRef.current = false;
       s.setWsConnected(false);
       s.setIsCallLive(false);
       if (s.shuttingDownRef.current || myGen !== s.wsActiveRef.current) return;
       s.wsRef.current = null;
+      if (event.code === WS_CLOSE_SESSION_REPLACED) {
+        // Signed in on another device: sign out with the reason; reconnecting would just be refused again.
+        handleSessionReplaced();
+        return;
+      }
       // Whatever the tutor was doing (speaking/thinking) is now stale — stop
       // playback and recognition immediately instead of leaving the UI stuck
       // showing "speaking" while audio silently drains, or the mic mid-listen

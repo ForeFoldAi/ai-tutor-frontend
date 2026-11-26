@@ -10,6 +10,7 @@ import {
 } from "@/lib/voice-conversation-config";
 import { MSG, studentFriendlyApiError, studentFriendlyError } from "@/lib/student-messages";
 import { tutorVoiceId } from "@/lib/tutor-voice";
+import { handleSessionReplaced, SESSION_REPLACED_DETAIL } from "@/lib/session-replaced";
 import { blobToBase64 } from "@/lib/voice-server-stt";
 import { buildVoiceConversationHistory } from "@/lib/voice-http-history";
 import { postprocessVoiceTranscript, isMeaningfulVoiceTranscript } from "@/lib/voice-stt-postprocess";
@@ -269,6 +270,7 @@ export function useVoiceTurn(deps: TurnDeps) {
       });
       if (!res.ok) {
         const errBody = await res.text();
+        if (res.status === 401 && errBody.includes(SESSION_REPLACED_DETAIL)) handleSessionReplaced();
         throw new Error(studentFriendlyApiError(errBody, res.status, MSG.voiceError));
       }
       if (!res.body || s.turnIdRef.current !== turnId) return;

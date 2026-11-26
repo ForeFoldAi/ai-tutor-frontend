@@ -34,7 +34,7 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/lib/auth-store";
 import { getHttpApiBase, getVoiceHttpBase } from "@/lib/api-base";
-import { apiFetch, authFetch } from "@/api";
+import { authFetch } from "@/api";
 import { MSG, studentFriendlyApiError, studentFriendlyError } from "@/lib/student-messages";
 import {
   AssistantMessageContent,
@@ -149,7 +149,7 @@ const uploadPDF = async (file: File): Promise<void> => {
   const formData = new FormData();
   formData.append("file", file);
 
-  const response = await fetch(`${API_URL}/upload`, {
+  const response = await authFetch("/upload", {
     method: "POST",
     body: formData,
   });
@@ -198,10 +198,10 @@ function useChapterContext(): ChapterContext | null {
   }, [location]);
 }
 
-const sendChatMessage = async (query: string): Promise<string> => {
-  const response = await fetch(`${API_URL}/chat`, {
+const sendChatMessage = async (query: string, signal?: AbortSignal): Promise<string> => {
+  const response = await authFetch("/chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    signal,
     body: JSON.stringify({ query }),
   });
 
@@ -212,45 +212,6 @@ const sendChatMessage = async (query: string): Promise<string> => {
 
   const data = await response.json();
   return data.answer || "";
-};
-
-const sendChapterChatMessage = async (
-  query: string,
-  ctx: ChapterContext,
-  conversationHistory?: Array<{ role: string; content: string }>,
-  options?: { imagesOnly?: boolean },
-): Promise<{
-  answer: string;
-  relatedImages: RelatedTextbookImage[];
-  mathLesson?: MathLesson | null;
-  scienceExperiment?: ScienceExperiment | null;
-}> => {
-  const data = await apiFetch<{
-    answer: string;
-    related_images?: RelatedTextbookImage[];
-    math_lesson?: MathLesson | null;
-    science_experiment?: ScienceExperiment | null;
-  }>("/auth/chat", {
-    method: "POST",
-    body: JSON.stringify({
-      query,
-      board: ctx.board,
-      class_level: ctx.classLevel,
-      subject_name: ctx.subject,
-      chapter_ids: ctx.chapterIds,
-      chapter: ctx.chapterNames[0] || "",
-      chapter_names: ctx.chapterNames,
-      conversation_history: conversationHistory ?? [],
-      images_only: options?.imagesOnly ?? false,
-      agent_mode: ctx.agentMode ?? undefined,
-    }),
-  });
-  return {
-    answer: data.answer || "",
-    relatedImages: data.related_images ?? [],
-    mathLesson: data.math_lesson ?? null,
-    scienceExperiment: data.science_experiment ?? null,
-  };
 };
 
 function buildConversationHistory(
@@ -285,9 +246,11 @@ async function streamChapterChatMessage(
   conversationHistory?: Array<{ role: string; content: string }>,
   imageIds?: string[],
   turnState?: TutorTurnState,
+  signal?: AbortSignal,
 ): Promise<string> {
   const res = await authFetch("/auth/chat/stream", {
     method: "POST",
+    signal,
     headers: {
       "Content-Type": "application/json",
     },
@@ -365,7 +328,15 @@ async function streamChapterChatMessage(
   };
 
   for (;;) {
-    const { done, value } = await reader.read();
+    let chunk: ReadableStreamReadResult<Uint8Array>;
+    try {
+      chunk = await reader.read();
+    } catch (err) {
+      // Student pressed Stop: keep what was already written.
+      if (signal?.aborted) return full;
+      throw err;
+    }
+    const { done, value } = chunk;
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split("\n");
@@ -380,6 +351,8 @@ async function streamChapterChatMessage(
 
   return full;
 }
+
+const STOPPED_TEXT = "Stopped. Ask again whenever you're ready.";
 
 const STREAM_STATUS_TEXT: Record<string, string> = {
   searching: "Looking in your chapter…",
@@ -413,6 +386,8 @@ export default function AITutorPage() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const chatVoicePlayerRef = useRef<Mp3StreamPlayer | null>(null);
   const chatVoiceAbortRef = useRef<AbortController | null>(null);
+  /** In-flight text answer; Stop aborts it and keeps what was already written. */
+  const chatStreamAbortRef = useRef<AbortController | null>(null);
   const lastVoicedMessageId = useRef<string | null>(null);
   const lastVoiceUrl = useRef<string | null>(null);
   const tutorTurnStateRef = useRef<Record<string, TutorTurnState>>({});
@@ -801,6 +776,8 @@ export default function AITutorPage() {
     };
     setActiveConversation(conversationWithAssistant);
 
+    const streamController = new AbortController();
+    chatStreamAbortRef.current = streamController;
     try {
       let fullContent = "";
       let relatedImages: RelatedTextbookImage[] = [];
@@ -877,50 +854,19 @@ export default function AITutorPage() {
           history,
           imageIds,
           tutorTurnStateRef.current[conversation!.id],
+          streamController.signal,
         );
         if (streamed.trim()) {
           fullContent = streamed;
         }
         if (!fullContent.trim()) {
-          fullContent = MSG.tutorError;
+          fullContent = streamController.signal.aborted ? STOPPED_TEXT : MSG.tutorError;
           patchAssistant(fullContent);
         }
-        if (relatedImages.length === 0 && fullContent.trim()) {
-          try {
-            const fallback = await sendChapterChatMessage(content, chapterCtx, history, {
-              imagesOnly: true,
-            });
-            const gotImages = fallback.relatedImages.length > 0;
-            const gotMath = Boolean(fallback.mathLesson);
-            const gotScience = Boolean(fallback.scienceExperiment);
-            if (gotImages || gotMath || gotScience) {
-              if (gotImages) {
-                relatedImages = fallback.relatedImages;
-              }
-              // Image fallback must not replace a streamed answer with a second full LLM response.
-              if (!fullContent.trim() && fallback.answer) {
-                fullContent = fallback.answer;
-              }
-              if (gotMath) {
-                mathLesson = fallback.mathLesson ?? mathLesson;
-                if (fallback.answer) {
-                  fullContent = fallback.answer;
-                }
-              }
-              if (gotScience) {
-                scienceExperiment = fallback.scienceExperiment ?? scienceExperiment;
-                if (fallback.answer) {
-                  fullContent = fallback.answer;
-                }
-              }
-              patchAssistant(fullContent, relatedImages, mathLesson, scienceExperiment);
-            }
-          } catch {
-            /* stream answer is still shown */
-          }
-        }
+        // No second "images only" request here: the stream's final related_images
+        // already reflects the server's answer-aware pick, including "no figure fits".
       } else {
-        fullContent = await sendChatMessage(content);
+        fullContent = await sendChatMessage(content, streamController.signal);
         patchAssistant(fullContent);
       }
 
@@ -959,17 +905,21 @@ export default function AITutorPage() {
         });
       }
     } catch (error) {
-      console.error("Chat error:", error);
+      const stopped = streamController.signal.aborted;
+      if (!stopped) console.error("Chat error:", error);
       setActiveConversation((prev) => {
         if (!prev) return prev;
         const messages = [...prev.messages];
+        const last = messages[messages.length - 1];
         messages[messages.length - 1] = {
-          ...messages[messages.length - 1],
-          content: MSG.tutorError,
+          ...last,
+          // Stop keeps the partial answer; only a real failure replaces it.
+          content: stopped ? last.content.trim() || STOPPED_TEXT : MSG.tutorError,
         };
         return { ...prev, messages };
       });
     } finally {
+      if (chatStreamAbortRef.current === streamController) chatStreamAbortRef.current = null;
       setIsLoading(false);
       setIsStreaming(false);
     }
@@ -1037,9 +987,13 @@ export default function AITutorPage() {
       setIsVoiceLoading(true);
       setVoiceError(null);
 
+      const voiceToken = useAuthStore.getState().token;
       const response = await fetch(`${VOICE_URL}/chat-voice`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(voiceToken ? { Authorization: `Bearer ${voiceToken}` } : {}),
+        },
         body: JSON.stringify({ message: message.content }),
         signal: controller.signal,
       });
@@ -1595,22 +1549,36 @@ export default function AITutorPage() {
                 className="flex-1 min-h-[44px] max-h-32 resize-none py-2.5 text-base leading-relaxed"
                 data-testid="input-chat-message"
               />
-              <Button
-                type="submit"
-                disabled={
-                  (!input.trim() && !tutorImage.attached) ||
-                  isLoading ||
-                  tutorImage.uploading
-                }
-                className="flex-shrink-0"
-                data-testid="button-send-message"
-              >
-                {isLoading || tutorImage.uploading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Send className="h-4 w-4" />
-                )}
-              </Button>
+              {isStreaming && chatStreamAbortRef.current ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => chatStreamAbortRef.current?.abort()}
+                  className="flex-shrink-0"
+                  aria-label="Stop answer"
+                  title="Stop answer"
+                  data-testid="button-stop-answer"
+                >
+                  <Square className="h-4 w-4" />
+                </Button>
+              ) : (
+                <Button
+                  type="submit"
+                  disabled={
+                    (!input.trim() && !tutorImage.attached) ||
+                    isLoading ||
+                    tutorImage.uploading
+                  }
+                  className="flex-shrink-0"
+                  data-testid="button-send-message"
+                >
+                  {isLoading || tutorImage.uploading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                </Button>
+              )}
             </div>
           </form>
         </div>

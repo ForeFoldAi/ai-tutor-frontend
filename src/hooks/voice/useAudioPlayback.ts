@@ -71,15 +71,15 @@ export function useAudioPlayback() {
   const isPlaying = useCallback(() => remainingMs() > 0, [remainingMs]);
 
   const play = useCallback(
-    async (buf: ArrayBuffer) => {
+    async (buf: ArrayBuffer): Promise<boolean> => {
       const { samples, sampleRate, end } = unpackPcm(buf);
-      if (end) return;
-      if (!samples.length) return;
+      if (end) return false;
+      if (!samples.length) return false;
       const ac = ensureCtx();
       if (ac.state !== "running") {
         // Scheduling into a stopped clock would play stale audio after the next click.
         void ac.resume().catch(() => undefined);
-        return;
+        return false;
       }
       const gain = gainRef.current!;
       const audio = ac.createBuffer(1, samples.length, sampleRate || 16000);
@@ -96,6 +96,7 @@ export function useAudioPlayback() {
       src.onended = () => {
         liveRef.current = liveRef.current.filter((s) => s !== src);
       };
+      return true;
     },
     [ensureCtx],
   );
