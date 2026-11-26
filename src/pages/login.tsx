@@ -13,6 +13,18 @@ import { API_BASE } from "@/api";
 import { getHomePath } from "@/lib/dashboard-routes";
 import { MSG, studentFriendlyApiError, studentFriendlyError } from "@/lib/student-messages";
 import { UserRole } from "@/types/schema";
+import { ALREADY_SIGNED_IN_DETAIL } from "@/lib/session-replaced";
+import { getDeviceId } from "@/lib/device-id";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { AuthCardFooter, AuthCardIllustration, AuthLayout } from "@/components/auth/auth-layout";
 
 const loginSchema = z.object({
@@ -39,6 +51,7 @@ export default function LoginPage() {
   const { toast } = useToast();
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [confirmOtherDevice, setConfirmOtherDevice] = useState(false);
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -48,15 +61,27 @@ export default function LoginPage() {
     },
   });
 
-  const onSubmit = async (data: LoginFormValues) => {
+  const onSubmit = (data: LoginFormValues) => submitLogin(data, false);
+
+  const submitLogin = async (data: LoginFormValues, forceLogoutOthers: boolean) => {
     setIsLoading(true);
     try {
       const loginResponse = await fetch(`${API_BASE}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: data.username, password: data.password }),
+        body: JSON.stringify({
+          email: data.username,
+          password: data.password,
+          device_id: getDeviceId(),
+          ...(forceLogoutOthers ? { force_logout_others: true } : {}),
+        }),
       });
       const loginText = await loginResponse.text();
+      // Student already signed in elsewhere: ask before signing that device out.
+      if (loginResponse.status === 409 && loginText.includes(ALREADY_SIGNED_IN_DETAIL)) {
+        setConfirmOtherDevice(true);
+        return;
+      }
       if (loginResponse.status === 403 && loginText.includes(PENDING_APPROVAL_DETAIL)) {
         navigate("/pending-approval");
         return;
@@ -243,6 +268,30 @@ export default function LoginPage() {
 
         <AuthCardFooter />
       </div>
+
+      <AlertDialog open={confirmOtherDevice} onOpenChange={setConfirmOtherDevice}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>You're signed in on another device</AlertDialogTitle>
+            <AlertDialogDescription>
+              This account is already open on another device. Sign out there to continue here, or cancel and keep
+              using the other device.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-keep-other-device">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="button-logout-other-device"
+              onClick={() => {
+                setConfirmOtherDevice(false);
+                void submitLogin(form.getValues(), true);
+              }}
+            >
+              Sign out other device
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AuthLayout>
   );
 }

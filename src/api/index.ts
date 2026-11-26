@@ -1,6 +1,7 @@
 import { useAuthStore } from "@/lib/auth-store";
 import { assertProdApiConfigured, getHttpApiBase } from "@/lib/api-base";
 import { studentFriendlyApiError } from "@/lib/student-messages";
+import { handleSessionReplaced, SESSION_REPLACED_DETAIL } from "@/lib/session-replaced";
 
 // Empty VITE_API_URL = same-origin (Vite dev proxy → backend); set full URL on Vercel.
 const API_BASE = getHttpApiBase();
@@ -46,7 +47,9 @@ export async function refreshAccessToken(): Promise<string | null> {
           return payload.access_token;
         }
         if (res && (res.status === 401 || res.status === 403)) {
-          useAuthStore.getState().logout();
+          const replaced = (await res.text()).includes(SESSION_REPLACED_DETAIL);
+          if (replaced) handleSessionReplaced();
+          else useAuthStore.getState().logout();
           return null;
         }
         if (attempt >= REFRESH_RETRY_DELAYS_MS.length) return null;
@@ -86,6 +89,12 @@ async function doFetch(path: string, init: RequestInit = {}, tokenOverride?: str
   const authHeader = tokenOverride ? { Authorization: `Bearer ${tokenOverride}` } : getAuthHeader();
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  // Honour a caller's signal too (e.g. the student pressing Stop); ours alone only times out.
+  const callerSignal = init.signal;
+  if (callerSignal) {
+    if (callerSignal.aborted) controller.abort();
+    else callerSignal.addEventListener("abort", () => controller.abort(), { once: true });
+  }
   const isFormData = typeof FormData !== "undefined" && init.body instanceof FormData;
   try {
     return await fetch(`${API_BASE}${path}`, {
@@ -103,8 +112,15 @@ async function doFetch(path: string, init: RequestInit = {}, tokenOverride?: str
 }
 
 export async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const tokenAtCall = useAuthStore.getState().token;
   let res = await doFetch(path, init);
   if (res.status === 401) {
+    // Student signed in on another device: refreshing can't help, sign out with the reason.
+    if ((await res.clone().text()).includes(SESSION_REPLACED_DETAIL)) {
+      // Ignore a late reply to a request from an older login, so it can't sign out the new one.
+      if (useAuthStore.getState().token === tokenAtCall) handleSessionReplaced();
+      return res;
+    }
     const fresh = await refreshAccessToken();
     if (fresh) {
       res = await doFetch(path, init, fresh);

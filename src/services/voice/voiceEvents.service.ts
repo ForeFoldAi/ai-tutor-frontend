@@ -49,7 +49,11 @@ export function connectVoiceEvents(
       return true;
     },
     sendBinary(buf) {
-      if (ws.readyState === WebSocket.OPEN) ws.send(buf);
+      if (ws.readyState !== WebSocket.OPEN) return;
+      // Interrupt and session messages share this socket. A multi-minute PCM
+      // backlog keeps them stuck behind audio the server will never catch up to.
+      if (ws.bufferedAmount > 64 * 1024) return;
+      ws.send(buf);
     },
     close() {
       ws.onclose = null;

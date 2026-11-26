@@ -1,3 +1,4 @@
+import { PanelErrorBoundary } from "@/components/panel-error-boundary";
 import { useState } from "react";
 import {
   FlaskConical,
@@ -101,7 +102,7 @@ function AssessmentBlock({ questions }: { questions: NonNullable<ScienceExperime
   );
 }
 
-export function ScienceExperimentPanel({ experiment }: ScienceExperimentPanelProps) {
+function ScienceExperimentPanelInner({ experiment }: ScienceExperimentPanelProps) {
   const spec = experiment.experiment;
   const subjectKey = (spec.subject ?? experiment.subject ?? "").toLowerCase();
   const accent = subjectAccent(subjectKey || undefined);
@@ -239,5 +240,14 @@ export function ScienceExperimentPanel({ experiment }: ScienceExperimentPanelPro
         </section>
       ) : null}
     </div>
+  );
+}
+
+/** Crash-contained: a malformed experiment shows a short note instead of blanking the page. */
+export function ScienceExperimentPanel(props: ScienceExperimentPanelProps) {
+  return (
+    <PanelErrorBoundary label="ScienceExperimentPanel">
+      <ScienceExperimentPanelInner {...props} />
+    </PanelErrorBoundary>
   );
 }

@@ -4,6 +4,7 @@ import { useAuthStore } from "@/lib/auth-store";
 import { buildWsUrl, getHttpApiBase } from "@/lib/api-base";
 import { asDomainEntity, invalidateEntity } from "@/lib/query-invalidation";
 import { subscribeQueryBroadcast } from "@/lib/query-broadcast";
+import { handleSessionReplaced, WS_CLOSE_SESSION_REPLACED } from "@/lib/session-replaced";
 
 function eventsWsUrl(token: string): string {
   return buildWsUrl(getHttpApiBase(), "/ws/events", { access_token: token });
@@ -61,9 +62,16 @@ export function useLiveQuerySync() {
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         wsRef.current = null;
         if (stopped) return;
+        if (event.code === WS_CLOSE_SESSION_REPLACED) {
+          // This student signed in on another device. Don't reconnect; sign out with the reason
+          // (unless a newer login in this browser has already replaced the token we connected with).
+          stopped = true;
+          if (useAuthStore.getState().token === token) handleSessionReplaced();
+          return;
+        }
         retryTimer = window.setTimeout(() => {
           retryMs = Math.min(retryMs * 1.5, 15_000);
           connect();

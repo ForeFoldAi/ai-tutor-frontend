@@ -89,6 +89,9 @@ export function figureNumberLabel(img: RelatedTextbookImage): string | null {
 const PROSE_CAPTION_RE =
   /\b(you wake up|what is|chapter \d|grade \d|exploring society|india and beyond|keep you cool|keep yourself warm)\b|^in th[e]?\s+[a-z]/i;
 
+const DANGLING_CAPTION_END_RE =
+  /\b(and|or|the|a|an|of|for|as|to|with|long|fig\.?)$/i;
+
 /** One short caption line (no figure/activity prefix, no long prose). */
 export function figureCaptionText(img: RelatedTextbookImage, idx = 0): string {
   const subtopic = img.subtopic?.trim() || "";
@@ -101,7 +104,8 @@ export function figureCaptionText(img: RelatedTextbookImage, idx = 0): string {
       sentence.length >= 3 &&
       !/^\d{1,3}$/.test(sentence) &&
       sentence.length <= 140 &&
-      !PROSE_CAPTION_RE.test(sentence)
+      !PROSE_CAPTION_RE.test(sentence) &&
+      !DANGLING_CAPTION_END_RE.test(sentence)
     ) {
       // Prefer a distinct caption; skip when it only repeats title/subtopic.
       const key = normalizeSubtopicKey(sentence);

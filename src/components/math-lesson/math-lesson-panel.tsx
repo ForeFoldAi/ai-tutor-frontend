@@ -1,3 +1,4 @@
+import { PanelErrorBoundary } from "@/components/panel-error-boundary";
 import { useState } from "react";
 import {
   BookOpen,
@@ -89,7 +90,7 @@ function AssessmentBlock({ questions }: { questions: MathLesson["assessment"] })
   );
 }
 
-export function MathLessonPanel({ lesson }: MathLessonPanelProps) {
+function MathLessonPanelInner({ lesson }: MathLessonPanelProps) {
   const practice = lesson.practiceMode;
   const practiceLevels = [
     { key: "easy", label: "Easy", text: practice?.easy },
@@ -232,5 +233,14 @@ export function MathLessonPanel({ lesson }: MathLessonPanelProps) {
         </section>
       ) : null}
     </div>
+  );
+}
+
+/** Crash-contained: a malformed lesson shows a short note instead of blanking the page. */
+export function MathLessonPanel(props: MathLessonPanelProps) {
+  return (
+    <PanelErrorBoundary label="MathLessonPanel">
+      <MathLessonPanelInner {...props} />
+    </PanelErrorBoundary>
   );
 }

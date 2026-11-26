@@ -68,6 +68,14 @@ export function useVoiceTutor(opts: {
   const sockRef = useRef<VoiceSock | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const captureRef = useRef<AudioContext | null>(null);
+  const captureGraphRef = useRef<{
+    src: MediaStreamAudioSourceNode;
+    proc: ScriptProcessorNode;
+    mute: GainNode;
+  } | null>(null);
+  const lastCaptureAtRef = useRef(0);
+  const captureStalledRef = useRef(false);
+  const reconnectCaptureRef = useRef<() => void>(() => undefined);
   const sampleRateRef = useRef(16000);
   const heldPcmRef = useRef<ArrayBuffer[]>([]);
   const mutedRef = useRef(false);
@@ -111,9 +119,11 @@ export function useVoiceTutor(opts: {
   const lastAudioAtRef = useRef(0);
   const playPcm = useCallback(
     (buf: ArrayBuffer) => {
-      lastAudioAtRef.current = Date.now();
-      markAudioReady();
-      void playback.play(buf).catch(() => undefined);
+      void playback.play(buf).then((played) => {
+        if (!played) return;
+        lastAudioAtRef.current = Date.now();
+        markAudioReady();
+      }).catch(() => undefined);
     },
     [markAudioReady, playback],
   );
@@ -162,6 +172,19 @@ export function useVoiceTutor(opts: {
   }, []);
 
   const stopCapture = useCallback(() => {
+    const graph = captureGraphRef.current;
+    captureGraphRef.current = null;
+    reconnectCaptureRef.current = () => undefined;
+    if (graph) {
+      graph.proc.onaudioprocess = null;
+      try {
+        graph.proc.disconnect();
+        graph.src.disconnect();
+        graph.mute.disconnect();
+      } catch {
+        /* already torn down */
+      }
+    }
     captureRef.current?.close().catch(() => undefined);
     captureRef.current = null;
     stopStream(streamRef.current);
@@ -201,92 +224,124 @@ export function useVoiceTutor(opts: {
         }
       });
       void vad.warm();
-      const src = ac.createMediaStreamSource(stream);
-      const proc = ac.createScriptProcessor(4096, 1, 1);
-      const mute = ac.createGain();
-      mute.gain.value = 0;
-      const bargeIn = () => {
-        clearDrain();
-        playback.stop();
-        sockRef.current?.send({ type: "interrupt", sessionId: sessionIdRef.current });
-        for (const held of heldPcmRef.current) sockRef.current?.sendBinary(held);
-        heldPcmRef.current = [];
-        listenMuteUntilRef.current = 0;
-        echoFloorRef.current = 0;
-        loudFramesRef.current = 0;
-        setState("INTERRUPTED");
-        stateRef.current = "INTERRUPTED";
-      };
-      proc.onaudioprocess = (ev) => {
-        if (mutedRef.current || endedRef.current) return;
-        const f32 = ev.inputBuffer.getChannelData(0);
-        const i16 = floatToInt16(f32);
-        let sum = 0;
-        for (let i = 0; i < f32.length; i++) sum += f32[i] * f32[i];
-        const rms = Math.sqrt(sum / Math.max(1, f32.length));
-        // Gate on what the speaker is actually playing, not on server state:
-        // the reply's last chunks are still audible after ai_stopped_speaking,
-        // and uplinking them turned the tutor's own voice into student turns.
-        // Allow CONNECTING so frames are ready the instant session_ready attaches sessionId.
-        const tutorAudible = stateRef.current === "SPEAKING" || playback.remainingMs() > 0;
-        const blockUplink = tutorAudible || Date.now() < listenMuteUntilRef.current;
-        const pkt = packPcm(i16, sampleRateRef.current, false);
-        if (!blockUplink) {
-          sockRef.current?.sendBinary(pkt);
-          if (heldPcmRef.current.length) heldPcmRef.current = [];
-        } else {
-          // The words that triggered a barge-in, including the confirmation delay.
-          heldPcmRef.current.push(pkt);
-          if (heldPcmRef.current.length > HELD_FRAMES) heldPcmRef.current.shift();
+      const connectGraph = (media: MediaStream) => {
+        const prev = captureGraphRef.current;
+        if (prev) {
+          prev.proc.onaudioprocess = null;
+          try {
+            prev.proc.disconnect();
+            prev.src.disconnect();
+            prev.mute.disconnect();
+          } catch {
+            /* already torn down */
+          }
         }
-        // Allow barge-in for the whole SPEAKING turn, including inter-chunk TTS
-        // silence when the playback queue is briefly empty. Keep uplink muted
-        // (blockUplink) so tutor audio never becomes a student turn.
-        const canBarge = canAutoBargeIn({
-          bargeInEnabled,
-          state: stateRef.current,
-          remainingMs: playback.remainingMs(),
-        });
-        const tutorPlaying = playback.isPlaying();
-        const vadReady = vad.available();
-        if (!vadReady && canBarge) {
-          const floor = echoFloorRef.current;
-          const loud = tutorPlaying
-            ? floor > 0 && rms > Math.max(FALLBACK_MIN_RMS, floor * FALLBACK_ECHO_RATIO)
-            : rms > FALLBACK_MIN_RMS;
-          if (!loud) {
-            loudFramesRef.current = 0;
-            if (tutorPlaying) {
-              echoFloorRef.current = floor ? floor * 0.8 + rms * 0.2 : rms;
+        const src = ac.createMediaStreamSource(media);
+        const proc = ac.createScriptProcessor(4096, 1, 1);
+        const mute = ac.createGain();
+        mute.gain.value = 0;
+        captureGraphRef.current = { src, proc, mute };
+        const bargeIn = () => {
+          clearDrain();
+          playback.stop();
+          sockRef.current?.send({ type: "interrupt", sessionId: sessionIdRef.current });
+          for (const held of heldPcmRef.current) sockRef.current?.sendBinary(held);
+          heldPcmRef.current = [];
+          listenMuteUntilRef.current = 0;
+          echoFloorRef.current = 0;
+          loudFramesRef.current = 0;
+          setState("INTERRUPTED");
+          stateRef.current = "INTERRUPTED";
+        };
+        proc.onaudioprocess = (ev) => {
+          lastCaptureAtRef.current = Date.now();
+          if (captureStalledRef.current) {
+            captureStalledRef.current = false;
+            if (stateRef.current === "LISTENING" || stateRef.current === "INTERRUPTED") {
+              setHint("Speak now — take your time, I reply once you stop.");
+            } else if (stateRef.current === "SPEAKING") {
+              setHint("Tutor is speaking — tap Interrupt to jump in.");
             }
-          } else if (++loudFramesRef.current >= FALLBACK_LOUD_FRAMES) {
+          }
+          if (mutedRef.current || endedRef.current) return;
+          const f32 = ev.inputBuffer.getChannelData(0);
+          const i16 = floatToInt16(f32);
+          let sum = 0;
+          for (let i = 0; i < f32.length; i++) sum += f32[i] * f32[i];
+          const rms = Math.sqrt(sum / Math.max(1, f32.length));
+          // Gate on what the speaker is actually playing, not on server state:
+          // the reply's last chunks are still audible after ai_stopped_speaking,
+          // and uplinking them turned the tutor's own voice into student turns.
+          // Allow CONNECTING so frames are ready the instant session_ready attaches sessionId.
+          const tutorAudible = stateRef.current === "SPEAKING" || playback.remainingMs() > 0;
+          const blockUplink = tutorAudible || Date.now() < listenMuteUntilRef.current;
+          const pkt = packPcm(i16, sampleRateRef.current, false);
+          if (!blockUplink) {
+            sockRef.current?.sendBinary(pkt);
+            if (heldPcmRef.current.length) heldPcmRef.current = [];
+          } else {
+            // The words that triggered a barge-in, including the confirmation delay.
+            heldPcmRef.current.push(pkt);
+            if (heldPcmRef.current.length > HELD_FRAMES) heldPcmRef.current.shift();
+          }
+          // Allow barge-in for the whole SPEAKING turn, including inter-chunk TTS
+          // silence when the playback queue is briefly empty. Keep uplink muted
+          // (blockUplink) so tutor audio never becomes a student turn.
+          const canBarge = canAutoBargeIn({
+            bargeInEnabled,
+            state: stateRef.current,
+            remainingMs: playback.remainingMs(),
+          });
+          const tutorPlaying = playback.isPlaying();
+          const vadReady = vad.available();
+          // While Silero is still on an older frame, loudness is what can cut in.
+          // Waiting on the queue is how interrupt stops working on a long call.
+          if ((!vadReady || vad.busy()) && canBarge) {
+            const floor = echoFloorRef.current;
+            const loud = tutorPlaying
+              ? floor > 0 && rms > Math.max(FALLBACK_MIN_RMS, floor * FALLBACK_ECHO_RATIO)
+              : rms > FALLBACK_MIN_RMS;
+            if (!loud) {
+              loudFramesRef.current = 0;
+              if (tutorPlaying) {
+                echoFloorRef.current = floor ? floor * 0.8 + rms * 0.2 : rms;
+              }
+            } else if (++loudFramesRef.current >= FALLBACK_LOUD_FRAMES) {
+              bargeIn();
+            }
+          }
+          void vad.push(i16).then((events) => {
+            if (!events || !vadReady || !canBarge) return;
+            const voiced = vad.voicedMs();
+            if (!voiced) {
+              // Tutor leak level with nobody talking — the bar a real barge-in has to clear.
+              if (tutorPlaying) {
+                echoFloorRef.current = echoFloorRef.current
+                  ? echoFloorRef.current * 0.8 + rms * 0.2
+                  : rms;
+              }
+              return;
+            }
+            if (voiced < BARGE_MIN_VOICED_MS) return;
+            // Echo floor only applies while the tutor is audible; in a TTS gap
+            // there is no speaker leak to subtract.
+            if (tutorPlaying && echoFloorRef.current && rms < echoFloorRef.current * BARGE_ECHO_RATIO) {
+              return;
+            }
             bargeIn();
-          }
-        }
-        void vad.push(i16).then(() => {
-          if (!vadReady || !canBarge) return;
-          const voiced = vad.voicedMs();
-          if (!voiced) {
-            // Tutor leak level with nobody talking — the bar a real barge-in has to clear.
-            if (tutorPlaying) {
-              echoFloorRef.current = echoFloorRef.current
-                ? echoFloorRef.current * 0.8 + rms * 0.2
-                : rms;
-            }
-            return;
-          }
-          if (voiced < BARGE_MIN_VOICED_MS) return;
-          // Echo floor only applies while the tutor is audible; in a TTS gap
-          // there is no speaker leak to subtract.
-          if (tutorPlaying && echoFloorRef.current && rms < echoFloorRef.current * BARGE_ECHO_RATIO) {
-            return;
-          }
-          bargeIn();
-        });
+          });
+        };
+        src.connect(proc);
+        proc.connect(mute);
+        mute.connect(ac.destination);
+        lastCaptureAtRef.current = Date.now();
       };
-      src.connect(proc);
-      proc.connect(mute);
-      mute.connect(ac.destination);
+      reconnectCaptureRef.current = () => {
+        const media = streamRef.current;
+        if (!media || captureRef.current !== ac || ac.state !== "running") return;
+        connectGraph(media);
+      };
+      connectGraph(stream);
     },
     [clearDrain, playback, vad],
   );
@@ -378,6 +433,7 @@ export function useVoiceTutor(opts: {
       }
       if (type === "ai_started_processing") {
         setState("THINKING");
+        stateRef.current = "THINKING";
         setHint("Thinking…");
       }
       if (type === "ai_started_speaking") {
@@ -581,11 +637,38 @@ export function useVoiceTutor(opts: {
     const enteredAt = Date.now();
     const id = window.setInterval(() => {
       if (endedRef.current) return;
+      const cap = captureRef.current;
+      if (cap && !mutedRef.current) {
+        if (cap.state === "suspended") {
+          void cap.resume().catch(() => undefined);
+          if (!captureStalledRef.current) {
+            captureStalledRef.current = true;
+            setHint("Tap the screen once so I can hear you.");
+          }
+        } else if (
+          cap.state === "running" &&
+          captureGraphRef.current &&
+          document.visibilityState === "visible" &&
+          Date.now() - lastCaptureAtRef.current > 1500
+        ) {
+          // ScriptProcessor stops firing once the browser drops the graph.
+          // Rebuild on the same context so the mic comes back without a new gesture.
+          reconnectCaptureRef.current();
+          if (!captureStalledRef.current) {
+            captureStalledRef.current = true;
+            setHint("Tap the screen once so I can hear you.");
+          }
+        }
+      }
+      playback.resume();
       const st = stateRef.current;
       const since = Date.now() - enteredAt;
       // 45 s is past the server's own worst case (RAG timeout + one Edge retry), which answers with a spoken fallback.
       if ((st === "PROCESSING" || st === "THINKING") && since > 45_000) {
         sockRef.current?.send({ type: "interrupt", sessionId: sessionIdRef.current });
+        // setState alone leaves stateRef on the old turn, so the mic stays gated
+        // and the Interrupt button hides when React bails out of a no-op update.
+        stateRef.current = "LISTENING";
         setState("LISTENING");
         setHint("That took too long — please ask again.");
       } else if (
@@ -593,6 +676,9 @@ export function useVoiceTutor(opts: {
         !playback.isPlaying() &&
         Date.now() - Math.max(lastAudioAtRef.current, enteredAt) > 10_000
       ) {
+        listenMuteUntilRef.current = 0;
+        clearDrain();
+        stateRef.current = "LISTENING";
         setState("LISTENING");
         setHint("Speak now — take your time, I reply once you stop.");
       } else if (st === "CONNECTING" && sessionIdRef.current && since > 20_000) {
@@ -606,7 +692,7 @@ export function useVoiceTutor(opts: {
       }
     }, 2000);
     return () => window.clearInterval(id);
-  }, [failConnect, playback, sessionId, state]);
+  }, [clearDrain, failConnect, playback, sessionId, state]);
 
   // Any gesture or return to the tab is a chance to un-suspend audio that the
   // browser paused on its own (output device change, background tab).
