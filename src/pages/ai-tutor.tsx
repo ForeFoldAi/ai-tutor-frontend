@@ -72,6 +72,9 @@ interface Message {
   mathLesson?: MathLesson | null;
   scienceExperiment?: ScienceExperiment | null;
   imagePreviewUrl?: string;
+  /** Long chapter taught in parts: the next part the Continue button asks for. */
+  continuePart?: number;
+  continueParts?: number;
 }
 
 interface Conversation {
@@ -229,7 +232,12 @@ type TutorTurnState = {
   quiz_state?: Record<string, unknown> | null;
   prefers_short?: boolean;
   explained_points?: string[];
+  /** Request only: which part of a long chapter walkthrough to teach (Continue button). */
+  overview_part?: number;
 };
+
+/** Sent in "done" after a part of a long chapter walkthrough that has more parts. */
+type OverviewContinue = { overview_next_part?: number; overview_parts?: number };
 
 async function streamChapterChatMessage(
   query: string,
@@ -241,7 +249,7 @@ async function streamChapterChatMessage(
     onMathLesson?: (lesson: MathLesson, cleanAnswer: string) => void;
     onScienceExperiment?: (experiment: ScienceExperiment, cleanAnswer: string) => void;
     onStatus?: (stage: string) => void;
-    onDone?: (state: TutorTurnState) => void;
+    onDone?: (state: TutorTurnState, more: OverviewContinue) => void;
   },
   conversationHistory?: Array<{ role: string; content: string }>,
   imageIds?: string[],
@@ -268,6 +276,7 @@ async function streamChapterChatMessage(
       quiz_state: turnState?.quiz_state ?? undefined,
       prefers_short: turnState?.prefers_short ?? false,
       explained_points: turnState?.explained_points ?? undefined,
+      overview_part: turnState?.overview_part ?? undefined,
     }),
   });
 
@@ -294,7 +303,8 @@ async function streamChapterChatMessage(
       experiment?: ScienceExperiment;
       clean_answer?: string;
       stage?: string;
-    } & TutorTurnState;
+    } & TutorTurnState &
+      OverviewContinue;
     try {
       evt = JSON.parse(trimmed);
     } catch {
@@ -319,11 +329,14 @@ async function streamChapterChatMessage(
     } else if (evt.type === "status" && evt.stage) {
       handlers.onStatus?.(evt.stage);
     } else if (evt.type === "done") {
-      handlers.onDone?.({
-        quiz_state: evt.quiz_state ?? null,
-        prefers_short: evt.prefers_short,
-        explained_points: evt.explained_points,
-      });
+      handlers.onDone?.(
+        {
+          quiz_state: evt.quiz_state ?? null,
+          prefers_short: evt.prefers_short,
+          explained_points: evt.explained_points,
+        },
+        { overview_next_part: evt.overview_next_part, overview_parts: evt.overview_parts },
+      );
     }
   };
 
@@ -709,7 +722,7 @@ export default function AITutorPage() {
     }
   };
 
-  const sendMessage = async (content: string) => {
+  const sendMessage = async (content: string, opts?: { overviewPart?: number }) => {
     const trimmed = content.trim();
     const hasImage = Boolean(tutorImage.attached);
     if ((!trimmed && !hasImage) || isLoading || tutorImage.uploading) return;
@@ -783,6 +796,8 @@ export default function AITutorPage() {
       let relatedImages: RelatedTextbookImage[] = [];
       let mathLesson: MathLesson | null = null;
       let scienceExperiment: ScienceExperiment | null = null;
+      let continuePart: number | undefined;
+      let continueParts: number | undefined;
 
       const patchAssistant = (
         content: string,
@@ -842,7 +857,18 @@ export default function AITutorPage() {
               patchAssistant(fullContent, relatedImages, mathLesson, experiment);
             },
             onStatus: (stage) => setStreamStatus(STREAM_STATUS_TEXT[stage] ?? null),
-            onDone: (state) => {
+            onDone: (state, more) => {
+              continuePart = more.overview_next_part ?? undefined;
+              continueParts = more.overview_parts ?? undefined;
+              if (continuePart) {
+                setActiveConversation((prev) => {
+                  if (!prev) return prev;
+                  const messages = [...prev.messages];
+                  const last = messages[messages.length - 1];
+                  messages[messages.length - 1] = { ...last, continuePart, continueParts };
+                  return { ...prev, messages };
+                });
+              }
               const prev = tutorTurnStateRef.current[conversation!.id] ?? {};
               tutorTurnStateRef.current[conversation!.id] = {
                 quiz_state: state.quiz_state ?? null,
@@ -853,7 +879,7 @@ export default function AITutorPage() {
           },
           history,
           imageIds,
-          tutorTurnStateRef.current[conversation!.id],
+          { ...tutorTurnStateRef.current[conversation!.id], overview_part: opts?.overviewPart },
           streamController.signal,
         );
         if (streamed.trim()) {
@@ -880,6 +906,8 @@ export default function AITutorPage() {
               relatedImages,
               mathLesson,
               scienceExperiment,
+              continuePart,
+              continueParts,
             };
             return { ...c, messages };
           }
@@ -897,6 +925,8 @@ export default function AITutorPage() {
             relatedImages,
             mathLesson: mathLesson ?? undefined,
             scienceExperiment: scienceExperiment ?? undefined,
+            continuePart,
+            continueParts,
           },
         ];
         persistChapterChat(primaryChapterId, finalMessages, chapterCtx?.subject ?? "", {
@@ -1369,7 +1399,32 @@ export default function AITutorPage() {
                             : undefined
                         }
                       />
-                    ) : (
+                    ) : null}
+                    {message.role === "assistant" &&
+                    message.continuePart &&
+                    !isLoading &&
+                    message.id ===
+                      activeConversation.messages[activeConversation.messages.length - 1].id ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="mt-3"
+                        data-testid="button-continue-chapter"
+                        onClick={() =>
+                          sendMessage(
+                            `Continue the chapter (part ${message.continuePart}${
+                              message.continueParts ? ` of ${message.continueParts}` : ""
+                            })`,
+                            { overviewPart: message.continuePart },
+                          )
+                        }
+                      >
+                        Continue (part {message.continuePart}
+                        {message.continueParts ? ` of ${message.continueParts}` : ""})
+                      </Button>
+                    ) : null}
+                    {message.role === "assistant" ? null : (
                       <div className="space-y-2">
                         {message.imagePreviewUrl ? (
                           <img
